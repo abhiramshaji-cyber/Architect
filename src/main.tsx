@@ -12,18 +12,23 @@ declare global {
 
 function installMock() {
   const roots = {
-    '/demo/project-alpha': 'Project Alpha',
-    '/demo/project-beta': 'Project Beta'
+    '/Users/demo/code/reporter/bot': 'Architecture',
+    '/Users/demo/code/reporter/dashboard': 'Architecture'
   }
 
   const architectures: Record<string, Architecture> = {
-    '/demo/project-alpha': {
-      title: 'Project Alpha',
+    '/Users/demo/code/reporter/bot': {
+      title: 'Architecture',
       summary: 'A small service split into API, database access and background workers.',
       components: [
         { id: 'ui', purpose: 'Browser client', owns: ['src/ui/**'] },
         { id: 'api', purpose: 'HTTP API layer', owns: ['src/api/**'] },
-        { id: 'db', purpose: 'Database access', owns: ['src/db/**'] },
+        {
+          id: 'db',
+          purpose:
+            'Buckets fetched records by their own createdAt hour and computes the rolling counts every reader depends on. It owns every migration, every prepared statement and the connection pool, so nothing else in the tree may open a socket to Postgres. Reads go through a replica when one is configured, writes never do.',
+          owns: ['src/db/**', 'migrations/*.sql', 'scripts/seed/*.ts', 'shared/queries/**']
+        },
         { id: 'worker', purpose: 'Background jobs', owns: ['src/worker/**'] }
       ],
       edges: [
@@ -34,8 +39,8 @@ function installMock() {
       forbidden: [{ from: 'db', to: 'api', reason: 'db must not depend on api' }],
       packages: ['express', 'pg']
     },
-    '/demo/project-beta': {
-      title: 'Project Beta',
+    '/Users/demo/code/reporter/dashboard': {
+      title: 'Architecture',
       summary: 'Empty scaffold, nothing drawn yet.',
       components: [],
       edges: [],
@@ -45,51 +50,51 @@ function installMock() {
   }
 
   const pendingByRoot: Record<string, Pending[]> = {
-    '/demo/project-alpha': [
+    '/Users/demo/code/reporter/bot': [
       {
         id: 'p1',
-        projectRoot: '/demo/project-alpha',
+        projectRoot: '/Users/demo/code/reporter/bot',
         proposal: { kind: 'component', id: 'cache', purpose: 'Redis cache layer', owns: ['src/cache/**'] },
         rationale: 'Repeated db reads on hot paths need caching.',
         createdAt: Date.now() - 60_000
       },
       {
         id: 'p2',
-        projectRoot: '/demo/project-alpha',
+        projectRoot: '/Users/demo/code/reporter/bot',
         proposal: { kind: 'edge', from: 'db', to: 'api' },
         rationale: 'db needs to call back into the api client for notifications.',
         createdAt: Date.now() - 50_000
       },
       {
         id: 'p3',
-        projectRoot: '/demo/project-alpha',
+        projectRoot: '/Users/demo/code/reporter/bot',
         proposal: { kind: 'package', name: 'zod', component: 'api' },
         rationale: 'Request validation at the boundary.',
         createdAt: Date.now() - 40_000
       },
       {
         id: 'p4',
-        projectRoot: '/demo/project-alpha',
+        projectRoot: '/Users/demo/code/reporter/bot',
         proposal: { kind: 'file', path: 'src/api/routes/users.ts', component: 'api' },
         rationale: 'New route file for the users resource.',
         createdAt: Date.now() - 30_000
       },
       {
         id: 'p5',
-        projectRoot: '/demo/project-alpha',
+        projectRoot: '/Users/demo/code/reporter/bot',
         proposal: { kind: 'file', path: 'src/legacy/old.ts', component: 'legacy' },
         rationale: 'Migrated file with no clear owner yet.',
         createdAt: Date.now() - 20_000
       },
       {
         id: 'p6',
-        projectRoot: '/demo/project-alpha',
+        projectRoot: '/Users/demo/code/reporter/bot',
         proposal: { kind: 'edge', from: 'ghost-comp', to: 'api' },
         rationale: 'Stale proposal referencing a component that was since removed.',
         createdAt: Date.now() - 10_000
       }
     ],
-    '/demo/project-beta': []
+    '/Users/demo/code/reporter/dashboard': []
   }
 
   const changeListeners = new Set<(a: Architecture) => void>()
@@ -122,7 +127,7 @@ function installMock() {
       return arch
     },
     async pending() {
-      return pendingByRoot['/demo/project-alpha'] ?? []
+      return pendingByRoot['/Users/demo/code/reporter/bot'] ?? []
     },
     async mcpBridgeInfo() {
       return { path: '/Users/demo/.architect/bin/architect-mcp.mjs', exists: true }

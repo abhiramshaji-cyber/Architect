@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Architecture } from '../shared/types'
-import { build, positions, roleOf } from './layout'
+import { build, folderName, positions, roleOf, statusOf, type NodeData } from './layout'
 
 function architecture(components: string[], edges: [string, string][]): Architecture {
   return {
@@ -38,6 +38,49 @@ describe('roleOf', () => {
 
   it('treats a component with no edges at all as an entry', () => {
     expect(roleOf('alone', [])).toBe('entry')
+  })
+})
+
+describe('folderName', () => {
+  it('uses the last path segment', () => {
+    expect(folderName('/Users/x/repo/reporter/bot')).toBe('bot')
+  })
+
+  it('ignores a trailing separator', () => {
+    expect(folderName('/Users/x/repo/reporter/bot/')).toBe('bot')
+  })
+
+  it('handles windows separators', () => {
+    expect(folderName('C:\\Users\\x\\bot')).toBe('bot')
+  })
+
+  it('falls back to the root itself when there is no segment', () => {
+    expect(folderName('/')).toBe('/')
+  })
+})
+
+describe('statusOf', () => {
+  const data = (over: Partial<NodeData>): NodeData => ({
+    kind: 'component',
+    label: 'a',
+    purpose: '',
+    owns: [],
+    ghost: false,
+    role: 'middle',
+    badges: [],
+    ...over
+  })
+
+  it('reports the role of a drawn component', () => {
+    expect(statusOf(data({ role: 'entry' }))).toBe('entry')
+  })
+
+  it('reports a ghost as proposed', () => {
+    expect(statusOf(data({ ghost: true }))).toBe('proposed')
+  })
+
+  it('reports an unowned file proposal as having no owner', () => {
+    expect(statusOf(data({ kind: 'file', ghost: true, unassigned: true }))).toBe('no owner')
   })
 })
 

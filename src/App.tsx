@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Architecture, McpBridgeInfo, Pending } from '../shared/types'
 import Canvas from './Canvas'
 import ConnectMcpPanel from './ConnectMcpPanel'
-import { hasCycle } from './layout'
+import { folderName, hasCycle } from './layout'
 
 type ProjectSummary = { root: string; title: string }
 
@@ -86,16 +86,20 @@ export default function App() {
         <div className="sidebar-section">
           <h1>Architect</h1>
           <ul className="project-list">
-            {projects.map((p) => (
-              <li key={p.root}>
-                <button
-                  className={p.root === currentRoot ? 'project active' : 'project'}
-                  onClick={() => openProject(p.root)}
-                >
-                  {p.title}
-                </button>
-              </li>
-            ))}
+            {projects.map((p) => {
+              const folder = folderName(p.root)
+              return (
+                <li key={p.root}>
+                  <button
+                    className={p.root === currentRoot ? 'project active' : 'project'}
+                    onClick={() => openProject(p.root)}
+                  >
+                    <span className="project-folder">{folder}</span>
+                    {p.title !== folder && <span className="project-title">{p.title}</span>}
+                  </button>
+                </li>
+              )
+            })}
             {projects.length === 0 && <li className="empty">No projects yet</li>}
           </ul>
           <button className="sidebar-action" onClick={openConnectMcp}>
@@ -166,9 +170,10 @@ export default function App() {
           <>
             <header className="canvas-header">
               <h2>{architecture.title}</h2>
+              {currentRoot && <p className="canvas-path">{currentRoot}</p>}
               <p>{architecture.summary}</p>
             </header>
-            <Canvas architecture={architecture} pending={projectPending} />
+            <Canvas key={currentRoot} architecture={architecture} pending={projectPending} />
           </>
         ) : (
           <div className="empty-state">Select a project to open its architecture</div>

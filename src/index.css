@@ -81,14 +81,31 @@ body {
 
 .project {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
+  border-left: 2px solid transparent;
   color: var(--text);
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 13px;
   cursor: pointer;
+}
+
+.project-folder {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.project-title {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
 }
 
 .project:hover {
@@ -98,7 +115,12 @@ body {
 .project.active {
   background: #182238;
   border-color: #2a3a5c;
+  border-left-color: var(--accent);
   color: var(--accent);
+}
+
+.project.active .project-title {
+  color: #7f9ad6;
 }
 
 .empty {
@@ -205,6 +227,125 @@ body {
   margin: 0;
   font-size: 13px;
   color: var(--text-dim);
+}
+
+.canvas-header .canvas-path {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  opacity: 0.8;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+
+.canvas-stage {
+  flex: 1;
+  position: relative;
+  display: flex;
+  min-height: 0;
+}
+
+.inspector {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 60%;
+  z-index: 10;
+  overflow-y: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  padding: 16px 18px 20px;
+  box-shadow: -12px 0 32px rgb(0 0 0 / 0.35);
+}
+
+.inspector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inspector-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.inspector-id {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.inspector-status {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.inspector-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.inspector-close:hover {
+  color: var(--text);
+}
+
+.inspector-section {
+  margin-top: 16px;
+}
+
+.inspector-section h3 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.inspector-purpose {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.inspector-owns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.react-flow__node.selected .node {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(91 140 255 / 0.18), 0 6px 16px rgb(0 0 0 / 0.35);
+}
+
+.react-flow__node {
+  cursor: pointer;
 }
 
 .canvas-area .react-flow {

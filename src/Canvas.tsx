@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   ReactFlow,
@@ -13,7 +13,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Architecture, Pending } from '../shared/types'
-import { build, positions, sides, NODE_W, NODE_H, type NodeData } from './layout'
+import Inspector from './Inspector'
+import { build, positions, sides, statusOf, NODE_W, NODE_H, type NodeData } from './layout'
 
 type CanvasProps = {
   architecture: Architecture
@@ -49,7 +50,7 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
       ))}
       <div className="node-head">
         <span className="node-id">{data.label}</span>
-        <span className="node-role">{data.ghost ? (data.unassigned ? 'no owner' : 'proposed') : data.role}</span>
+        <span className="node-role">{statusOf(data)}</span>
       </div>
       {data.purpose && <div className="node-purpose">{data.purpose}</div>}
       {data.owns.length > 0 && (
@@ -73,6 +74,8 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
 const nodeTypes = { component: ComponentNode }
 
 export default function Canvas({ architecture, pending }: CanvasProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
   const { nodes, edges } = useMemo(() => {
     const { nodes: logical, links } = build(architecture, pending)
     const at = positions(logical, links)
@@ -121,19 +124,40 @@ export default function Canvas({ architecture, pending }: CanvasProps) {
     return { nodes: rfNodes, edges: rfEdges }
   }, [architecture, pending])
 
+  const marked = useMemo(
+    () => nodes.map((n) => ({ ...n, selected: n.id === selectedId })),
+    [nodes, selectedId]
+  )
+
+  const selected = nodes.find((n) => n.id === selectedId)?.data ?? null
+
+  const close = useCallback(() => setSelectedId(null), [])
+
+  useEffect(() => {
+    if (!selected) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelectedId(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selected])
+
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      nodesDraggable={false}
-      fitView
-      fitViewOptions={{ padding: 0.14 }}
-      minZoom={0.2}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background gap={26} size={1} color="#1e232c" />
-      <Controls showInteractive={false} />
-    </ReactFlow>
+    <div className="canvas-stage">
+      <ReactFlow
+        nodes={marked}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        nodesDraggable={false}
+        fitView
+        fitViewOptions={{ padding: 0.14 }}
+        minZoom={0.2}
+        proOptions={{ hideAttribution: true }}
+        onNodeClick={(_event, node) => setSelectedId(node.id)}
+        onPaneClick={close}
+      >
+        <Background gap={26} size={1} color="#1e232c" />
+        <Controls showInteractive={false} />
+      </ReactFlow>
+      {selected && <Inspector node={selected} onClose={close} />}
+    </div>
   )
 }

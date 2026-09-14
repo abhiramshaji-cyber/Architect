@@ -4,6 +4,7 @@ import type { Architecture, Edge, Pending, Proposal } from '../shared/types'
 export type Role = 'entry' | 'foundation' | 'middle'
 
 export type NodeData = {
+  kind: 'component' | 'file'
   label: string
   purpose: string
   owns: string[]
@@ -53,6 +54,17 @@ export function hasCycle(edges: Edge[], from: string, to: string): boolean {
   return findCycleEdges(edges, from, to) !== null
 }
 
+export function statusOf(data: NodeData): string {
+  if (data.unassigned) return 'no owner'
+  if (data.ghost) return 'proposed'
+  return data.role
+}
+
+export function folderName(root: string): string {
+  const segments = root.split(/[/\\]/).filter(Boolean)
+  return segments[segments.length - 1] ?? root
+}
+
 export function roleOf(id: string, edges: Edge[]): Role {
   const dependsOnSomething = edges.some((e) => e.from === id)
   const somethingDependsOnIt = edges.some((e) => e.to === id)
@@ -83,6 +95,7 @@ export function build(architecture: Architecture, pending: Pending[]) {
   const nodes: Logical[] = architecture.components.map((c) => ({
     id: c.id,
     data: {
+      kind: 'component',
       label: c.id,
       purpose: c.purpose,
       owns: c.owns,
@@ -106,6 +119,7 @@ export function build(architecture: Architecture, pending: Pending[]) {
       nodes.push({
         id: `ghost-component-${p.id}`,
         data: {
+          kind: 'component',
           label: proposal.id,
           purpose: proposal.purpose,
           owns: proposal.owns,
@@ -123,6 +137,7 @@ export function build(architecture: Architecture, pending: Pending[]) {
       nodes.push({
         id,
         data: {
+          kind: 'file',
           label: proposal.path.split('/').pop() ?? proposal.path,
           purpose: proposal.path,
           owns: [],
