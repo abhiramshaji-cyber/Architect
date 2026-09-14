@@ -175,6 +175,36 @@ describe('project resolution', () => {
     expect(seen.at(-1)).toEqual([{ root: tmpRoot, title: 'Test' }])
   })
 
+  it('remembers registered projects across a restart', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    const c = await client(socketPath)
+    await c.request({ op: 'get_architecture', cwd: tmpRoot })
+    c.close()
+    await daemon.close()
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    expect(daemon.projects()).toEqual([{ root: tmpRoot, title: 'Test' }])
+  })
+
+  it('drops a remembered project whose architect.md is gone or malformed', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    const c = await client(socketPath)
+    await c.request({ op: 'get_architecture', cwd: tmpRoot })
+    c.close()
+    await daemon.close()
+
+    fs.rmSync(path.join(tmpRoot, 'architect.md'))
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    expect(daemon.projects()).toEqual([])
+  })
+
   it('does not notify again for an already registered project', async () => {
     writeArchitect(tmpRoot, fixture(component('api')))
     daemon = createDaemon({ socketPath })

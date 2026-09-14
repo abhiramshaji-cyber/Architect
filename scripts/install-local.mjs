@@ -28,6 +28,16 @@ try {
   execFileSync('pkill', ['-x', 'Architect'])
 } catch {}
 
+// await-exit
+for (let i = 0; i < 50; i++) {
+  try {
+    execFileSync('pgrep', ['-x', 'Architect'], { stdio: 'ignore' })
+    execFileSync('sleep', ['0.2'])
+  } catch {
+    break
+  }
+}
+
 const target = join(APPS, NAME)
 rmSync(target, { recursive: true, force: true })
 cpSync(built, target, { recursive: true, verbatimSymlinks: true })

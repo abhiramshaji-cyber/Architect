@@ -18,6 +18,7 @@
     "shot": "node scripts/shot.mjs"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^1.1.4",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@xyflow/react": "^12.0.0",
     "chokidar": "^4.0.0",

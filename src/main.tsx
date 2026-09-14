@@ -21,9 +21,9 @@ function installMock() {
       title: 'Project Alpha',
       summary: 'A small service split into API, database access and background workers.',
       components: [
-        { id: 'api', purpose: 'HTTP API layer', owns: ['src/api/**'], position: { x: 80, y: 80 } },
-        { id: 'db', purpose: 'Database access', owns: ['src/db/**'], position: { x: 440, y: 80 } },
-        { id: 'worker', purpose: 'Background jobs', owns: ['src/worker/**'], position: { x: 260, y: 320 } }
+        { id: 'api', purpose: 'HTTP API layer', owns: ['src/api/**'] },
+        { id: 'db', purpose: 'Database access', owns: ['src/db/**'] },
+        { id: 'worker', purpose: 'Background jobs', owns: ['src/worker/**'] }
       ],
       edges: [
         { from: 'api', to: 'db' },
@@ -100,8 +100,7 @@ function installMock() {
       arch.components.push({
         id: proposal.id,
         purpose: proposal.purpose,
-        owns: proposal.owns,
-        position: { x: 260, y: 80 }
+        owns: proposal.owns
       })
     } else if (proposal.kind === 'edge') {
       arch.edges.push({ from: proposal.from, to: proposal.to })
@@ -114,6 +113,9 @@ function installMock() {
   window.architect = {
     async projects() {
       return Object.entries(roots).map(([root, title]) => ({ root, title }))
+    },
+    async add() {
+      return null
     },
     async open(root) {
       const arch = architectures[root]
@@ -141,16 +143,6 @@ function installMock() {
         return
       }
       void reason
-    },
-    async move(id, x, y) {
-      for (const arch of Object.values(architectures)) {
-        const component = arch.components.find((c) => c.id === id)
-        if (component) {
-          component.position = { x, y }
-          changeListeners.forEach((fn) => fn(arch))
-          return
-        }
-      }
     },
     onChange(fn) {
       changeListeners.add(fn)

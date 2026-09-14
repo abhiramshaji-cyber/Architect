@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { SOCKET_PATH, type Architecture, type Pending } from '../shared/types'
 import { createDaemon } from './daemon'
 
@@ -47,11 +47,24 @@ function createTray() {
 function wireIpc() {
   ipcMain.handle('architect:projects', () => daemon.projects())
   ipcMain.handle('architect:open', (_event, root: string) => daemon.open(root))
+  ipcMain.handle('architect:add', async () => {
+    const picked = await dialog.showOpenDialog({
+      title: 'Pick a repo containing architect.md',
+      properties: ['openDirectory'],
+    })
+    const root = picked.filePaths[0]
+    if (picked.canceled || !root) return null
+    try {
+      const architecture = await daemon.open(root)
+      return { root, title: architecture.title }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
   ipcMain.handle('architect:pending', () => daemon.pending())
   ipcMain.handle('architect:decide', (_event, id: string, approved: boolean, reason?: string, component?: string) =>
     daemon.decide(id, approved, reason, component),
   )
-  ipcMain.handle('architect:move', (_event, id: string, x: number, y: number) => daemon.move(id, x, y))
 }
 
 app.whenReady().then(async () => {
@@ -69,7 +82,14 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send('architect:projects-update', projects)
   })
 
-  await daemon.listen()
+  try {
+    await daemon.listen()
+  } catch (err) {
+    dialog.showErrorBox('Architect could not start', err instanceof Error ? err.message : String(err))
+    app.quit()
+    return
+  }
+
   app.setLoginItemSettings({ openAtLogin: true })
   mainWindow = createWindow()
 })

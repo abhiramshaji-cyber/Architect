@@ -12,10 +12,6 @@ function section(markdown: string, heading: string): string {
   return next === -1 ? rest : rest.slice(0, next)
 }
 
-function fallbackPosition(index: number): { x: number; y: number } {
-  return { x: (index % 4) * 200, y: Math.floor(index / 4) * 200 }
-}
-
 export function parse(markdown: string): Architecture {
   const titleMatch = markdown.match(/^# (.+)$/m)
   const title = titleMatch?.[1]?.trim() ?? ''
@@ -42,25 +38,10 @@ export function parse(markdown: string): Architecture {
     const owns = ownsLines.map((l) => l.match(/`([^`]*)`/)?.[1] ?? '')
     const purpose = purposeLine ?? ''
 
-    components.push({ id, purpose, owns, position: { x: 0, y: 0 } })
+    components.push({ id, purpose, owns })
   }
 
   const knownIds = new Set(components.map((c) => c.id))
-
-  // layout
-  const layoutMatch = markdown.match(/<!-- architect:layout\n([\s\S]*?)-->/)
-  const positions = new Map<string, { x: number; y: number }>()
-  if (layoutMatch) {
-    for (const line of nonEmptyLines(layoutMatch[1] ?? '')) {
-      const m = line.match(/^([^:]+):\s*(-?\d+)\s*,\s*(-?\d+)$/)
-      if (!m) continue
-      positions.set((m[1] ?? '').trim(), { x: Number(m[2]), y: Number(m[3]) })
-    }
-  }
-
-  components.forEach((c, i) => {
-    c.position = positions.get(c.id) ?? fallbackPosition(i)
-  })
 
   // dependencies
   const edges: Edge[] = []
@@ -112,10 +93,6 @@ export function serialize(architecture: Architecture): string {
   lines.push('', '## Packages', '')
   for (const p of architecture.packages) lines.push(`- ${p}`)
 
-  lines.push('', '<!-- architect:layout')
-  for (const c of architecture.components) lines.push(`${c.id}: ${c.position.x},${c.position.y}`)
-  lines.push('-->', '')
-
   return lines.join('\n')
 }
 
@@ -141,12 +118,7 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
 
   if (proposal.kind === 'component') {
     if (next.components.some((c) => c.id === proposal.id)) return next
-    next.components.push({
-      id: proposal.id,
-      purpose: proposal.purpose,
-      owns: proposal.owns,
-      position: fallbackPosition(next.components.length),
-    })
+    next.components.push({ id: proposal.id, purpose: proposal.purpose, owns: proposal.owns })
     return next
   }
 

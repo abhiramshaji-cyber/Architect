@@ -44,6 +44,37 @@ export function createDaemon(options: DaemonOptions = {}) {
     return path.join(root, 'architect.md')
   }
 
+  const statePath = path.join(path.dirname(socketPath), 'projects.json')
+
+  function saveProjects() {
+    try {
+      fs.mkdirSync(path.dirname(statePath), { recursive: true })
+      fs.writeFileSync(statePath, JSON.stringify([...projects.keys()], null, 2))
+    } catch (err) {
+      console.error('could not persist project list:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  function restoreProjects() {
+    let roots: unknown
+    try {
+      roots = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+    } catch {
+      return
+    }
+    if (!Array.isArray(roots)) return
+
+    for (const root of roots) {
+      if (typeof root !== 'string') continue
+      try {
+        loadProject(root)
+      } catch {
+        continue
+      }
+    }
+    saveProjects()
+  }
+
   function notifyPending() {
     pendingListener?.([...pending.values()].map((e) => e.pending))
   }
@@ -107,6 +138,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     state.watcher = watcher
 
     projects.set(root, state)
+    saveProjects()
     notifyProjects()
     return state
   }
@@ -214,18 +246,6 @@ export function createDaemon(options: DaemonOptions = {}) {
     notifyPending()
   }
 
-  async function move(id: string, x: number, y: number): Promise<void> {
-    if (!activeRoot) return
-    const project = projects.get(activeRoot)
-    if (!project) return
-    const target = project.architecture.components.find((c) => c.id === id)
-    if (!target) return
-    target.position = { x, y }
-    const content = serialize(project.architecture)
-    project.lastWrittenContent = content
-    fs.writeFileSync(architectMdPath(project.root), content)
-  }
-
   async function open(root: string): Promise<Architecture> {
     const state = loadProject(root)
     activeRoot = root
@@ -304,6 +324,8 @@ export function createDaemon(options: DaemonOptions = {}) {
   }
 
   async function listen(): Promise<void> {
+    restoreProjects()
+
     if (process.platform !== 'win32') {
       fs.mkdirSync(path.dirname(socketPath), { recursive: true })
       if (fs.existsSync(socketPath)) {
@@ -338,7 +360,6 @@ export function createDaemon(options: DaemonOptions = {}) {
     open,
     pending: () => [...pending.values()].map((e) => e.pending),
     decide,
-    move,
     onChange: (fn: (a: Architecture) => void) => {
       changeListener = fn
     },

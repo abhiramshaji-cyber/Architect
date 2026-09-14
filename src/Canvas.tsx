@@ -1,25 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import dagre from '@dagrejs/dagre'
 import {
   ReactFlow,
   Background,
   Controls,
   MarkerType,
-  applyNodeChanges,
   Handle,
   Position,
   type Node,
   type Edge as RFEdge,
-  type NodeChange,
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Architecture, Edge, Pending, Proposal } from '../shared/types'
+
+type Role = 'entry' | 'foundation' | 'middle'
 
 type NodeData = {
   label: string
   purpose: string
   owns: string[]
   ghost: boolean
+  role: Role
   badges: string[]
   unassigned?: boolean
 }
@@ -27,46 +29,15 @@ type NodeData = {
 type CanvasProps = {
   architecture: Architecture
   pending: Pending[]
-  onMove: (id: string, x: number, y: number) => void
-}
-
-function edgeId(e: Edge): string {
-  return `${e.from}->${e.to}`
 }
 
 const NODE_W = 220
-const NODE_H = 96
+const NODE_H = 104
 const INK = '#7d8794'
 const DANGER = '#e5484d'
 const PROPOSE = '#6ee7b7'
 
 type Pt = { x: number; y: number }
-
-function sides(a: Pt, b: Pt) {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? { s: 'r', t: 'l' } : { s: 'l', t: 'r' }
-  return dy > 0 ? { s: 'b', t: 't' } : { s: 't', t: 'b' }
-}
-
-function centers(architecture: Architecture): Map<string, Pt> {
-  return new Map(
-    architecture.components.map((c) => [c.id, { x: c.position.x + NODE_W / 2, y: c.position.y + NODE_H / 2 }])
-  )
-}
-
-function marker(color: string) {
-  return { type: MarkerType.ArrowClosed, width: 16, height: 16, color }
-}
-
-function place(desired: Pt, taken: Pt[]): Pt {
-  const collides = (p: Pt) =>
-    taken.some((t) => Math.abs(t.x - p.x) < NODE_W + 28 && Math.abs(t.y - p.y) < NODE_H + 28)
-  let p = desired
-  for (let i = 0; i < 16 && collides(p); i++) p = { x: p.x, y: p.y + NODE_H + 44 }
-  taken.push(p)
-  return p
-}
 
 export function findCycleEdges(edges: Edge[], from: string, to: string): Edge[] | null {
   if (from === to) return []
@@ -103,139 +74,129 @@ export function hasCycle(edges: Edge[], from: string, to: string): boolean {
   return findCycleEdges(edges, from, to) !== null
 }
 
+export function roleOf(id: string, edges: Edge[]): Role {
+  const dependsOnSomething = edges.some((e) => e.from === id)
+  const somethingDependsOnIt = edges.some((e) => e.to === id)
+  if (!somethingDependsOnIt) return 'entry'
+  if (!dependsOnSomething) return 'foundation'
+  return 'middle'
+}
+
+function sides(a: Pt, b: Pt) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  if (Math.abs(dy) >= Math.abs(dx)) return dy > 0 ? { s: 'b', t: 't' } : { s: 't', t: 'b' }
+  return dx > 0 ? { s: 'r', t: 'l' } : { s: 'l', t: 'r' }
+}
+
+function marker(color: string) {
+  return { type: MarkerType.ArrowClosed, width: 15, height: 15, color }
+}
+
 function packageBadges(componentId: string, pending: Pending[]): string[] {
   return pending
     .filter((p) => p.proposal.kind === 'package' && p.proposal.component === componentId)
     .map((p) => (p.proposal as Extract<Proposal, { kind: 'package' }>).name)
 }
 
-function buildNodes(architecture: Architecture, pending: Pending[]): Node<NodeData>[] {
-  const realNodes: Node<NodeData>[] = architecture.components.map((c) => ({
+type Logical = { id: string; data: NodeData }
+type Link = { id: string; from: string; to: string; kind: 'real' | 'proposed' | 'owns'; cyclical: boolean }
+
+function build(architecture: Architecture, pending: Pending[]) {
+  const ids = new Set(architecture.components.map((c) => c.id))
+
+  const nodes: Logical[] = architecture.components.map((c) => ({
     id: c.id,
-    type: 'component',
-    position: c.position,
     data: {
       label: c.id,
       purpose: c.purpose,
       owns: c.owns,
       ghost: false,
+      role: roleOf(c.id, architecture.edges),
       badges: packageBadges(c.id, pending)
     }
   }))
 
-  const maxX = architecture.components.reduce((m, c) => Math.max(m, c.position.x), 0)
-  const taken: Pt[] = architecture.components.map((c) => c.position)
+  const links: Link[] = architecture.edges.map((e) => ({
+    id: `${e.from}->${e.to}`,
+    from: e.from,
+    to: e.to,
+    kind: 'real',
+    cyclical: false
+  }))
 
-  const ghostComponents = pending.filter((p) => p.proposal.kind === 'component')
-  ghostComponents.forEach((p, i) => {
-    const proposal = p.proposal as Extract<Proposal, { kind: 'component' }>
-    realNodes.push({
-      id: `ghost-component-${p.id}`,
-      type: 'component',
-      draggable: false,
-      position: place({ x: maxX + 300, y: 80 + i * 160 }, taken),
-      data: { label: proposal.id, purpose: proposal.purpose, owns: proposal.owns, ghost: true, badges: [] }
-    })
-  })
+  for (const p of pending) {
+    if (p.proposal.kind === 'component') {
+      const proposal = p.proposal
+      nodes.push({
+        id: `ghost-component-${p.id}`,
+        data: {
+          label: proposal.id,
+          purpose: proposal.purpose,
+          owns: proposal.owns,
+          ghost: true,
+          role: 'middle',
+          badges: []
+        }
+      })
+    }
 
-  const minX = architecture.components.reduce((m, c) => Math.min(m, c.position.x), 0)
-  const minY = architecture.components.reduce((m, c) => Math.min(m, c.position.y), 0)
+    if (p.proposal.kind === 'file') {
+      const proposal = p.proposal
+      const owned = ids.has(proposal.component)
+      const id = `ghost-file-${p.id}`
+      nodes.push({
+        id,
+        data: {
+          label: proposal.path.split('/').pop() ?? proposal.path,
+          purpose: proposal.path,
+          owns: [],
+          ghost: true,
+          role: 'middle',
+          badges: [],
+          unassigned: !owned
+        }
+      })
+      if (owned) links.push({ id: `owns-${p.id}`, from: proposal.component, to: id, kind: 'owns', cyclical: false })
+    }
 
-  let unassignedIndex = 0
-  const fileProposals = pending.filter((p) => p.proposal.kind === 'file')
-  fileProposals.forEach((p) => {
-    const proposal = p.proposal as Extract<Proposal, { kind: 'file' }>
-    const owner = architecture.components.find((c) => c.id === proposal.component)
-    const position = place(
-      owner
-        ? { x: owner.position.x, y: owner.position.y + NODE_H + 90 }
-        : { x: minX - 320, y: minY + unassignedIndex++ * 130 },
-      taken
-    )
-    realNodes.push({
-      id: `ghost-file-${p.id}`,
-      type: 'component',
-      draggable: false,
-      position,
-      data: {
-        label: proposal.path.split('/').pop() ?? proposal.path,
-        purpose: proposal.path,
-        owns: [],
-        ghost: true,
-        badges: [],
-        unassigned: !owner
+    if (p.proposal.kind === 'edge') {
+      const proposal = p.proposal
+      if (!ids.has(proposal.from) || !ids.has(proposal.to)) continue
+      const cyclePath = findCycleEdges(architecture.edges, proposal.from, proposal.to)
+      if (cyclePath) {
+        const inCycle = new Set(cyclePath.map((e) => `${e.from}->${e.to}`))
+        for (const link of links) if (inCycle.has(link.id)) link.cyclical = true
       }
-    })
-  })
+      links.push({
+        id: `proposed-${p.id}`,
+        from: proposal.from,
+        to: proposal.to,
+        kind: 'proposed',
+        cyclical: cyclePath !== null
+      })
+    }
+  }
 
-  return realNodes
+  return { nodes, links }
 }
 
-function buildEdges(architecture: Architecture, pending: Pending[]): RFEdge[] {
-  const nodeIds = new Set(architecture.components.map((c) => c.id))
-  const at = centers(architecture)
-  const redEdgeIds = new Set<string>()
-  const ghostEdges: RFEdge[] = []
+function positions(nodes: Logical[], links: Link[]): Map<string, Pt> {
+  const g = new dagre.graphlib.Graph()
+  g.setGraph({ rankdir: 'TB', ranksep: 96, nodesep: 46, marginx: 40, marginy: 40 })
+  g.setDefaultEdgeLabel(() => ({}))
 
-  const attach = (from: string, to: string) => {
-    const a = at.get(from)
-    const b = at.get(to)
-    if (!a || !b) return {}
-    const { s, t } = sides(a, b)
-    return { sourceHandle: `s-${s}`, targetHandle: `t-${t}` }
-  }
+  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H })
+  for (const l of links) g.setEdge(l.from, l.to)
 
-  const edgeProposals = pending.filter((p) => p.proposal.kind === 'edge')
-  for (const p of edgeProposals) {
-    const proposal = p.proposal as Extract<Proposal, { kind: 'edge' }>
-    if (!nodeIds.has(proposal.from) || !nodeIds.has(proposal.to)) continue
+  dagre.layout(g)
 
-    const cyclePath = findCycleEdges(architecture.edges, proposal.from, proposal.to)
-    const cyclical = cyclePath !== null
-    if (cyclePath) cyclePath.forEach((e) => redEdgeIds.add(edgeId(e)))
-    const color = cyclical ? DANGER : PROPOSE
-
-    ghostEdges.push({
-      id: `ghost-edge-${p.id}`,
-      source: proposal.from,
-      target: proposal.to,
-      ...attach(proposal.from, proposal.to),
-      label: cyclical ? 'cycle' : 'proposed',
-      labelBgPadding: [6, 3],
-      labelBgBorderRadius: 4,
-      labelBgStyle: { fill: '#11141a', stroke: color },
-      labelStyle: { fill: color, fontSize: 10, fontWeight: 600 },
-      markerEnd: marker(color),
-      style: { strokeDasharray: '6 5', stroke: color, strokeWidth: 2 }
+  return new Map(
+    nodes.map((n) => {
+      const placed = g.node(n.id)
+      return [n.id, { x: placed.x - NODE_W / 2, y: placed.y - NODE_H / 2 }]
     })
-  }
-
-  const realEdges: RFEdge[] = architecture.edges.map((e) => {
-    const red = redEdgeIds.has(edgeId(e))
-    const color = red ? DANGER : INK
-    return {
-      id: edgeId(e),
-      source: e.from,
-      target: e.to,
-      ...attach(e.from, e.to),
-      markerEnd: marker(color),
-      style: { stroke: color, strokeWidth: red ? 2 : 1.4 }
-    }
-  })
-
-  const ownershipEdges: RFEdge[] = pending
-    .filter((p) => p.proposal.kind === 'file' && nodeIds.has((p.proposal as Extract<Proposal, { kind: 'file' }>).component))
-    .map((p) => ({
-      id: `ghost-owns-${p.id}`,
-      source: (p.proposal as Extract<Proposal, { kind: 'file' }>).component,
-      target: `ghost-file-${p.id}`,
-      sourceHandle: 's-b',
-      targetHandle: 't-t',
-      markerEnd: marker(PROPOSE),
-      style: { strokeDasharray: '3 5', stroke: PROPOSE, strokeWidth: 1.4, opacity: 0.8 }
-    }))
-
-  return [...realEdges, ...ghostEdges, ...ownershipEdges]
+  )
 }
 
 const HANDLES = [
@@ -246,7 +207,7 @@ const HANDLES = [
 ] as const
 
 function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
-  const classes = ['node']
+  const classes = ['node', `node-${data.role}`]
   if (data.ghost) classes.push('node-ghost')
   if (data.unassigned) classes.push('node-unassigned')
 
@@ -258,7 +219,10 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
       {HANDLES.map(([key, position]) => (
         <Handle key={`t-${key}`} id={`t-${key}`} type="target" position={position} />
       ))}
-      <div className="node-id">{data.label}</div>
+      <div className="node-head">
+        <span className="node-id">{data.label}</span>
+        <span className="node-role">{data.ghost ? (data.unassigned ? 'no owner' : 'proposed') : data.role}</span>
+      </div>
       {data.purpose && <div className="node-purpose">{data.purpose}</div>}
       {data.owns.length > 0 && (
         <div className="node-owns">
@@ -280,37 +244,63 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
 
 const nodeTypes = { component: ComponentNode }
 
-export default function Canvas({ architecture, pending, onMove }: CanvasProps) {
-  const initialNodes = useMemo(() => buildNodes(architecture, pending), [architecture, pending])
-  const initialEdges = useMemo(() => buildEdges(architecture, pending), [architecture, pending])
+export default function Canvas({ architecture, pending }: CanvasProps) {
+  const { nodes, edges } = useMemo(() => {
+    const { nodes: logical, links } = build(architecture, pending)
+    const at = positions(logical, links)
 
-  const [nodes, setNodes] = useState(initialNodes)
-  const [edges, setEdges] = useState(initialEdges)
+    const rfNodes: Node<NodeData>[] = logical.map((n) => ({
+      id: n.id,
+      type: 'component',
+      draggable: false,
+      position: at.get(n.id) ?? { x: 0, y: 0 },
+      data: n.data
+    }))
 
-  useEffect(() => setNodes(initialNodes), [initialNodes])
-  useEffect(() => setEdges(initialEdges), [initialEdges])
+    const center = (id: string) => {
+      const p = at.get(id) ?? { x: 0, y: 0 }
+      return { x: p.x + NODE_W / 2, y: p.y + NODE_H / 2 }
+    }
 
-  const onNodesChange = useCallback((changes: NodeChange<Node<NodeData>>[]) => {
-    setNodes((nds) => applyNodeChanges(changes, nds))
-  }, [])
+    const rfEdges: RFEdge[] = links.map((l) => {
+      const { s, t } = sides(center(l.from), center(l.to))
+      const color = l.cyclical ? DANGER : l.kind === 'real' ? INK : PROPOSE
+      const dashed = l.kind !== 'real'
+      return {
+        id: l.id,
+        source: l.from,
+        target: l.to,
+        sourceHandle: `s-${s}`,
+        targetHandle: `t-${t}`,
+        markerEnd: marker(color),
+        ...(l.cyclical && l.kind === 'proposed'
+          ? {
+              label: 'cycle',
+              labelBgPadding: [6, 3] as [number, number],
+              labelBgBorderRadius: 4,
+              labelBgStyle: { fill: '#11141a', stroke: DANGER },
+              labelStyle: { fill: DANGER, fontSize: 10, fontWeight: 600 }
+            }
+          : {}),
+        style: {
+          stroke: color,
+          strokeWidth: l.cyclical ? 2 : 1.4,
+          ...(dashed ? { strokeDasharray: l.kind === 'owns' ? '3 5' : '6 5' } : {})
+        }
+      }
+    })
 
-  const onNodeDragStop = useCallback(
-    (_: unknown, node: Node<NodeData>) => {
-      if (node.data.ghost) return
-      onMove(node.id, node.position.x, node.position.y)
-    },
-    [onMove]
-  )
+    return { nodes: rfNodes, edges: rfEdges }
+  }, [architecture, pending])
 
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
-      onNodesChange={onNodesChange}
-      onNodeDragStop={onNodeDragStop}
+      nodesDraggable={false}
       fitView
-      fitViewOptions={{ padding: 0.12 }}
+      fitViewOptions={{ padding: 0.14 }}
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
     >

@@ -37,12 +37,6 @@ ${h2} Packages
 
 - express
 - react
-
-<!-- architect:layout
-api: 100,200
-db: 300,200
-ui: 100,50
--->
 `
 
 describe('parse', () => {
@@ -55,9 +49,9 @@ describe('parse', () => {
   it('reads components with purpose and owns', () => {
     const arch = parse(fixture)
     expect(arch.components).toEqual([
-      { id: 'api', purpose: 'Handles HTTP requests.', owns: ['src/api/**', 'src/api-legacy/**'], position: { x: 100, y: 200 } },
-      { id: 'db', purpose: 'Persists orders.', owns: ['src/db/**'], position: { x: 300, y: 200 } },
-      { id: 'ui', purpose: 'Renders pages.', owns: ['src/ui/**'], position: { x: 100, y: 50 } },
+      { id: 'api', purpose: 'Handles HTTP requests.', owns: ['src/api/**', 'src/api-legacy/**'] },
+      { id: 'db', purpose: 'Persists orders.', owns: ['src/db/**'] },
+      { id: 'ui', purpose: 'Renders pages.', owns: ['src/ui/**'] },
     ])
   })
 
@@ -87,11 +81,11 @@ describe('parse', () => {
     expect(arch.packages).toEqual(['express', 'react'])
   })
 
-  it('falls back to a deterministic position when a component is absent from layout', () => {
-    const noLayout = fixture.replace(/<!-- architect:layout[\s\S]*?-->\n/, '')
-    const arch = parse(noLayout)
-    expect(arch.components[0]?.position).toEqual({ x: 0, y: 0 })
-    expect(arch.components[1]?.position).not.toEqual(arch.components[0]?.position)
+  it('ignores a leftover layout block from before the migration', () => {
+    const withLayout = `${fixture}\n<!-- architect:layout\napi: 100,200\ndb: 300,200\nui: 100,50\n-->\n`
+    const arch = parse(withLayout)
+    expect(arch).toEqual(parse(fixture))
+    expect(serialize(arch)).not.toMatch(/architect:layout/)
   })
 
   it('throws on an edge naming a component that does not exist', () => {
@@ -164,12 +158,11 @@ describe('apply', () => {
     expect(result.edges).toContainEqual({ from: 'db', to: 'ui' })
   })
 
-  it('adds a new component with a deterministic position', () => {
+  it('adds a new component', () => {
     const proposal = { kind: 'component' as const, id: 'cache', purpose: 'Caches responses.', owns: ['src/cache/**'] }
     const result = apply(arch, proposal)
     const added = result.components.find((c) => c.id === 'cache')
-    expect(added).toMatchObject({ id: 'cache', purpose: 'Caches responses.', owns: ['src/cache/**'] })
-    expect(added?.position).toEqual({ x: expect.any(Number), y: expect.any(Number) })
+    expect(added).toEqual({ id: 'cache', purpose: 'Caches responses.', owns: ['src/cache/**'] })
   })
 
   it('is a no op for a duplicate component', () => {

@@ -20,6 +20,7 @@ export default function App() {
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [reassign, setReassign] = useState<Record<string, string>>({})
+  const [addError, setAddError] = useState<string | null>(null)
 
   const openProject = useCallback((root: string) => {
     window.architect.open(root).then((a) => {
@@ -70,9 +71,16 @@ export default function App() {
     [decide, reassign]
   )
 
-  const move = useCallback((id: string, x: number, y: number) => {
-    void window.architect.move(id, x, y)
-  }, [])
+  const addProject = useCallback(async () => {
+    const result = await window.architect.add()
+    if (!result) return
+    if ('error' in result) {
+      setAddError(result.error)
+      return
+    }
+    setAddError(null)
+    openProject(result.root)
+  }, [openProject])
 
   return (
     <div className="app">
@@ -90,8 +98,12 @@ export default function App() {
                 </button>
               </li>
             ))}
-            {projects.length === 0 && <li className="empty">No projects registered</li>}
+            {projects.length === 0 && <li className="empty">No projects yet</li>}
           </ul>
+          <button className="add-project" onClick={addProject}>
+            Add project
+          </button>
+          {addError && <p className="add-error">{addError}</p>}
         </div>
 
         <div className="sidebar-section inbox">
@@ -159,7 +171,7 @@ export default function App() {
               <h2>{architecture.title}</h2>
               <p>{architecture.summary}</p>
             </header>
-            <Canvas architecture={architecture} pending={projectPending} onMove={move} />
+            <Canvas architecture={architecture} pending={projectPending} />
           </>
         ) : (
           <div className="empty-state">Select a project to open its architecture</div>
