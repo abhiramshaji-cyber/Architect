@@ -507,3 +507,21 @@ describe('correctness requirements', () => {
     c.close()
   })
 })
+
+describe('project persistence', () => {
+  it('keeps remembering a project whose architect.md could not be read', async () => {
+    const good = fs.mkdtempSync(path.join(tmpRoot, 'good-'))
+    const gone = path.join(tmpRoot, 'gone')
+    writeArchitect(good, fixture(component('api')))
+
+    const statePath = path.join(path.dirname(socketPath), 'projects.json')
+    fs.mkdirSync(path.dirname(statePath), { recursive: true })
+    fs.writeFileSync(statePath, JSON.stringify([good, gone]))
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    expect(daemon.projects().map((p) => p.root)).toEqual([good])
+    expect(JSON.parse(fs.readFileSync(statePath, 'utf8'))).toEqual([good, gone])
+  })
+})

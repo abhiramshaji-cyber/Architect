@@ -45,11 +45,12 @@ export function createDaemon(options: DaemonOptions = {}) {
   }
 
   const statePath = path.join(path.dirname(socketPath), 'projects.json')
+  const remembered = new Set<string>()
 
   function saveProjects() {
     try {
       fs.mkdirSync(path.dirname(statePath), { recursive: true })
-      fs.writeFileSync(statePath, JSON.stringify([...projects.keys()], null, 2))
+      fs.writeFileSync(statePath, JSON.stringify([...remembered], null, 2))
     } catch (err) {
       console.error('could not persist project list:', err instanceof Error ? err.message : err)
     }
@@ -66,10 +67,11 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     for (const root of roots) {
       if (typeof root !== 'string') continue
+      remembered.add(root)
       try {
         loadProject(root)
-      } catch {
-        continue
+      } catch (err) {
+        console.error(`could not open ${root}:`, err instanceof Error ? err.message : err)
       }
     }
     saveProjects()
@@ -138,6 +140,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     state.watcher = watcher
 
     projects.set(root, state)
+    remembered.add(root)
     saveProjects()
     notifyProjects()
     return state
