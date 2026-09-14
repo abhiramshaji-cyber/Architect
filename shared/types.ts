@@ -1,7 +1,9 @@
+import { tmpdir } from 'node:os'
+
 export type Component = {
   id: string
   purpose: string
-  owns: string
+  owns: string[]
   position: { x: number; y: number }
 }
 
@@ -19,10 +21,10 @@ export type Architecture = {
 }
 
 export type Proposal =
-  | { kind: 'component'; id: string; purpose: string; owns: string }
+  | { kind: 'component'; id: string; purpose: string; owns: string[] }
   | { kind: 'edge'; from: string; to: string }
   | { kind: 'package'; name: string; component: string }
-  | { kind: 'file'; path: string }
+  | { kind: 'file'; path: string; component: string }
 
 export type Pending = {
   id: string
@@ -52,9 +54,11 @@ export type Response =
   | { id: string; ok: true; result: unknown }
   | { id: string; ok: false; error: string }
 
+const home = process.env.HOME ?? process.env.USERPROFILE ?? tmpdir()
+
 export const SOCKET_PATH =
   process.platform === 'win32'
     ? '\\\\.\\pipe\\architect'
-    : `${process.env.HOME}/.architect/sock`
+    : `${home}/.architect/sock`
 
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
