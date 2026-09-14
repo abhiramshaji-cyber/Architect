@@ -141,6 +141,9 @@ export default function App() {
           <button className="sidebar-action" onClick={openConnectMcp}>
             Connect MCP
           </button>
+          <button className="sidebar-action" onClick={flipTheme}>
+            {theme === 'light' ? 'Dark mode' : 'Light mode'}
+          </button>
         </div>
 
         <div className="sidebar-section inbox">
