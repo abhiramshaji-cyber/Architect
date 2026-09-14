@@ -24,6 +24,16 @@ export default function App() {
   const [reassign, setReassign] = useState<Record<string, string>>({})
   const [showConnectMcp, setShowConnectMcp] = useState(false)
   const [bridge, setBridge] = useState<McpBridgeInfo | null>(null)
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? 'dark')
+
+  const flipTheme = useCallback(() => {
+    const next = theme === 'light' ? 'dark' : 'light'
+    document.documentElement.dataset.theme = next
+    try {
+      localStorage.setItem('theme', next)
+    } catch {}
+    setTheme(next)
+  }, [theme])
 
   const openProject = useCallback((root: string) => {
     window.architect.open(root).then((a) => {
@@ -105,6 +115,9 @@ export default function App() {
           <button className="sidebar-action" onClick={openConnectMcp}>
             Connect MCP
           </button>
+          <button className="sidebar-action" onClick={flipTheme}>
+            {theme === 'light' ? 'Dark mode' : 'Light mode'}
+          </button>
         </div>
 
         <div className="sidebar-section inbox">
@@ -173,7 +186,7 @@ export default function App() {
               {currentRoot && <p className="canvas-path">{currentRoot}</p>}
               <p>{architecture.summary}</p>
             </header>
-            <Canvas key={currentRoot} architecture={architecture} pending={projectPending} />
+            <Canvas key={currentRoot} architecture={architecture} pending={projectPending} theme={theme} />
           </>
         ) : (
           <div className="empty-state">Select a project to open its architecture</div>
