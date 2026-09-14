@@ -19,6 +19,7 @@ export default function App() {
   const [pending, setPending] = useState<Pending[]>([])
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [reason, setReason] = useState('')
+  const [reassign, setReassign] = useState<Record<string, string>>({})
 
   useEffect(() => {
     window.architect.projects().then(setProjects)
@@ -35,15 +36,31 @@ export default function App() {
   }, [])
 
   const projectPending = useMemo(
-    () => pending.filter((p) => p.projectRoot === currentRoot),
-    [pending, currentRoot]
+    () =>
+      pending
+        .filter((p) => p.projectRoot === currentRoot)
+        .map((p) => {
+          const reassigned = p.proposal.kind === 'file' ? reassign[p.id] : undefined
+          if (!reassigned || p.proposal.kind !== 'file') return p
+          return { ...p, proposal: { ...p.proposal, component: reassigned } }
+        }),
+    [pending, currentRoot, reassign]
   )
 
-  const decide = useCallback((id: string, approved: boolean, r?: string) => {
-    void window.architect.decide(id, approved, r)
+  const decide = useCallback((id: string, approved: boolean, r?: string, component?: string) => {
+    void window.architect.decide(id, approved, r, component)
     setRejecting(null)
     setReason('')
   }, [])
+
+  const approveFile = useCallback(
+    (p: Pending) => {
+      if (p.proposal.kind !== 'file') return
+      const chosen = reassign[p.id] ?? p.proposal.component
+      decide(p.id, true, undefined, chosen)
+    },
+    [decide, reassign]
+  )
 
   const move = useCallback((id: string, x: number, y: number) => {
     void window.architect.move(id, x, y)
@@ -82,6 +99,19 @@ export default function App() {
                   <div className="pending-summary">{describe(p)}</div>
                   <div className="pending-rationale">{p.rationale}</div>
                   {cycle && <div className="pending-cycle">would introduce a cycle</div>}
+                  {p.proposal.kind === 'file' && architecture && architecture.components.length > 0 && (
+                    <select
+                      className="reassign-select"
+                      value={reassign[p.id] ?? p.proposal.component}
+                      onChange={(e) => setReassign((r) => ({ ...r, [p.id]: e.target.value }))}
+                    >
+                      {architecture.components.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.id}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {rejecting === p.id ? (
                     <div className="reject-form">
                       <input
@@ -95,7 +125,10 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="pending-actions">
-                      <button className="approve" onClick={() => decide(p.id, true)}>
+                      <button
+                        className="approve"
+                        onClick={() => (p.proposal.kind === 'file' ? approveFile(p) : decide(p.id, true))}
+                      >
                         approve
                       </button>
                       <button className="reject" onClick={() => setRejecting(p.id)}>

@@ -1,20 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Architecture, Pending, Proposal } from '../shared/types'
+import type { Architecture, ArchitectApi, Pending, Proposal } from '../shared/types'
 import App from './App'
 import './index.css'
 
 declare global {
   interface Window {
-    architect: {
-      projects(): Promise<{ root: string; title: string }[]>
-      open(root: string): Promise<Architecture>
-      pending(): Promise<Pending[]>
-      decide(id: string, approved: boolean, reason?: string): Promise<void>
-      move(id: string, x: number, y: number): Promise<void>
-      onChange(fn: (a: Architecture) => void): void
-      onPending(fn: (p: Pending[]) => void): void
-    }
+    architect: ArchitectApi
   }
 }
 
@@ -76,14 +68,14 @@ function installMock() {
       {
         id: 'p4',
         projectRoot: '/demo/project-alpha',
-        proposal: { kind: 'file', path: 'src/api/routes/users.ts' },
+        proposal: { kind: 'file', path: 'src/api/routes/users.ts', component: 'api' },
         rationale: 'New route file for the users resource.',
         createdAt: Date.now() - 30_000
       },
       {
         id: 'p5',
         projectRoot: '/demo/project-alpha',
-        proposal: { kind: 'file', path: 'src/legacy/old.ts' },
+        proposal: { kind: 'file', path: 'src/legacy/old.ts', component: 'legacy' },
         rationale: 'Migrated file with no clear owner yet.',
         createdAt: Date.now() - 20_000
       },
@@ -131,14 +123,20 @@ function installMock() {
     async pending() {
       return pendingByRoot['/demo/project-alpha'] ?? []
     },
-    async decide(id, approved, reason) {
+    async decide(id, approved, reason, component) {
       for (const root of Object.keys(pendingByRoot)) {
         const list = pendingByRoot[root]
         if (!list) continue
         const index = list.findIndex((p) => p.id === id)
         if (index === -1) continue
         const [item] = list.splice(index, 1)
-        if (item && approved) apply(root, item.proposal)
+        if (item && approved) {
+          const proposal =
+            item.proposal.kind === 'file' && component
+              ? { ...item.proposal, component }
+              : item.proposal
+          apply(root, proposal)
+        }
         pendingListeners.forEach((fn) => fn(list))
         return
       }

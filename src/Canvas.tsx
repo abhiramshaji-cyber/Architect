@@ -202,7 +202,7 @@ export default function Canvas({ architecture, pending, onMove }: CanvasProps) {
   useEffect(() => setNodes(initialNodes), [initialNodes])
   useEffect(() => setEdges(initialEdges), [initialEdges])
 
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
+  const onNodesChange = useCallback((changes: NodeChange<Node<NodeData>>[]) => {
     setNodes((nds) => applyNodeChanges(changes, nds))
   }, [])
 

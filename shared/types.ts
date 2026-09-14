@@ -50,6 +50,16 @@ export type Request =
   | { id: string; op: 'propose_change'; cwd: string; proposal: Proposal; rationale: string }
   | { id: string; op: 'await_proposal'; cwd: string; proposalId: string }
 
+export type ArchitectApi = {
+  projects(): Promise<{ root: string; title: string }[]>
+  open(root: string): Promise<Architecture>
+  pending(): Promise<Pending[]>
+  decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
+  move(id: string, x: number, y: number): Promise<void>
+  onChange(fn: (a: Architecture) => void): void
+  onPending(fn: (p: Pending[]) => void): void
+}
+
 export type Response =
   | { id: string; ok: true; result: unknown }
   | { id: string; ok: false; error: string }
