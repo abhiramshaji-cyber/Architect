@@ -59,6 +59,16 @@ function wireIpc() {
   ipcMain.handle('architect:decide', (_event, id: string, approved: boolean, reason?: string, component?: string) =>
     daemon.decide(id, approved, reason, component),
   )
+  ipcMain.handle('architect:edits', (_event, root: string) => daemon.edits(root))
+  ipcMain.handle('architect:edit', (_event, root: string, id: string) => daemon.edit(root, id))
+  ipcMain.handle('architect:create-edit', (_event, root: string, architecture: Architecture) =>
+    daemon.createEdit(root, architecture),
+  )
+  ipcMain.handle('architect:update-edit', (_event, root: string, id: string, architecture: Architecture) =>
+    daemon.updateEdit(root, id, architecture),
+  )
+  ipcMain.handle('architect:hand-edit', (_event, root: string, id: string) => daemon.handEdit(root, id))
+  ipcMain.handle('architect:delete-edit', (_event, root: string, id: string) => daemon.deleteEdit(root, id))
 }
 
 app.whenReady().then(async () => {

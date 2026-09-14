@@ -8,11 +8,14 @@ import {
   SOCKET_PATH,
   type Architecture,
   type Decision,
+  type Edit,
+  type EditSummary,
   type Pending,
   type Proposal,
   type Request,
   type Response,
 } from '../shared/types'
+import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './edits'
 import { apply, check, parse, serialize } from './graph'
 
 type Waiter = { resolve: (decision: Decision) => void; timer: ReturnType<typeof setTimeout> }
@@ -280,8 +283,17 @@ export function createDaemon(options: DaemonOptions = {}) {
           return { id: req.id, ok: true, result: decision }
         }
 
-        const decision = await awaitProposal(req.proposalId, (cancel) => cancels.add(cancel))
-        return { id: req.id, ok: true, result: decision }
+        if (req.op === 'await_proposal') {
+          const decision = await awaitProposal(req.proposalId, (cancel) => cancels.add(cancel))
+          return { id: req.id, ok: true, result: decision }
+        }
+
+        const root = resolveRoot(req.cwd)
+        if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
+        loadProject(root)
+
+        if (req.op === 'list_edits') return { id: req.id, ok: true, result: listEdits(root) }
+        return { id: req.id, ok: true, result: readEdit(root, req.editId) }
       } catch (err) {
         return { id: req.id, ok: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -363,6 +375,30 @@ export function createDaemon(options: DaemonOptions = {}) {
     open,
     pending: () => [...pending.values()].map((e) => e.pending),
     decide,
+    edits: (root: string): EditSummary[] => {
+      loadProject(root)
+      return listEdits(root)
+    },
+    edit: (root: string, id: string): Edit => {
+      loadProject(root)
+      return readEdit(root, id)
+    },
+    createEdit: (root: string, architecture: Architecture): Edit => {
+      loadProject(root)
+      return createEdit(root, architecture)
+    },
+    updateEdit: (root: string, id: string, architecture: Architecture): Edit => {
+      loadProject(root)
+      return updateEdit(root, id, architecture)
+    },
+    handEdit: (root: string, id: string): Edit => {
+      loadProject(root)
+      return handEdit(root, id)
+    },
+    deleteEdit: (root: string, id: string): void => {
+      loadProject(root)
+      deleteEdit(root, id)
+    },
     onChange: (fn: (a: Architecture) => void) => {
       changeListener = fn
     },

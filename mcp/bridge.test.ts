@@ -10,6 +10,8 @@ import {
   checkChange,
   proposeChange,
   awaitProposal,
+  listEdits,
+  getEdit,
 } from './bridge.js'
 
 function socketPath() {
@@ -192,6 +194,38 @@ describe('bridge', () => {
 
     await awaitProposal('p1', path)
     expect(seenReq).toMatchObject({ op: 'await_proposal', proposalId: 'p1' })
+
+    stopServer(server, path)
+  })
+
+  it('maps list_edits to op list_edits and returns the daemon listing', async () => {
+    let seenReq: Request | undefined
+    const listing = [{ id: '0abc-12345678', status: 'handed', title: 'Drafted' }]
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seenReq = req
+        s.write(JSON.stringify({ id: req.id, ok: true, result: listing }) + '\n')
+      })
+    })
+
+    const result = await listEdits(path)
+    expect(seenReq).toMatchObject({ op: 'list_edits' })
+    expect(JSON.parse(result.content[0].text)).toEqual(listing)
+
+    stopServer(server, path)
+  })
+
+  it('maps get_edit to op get_edit with editId', async () => {
+    let seenReq: Request | undefined
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seenReq = req
+        s.write(JSON.stringify({ id: req.id, ok: true, result: { id: 'e1', status: 'handed' } }) + '\n')
+      })
+    })
+
+    await getEdit('e1', path)
+    expect(seenReq).toMatchObject({ op: 'get_edit', editId: 'e1' })
 
     stopServer(server, path)
   })

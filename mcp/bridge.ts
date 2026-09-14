@@ -113,6 +113,11 @@ export const proposeChange = (proposal: Proposal, rationale: string, socketPath 
 export const awaitProposal = (proposalId: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'await_proposal', proposalId }, socketPath)
 
+export const listEdits = (socketPath = SOCKET_PATH) => callTool({ op: 'list_edits' }, socketPath)
+
+export const getEdit = (editId: string, socketPath = SOCKET_PATH) =>
+  callTool({ op: 'get_edit', editId }, socketPath)
+
 function main() {
   const server = new McpServer({ name: 'architect', version: '0.1.0' })
 
@@ -156,6 +161,25 @@ function main() {
       inputSchema: { proposalId: z.string() },
     },
     ({ proposalId }) => awaitProposal(proposalId),
+  )
+
+  server.registerTool(
+    'list_edits',
+    {
+      description:
+        'List the architecture edits the engineer has drawn for this project. Each entry has an id, a title and a status. A handed edit is the architecture the engineer intends this project to have: read it, discuss it, and implement it, never ignore it. A draft is still being worked on, so treat it as unfinished and do not act on it unless the engineer asks. An entry carrying an error field could not be read and should be reported back to the engineer rather than guessed at.',
+    },
+    () => listEdits(),
+  )
+
+  server.registerTool(
+    'get_edit',
+    {
+      description:
+        'Get the full architecture of one edit by id. Use it after list_edits, normally on a handed edit, to read the components, dependencies, forbidden dependencies and packages the engineer intends.',
+      inputSchema: { editId: z.string() },
+    },
+    ({ editId }) => getEdit(editId),
   )
 
   const transport = new StdioServerTransport()

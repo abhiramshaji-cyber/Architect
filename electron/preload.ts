@@ -7,6 +7,12 @@ const architect: ArchitectApi = {
   pending: () => ipcRenderer.invoke('architect:pending'),
   mcpBridgeInfo: () => ipcRenderer.invoke('architect:mcp-bridge-info'),
   decide: (id, approved, reason, component) => ipcRenderer.invoke('architect:decide', id, approved, reason, component),
+  edits: (root) => ipcRenderer.invoke('architect:edits', root),
+  edit: (root, id) => ipcRenderer.invoke('architect:edit', root, id),
+  createEdit: (root, architecture) => ipcRenderer.invoke('architect:create-edit', root, architecture),
+  updateEdit: (root, id, architecture) => ipcRenderer.invoke('architect:update-edit', root, id, architecture),
+  handEdit: (root, id) => ipcRenderer.invoke('architect:hand-edit', root, id),
+  deleteEdit: (root, id) => ipcRenderer.invoke('architect:delete-edit', root, id),
   onChange: (fn: (a: Architecture) => void) => {
     ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))
   },

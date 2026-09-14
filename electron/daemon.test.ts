@@ -5,7 +5,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { Decision, Request, Response } from '../shared/types'
+import type { Architecture, Decision, Request, Response } from '../shared/types'
 import { createDaemon } from './daemon'
 
 type OmitId<T> = T extends unknown ? Omit<T, 'id'> : never
@@ -523,5 +523,55 @@ describe('project persistence', () => {
 
     expect(daemon.projects().map((p) => p.root)).toEqual([good])
     expect(JSON.parse(fs.readFileSync(statePath, 'utf8'))).toEqual([good, gone])
+  })
+})
+
+describe('edits', () => {
+  const drafted: Architecture = {
+    title: 'Drafted',
+    summary: 'What the engineer intends.',
+    components: [{ id: 'api', purpose: 'does things', owns: ['api/**'] }],
+    edges: [],
+    forbidden: [],
+    packages: [],
+  }
+
+  it('serves the edits of the resolved project root over the socket', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    const nested = path.join(tmpRoot, 'src', 'deep')
+    fs.mkdirSync(nested, { recursive: true })
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    const c = await client(socketPath)
+
+    expect(await c.request({ op: 'list_edits', cwd: nested })).toMatchObject({ ok: true, result: [] })
+
+    const created = daemon.createEdit(tmpRoot, drafted)
+    daemon.handEdit(tmpRoot, created.id)
+
+    expect(await c.request({ op: 'list_edits', cwd: nested })).toMatchObject({
+      ok: true,
+      result: [{ id: created.id, status: 'handed', title: 'Drafted' }],
+    })
+    expect(await c.request({ op: 'get_edit', cwd: nested, editId: created.id })).toMatchObject({
+      ok: true,
+      result: { id: created.id, status: 'handed', architecture: drafted },
+    })
+
+    c.close()
+  })
+
+  it('rejects a traversing edit id over the socket', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    const c = await client(socketPath)
+
+    const res = await c.request({ op: 'get_edit', cwd: tmpRoot, editId: '../../etc/passwd' })
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toMatch(/invalid edit id/)
+
+    c.close()
   })
 })

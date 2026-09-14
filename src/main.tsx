@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Architecture, ArchitectApi, Pending, Proposal } from '../shared/types'
+import type { Architecture, ArchitectApi, Edit, Pending, Proposal } from '../shared/types'
 import App from './App'
 import './index.css'
 
@@ -97,6 +97,18 @@ function installMock() {
     '/Users/demo/code/reporter/dashboard': []
   }
 
+  const editsByRoot: Record<string, Edit[]> = {
+    '/Users/demo/code/reporter/bot': [],
+    '/Users/demo/code/reporter/dashboard': []
+  }
+  let editCounter = 0
+
+  function findEdit(root: string, id: string): Edit {
+    const edit = editsByRoot[root]?.find((e) => e.id === id)
+    if (!edit) throw new Error(`no such edit: ${id}`)
+    return edit
+  }
+
   const changeListeners = new Set<(a: Architecture) => void>()
   const pendingListeners = new Set<(p: Pending[]) => void>()
 
@@ -150,6 +162,40 @@ function installMock() {
         return
       }
       void reason
+    },
+    async edits(root) {
+      return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({
+        id,
+        status,
+        title: architecture.title
+      }))
+    },
+    async edit(root, id) {
+      return findEdit(root, id)
+    },
+    async createEdit(root, architecture) {
+      const list = editsByRoot[root]
+      if (!list) throw new Error(`unknown project: ${root}`)
+      editCounter += 1
+      const edit: Edit = { id: `e${editCounter}`, status: 'draft', architecture }
+      list.push(edit)
+      return edit
+    },
+    async updateEdit(root, id, architecture) {
+      const edit = findEdit(root, id)
+      if (edit.status === 'handed') throw new Error(`edit ${id} was already handed over and can no longer be edited`)
+      edit.architecture = architecture
+      return edit
+    },
+    async handEdit(root, id) {
+      const edit = findEdit(root, id)
+      if (edit.status === 'handed') throw new Error(`edit ${id} was already handed over`)
+      edit.status = 'handed'
+      return edit
+    },
+    async deleteEdit(root, id) {
+      const list = editsByRoot[root] ?? []
+      list.splice(list.indexOf(findEdit(root, id)), 1)
     },
     onChange(fn) {
       changeListeners.add(fn)
