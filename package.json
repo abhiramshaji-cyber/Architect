@@ -11,7 +11,8 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && vite build --config vite.mcp.config.ts",
+    "install:local": "npm run build && electron-builder --dir && node scripts/install-local.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -27,11 +28,21 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "typescript": "^5.6.0",
     "vite": "^5.4.0",
     "vitest": "^2.1.0"
+  },
+  "build": {
+    "appId": "dev.architect.app",
+    "productName": "Architect",
+    "files": ["out/**", "assets/**", "package.json"],
+    "directories": { "output": "dist" },
+    "mac": { "icon": "assets/icon.png", "category": "public.app-category.developer-tools" },
+    "win": { "icon": "assets/icon.png", "target": "nsis" },
+    "linux": { "icon": "assets/icon.png", "target": "AppImage" }
   }
 }

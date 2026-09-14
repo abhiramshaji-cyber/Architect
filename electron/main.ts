@@ -1,13 +1,16 @@
 import path from 'node:path'
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
-import type { Architecture, Pending } from '../shared/types'
+import { SOCKET_PATH, type Architecture, type Pending } from '../shared/types'
 import { createDaemon } from './daemon'
 
-const TRAY_ICON = nativeImage.createFromDataURL(
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+const TRAY_ICON = nativeImage.createFromPath(
+  path.join(import.meta.dirname, '../../assets/trayTemplate.png'),
 )
+TRAY_ICON.setTemplateImage(true)
 
-const daemon = createDaemon()
+const daemon = createDaemon({
+  socketPath: process.env.ARCHITECT_SOCKET ?? (app.isPackaged ? SOCKET_PATH : `${SOCKET_PATH}-dev`),
+})
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
@@ -16,7 +19,7 @@ function createWindow(): BrowserWindow {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(import.meta.dirname, '../preload/preload.js'),
+      preload: path.join(import.meta.dirname, '../preload/preload.mjs'),
       sandbox: false,
     },
   })
