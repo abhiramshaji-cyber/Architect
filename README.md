@@ -74,17 +74,24 @@ Architect ships with its own [`architect.md`](architect.md) describing Architect
 
 ## Install
 
-Coming with the first release. Architect is an installed desktop app for macOS and Windows, not a browser tab, because it runs in your tray and has to answer the agent the moment it asks.
+Architect is an installed desktop app for macOS and Windows, not a browser tab, because it runs in your tray and has to answer the agent the moment it asks.
 
-```json
-{
-  "mcpServers": {
-    "architect": { "command": "architect-mcp" }
-  }
-}
+Until the first packaged release, build and install it from source:
+
+```bash
+npm install
+npm run install:local
 ```
 
-One line, and every project you register is covered. The bridge sends its working directory with each call, so Architect resolves the right repo automatically.
+That installs the app and writes the MCP bridge to `~/.architect/bin/architect-mcp.mjs`, outside the app bundle, because Node cannot execute a file inside `app.asar`. Register it once, for every project:
+
+```bash
+claude mcp add --scope user architect -- node ~/.architect/bin/architect-mcp.mjs
+```
+
+One registration covers every repo. The bridge sends its working directory with each call, and Architect walks up from there to find `architect.md`, so the right project resolves automatically. A repo with no `architect.md` gets a clear error rather than silently passing.
+
+The app must be running for the bridge to reach it. It launches at login and lives in your tray.
 
 ## Status
 

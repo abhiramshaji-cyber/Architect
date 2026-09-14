@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "architect": {
-      "command": "node",
-      "args": ["out/mcp/bridge.js"]
-    }
-  }
-}

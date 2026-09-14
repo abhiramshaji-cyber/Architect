@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { cpSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { chmodSync, cpSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const APPS = '/Applications'
@@ -42,5 +43,13 @@ const target = join(APPS, NAME)
 rmSync(target, { recursive: true, force: true })
 cpSync(built, target, { recursive: true, verbatimSymlinks: true })
 
+// unpack-bridge
+const binDir = join(homedir(), '.architect', 'bin')
+const bridge = join(binDir, 'architect-mcp.mjs')
+mkdirSync(binDir, { recursive: true })
+cpSync('out/mcp/bridge.js', bridge)
+chmodSync(bridge, 0o755)
+
 execFileSync('open', ['-a', target])
 console.log(`installed ${built} -> ${target}`)
+console.log(`installed mcp bridge -> ${bridge}`)
