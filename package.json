@@ -15,7 +15,8 @@
     "install:local": "npm run build && electron-builder --dir && node scripts/install-local.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "shot": "node scripts/shot.mjs"
+    "shot": "node scripts/shot.mjs",
+    "shot:app": "node scripts/shot-app.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.4",

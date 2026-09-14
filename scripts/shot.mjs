@@ -14,7 +14,7 @@ await server.listen()
 const port = server.config.server.port ?? server.httpServer.address().port
 
 const browser = await chromium.launch({ channel: 'chrome' })
-const page = await browser.newPage({ viewportSize: { width: 1600, height: 1000 } })
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
 
 const errors = []
 page.on('console', m => m.type() === 'error' && errors.push(m.text()))
