@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Architecture, Pending } from '../shared/types'
-import Canvas, { hasCycle } from './Canvas'
+import Canvas from './Canvas'
+import { hasCycle } from './layout'
 
 type ProjectSummary = { root: string; title: string }
 
