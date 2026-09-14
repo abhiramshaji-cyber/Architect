@@ -1,0 +1,36 @@
+{
+  "name": "architect",
+  "version": "0.1.0",
+  "description": "Draw your architecture. Make Claude follow it.",
+  "license": "Apache-2.0",
+  "author": "Abhiram Shaji",
+  "type": "module",
+  "main": "out/main/main.js",
+  "bin": {
+    "architect-mcp": "out/mcp/bridge.js"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@xyflow/react": "^12.0.0",
+    "chokidar": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^33.0.0",
+    "electron-vite": "^2.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}
