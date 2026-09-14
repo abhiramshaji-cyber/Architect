@@ -6,6 +6,7 @@ const architect: ArchitectApi = {
   add: () => ipcRenderer.invoke('architect:add'),
   open: (root) => ipcRenderer.invoke('architect:open', root),
   pending: () => ipcRenderer.invoke('architect:pending'),
+  mcpBridgeInfo: () => ipcRenderer.invoke('architect:mcp-bridge-info'),
   decide: (id, approved, reason, component) => ipcRenderer.invoke('architect:decide', id, approved, reason, component),
   onChange: (fn: (a: Architecture) => void) => {
     ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))

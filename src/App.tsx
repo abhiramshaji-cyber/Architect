@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Architecture, Pending } from '../shared/types'
+import type { Architecture, McpBridgeInfo, Pending } from '../shared/types'
 import Canvas from './Canvas'
+import ConnectMcpPanel from './ConnectMcpPanel'
 import { hasCycle } from './layout'
 
 type ProjectSummary = { root: string; title: string }
@@ -22,6 +23,8 @@ export default function App() {
   const [reason, setReason] = useState('')
   const [reassign, setReassign] = useState<Record<string, string>>({})
   const [addError, setAddError] = useState<string | null>(null)
+  const [showConnectMcp, setShowConnectMcp] = useState(false)
+  const [bridge, setBridge] = useState<McpBridgeInfo | null>(null)
 
   const openProject = useCallback((root: string) => {
     window.architect.open(root).then((a) => {
@@ -83,6 +86,12 @@ export default function App() {
     openProject(result.root)
   }, [openProject])
 
+  const openConnectMcp = useCallback(() => {
+    setShowConnectMcp(true)
+    setBridge(null)
+    window.architect.mcpBridgeInfo().then(setBridge)
+  }, [])
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -101,9 +110,14 @@ export default function App() {
             ))}
             {projects.length === 0 && <li className="empty">No projects yet</li>}
           </ul>
-          <button className="add-project" onClick={addProject}>
-            Add project
-          </button>
+          <div className="sidebar-buttons">
+            <button className="add-project" onClick={addProject}>
+              Add project
+            </button>
+            <button className="add-project" onClick={openConnectMcp}>
+              Connect MCP
+            </button>
+          </div>
           {addError && <p className="add-error">{addError}</p>}
         </div>
 
@@ -178,6 +192,8 @@ export default function App() {
           <div className="empty-state">Select a project to open its architecture</div>
         )}
       </main>
+
+      {showConnectMcp && <ConnectMcpPanel bridge={bridge} onClose={() => setShowConnectMcp(false)} />}
     </div>
   )
 }

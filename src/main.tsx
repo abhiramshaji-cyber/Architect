@@ -127,6 +127,9 @@ function installMock() {
     async pending() {
       return pendingByRoot['/demo/project-alpha'] ?? []
     },
+    async mcpBridgeInfo() {
+      return { path: '/Users/demo/.architect/bin/architect-mcp.mjs', exists: true }
+    },
     async decide(id, approved, reason, component) {
       for (const root of Object.keys(pendingByRoot)) {
         const list = pendingByRoot[root]
