@@ -4,15 +4,19 @@ import {
   ReactFlow,
   Background,
   Controls,
+  ConnectionMode,
   MarkerType,
   Handle,
   Position,
+  type Connection,
   type Node,
+  type OnBeforeDelete,
   type Edge as RFEdge,
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Architecture, Pending } from '../shared/types'
+import { addEdge, removeEdge, type OpResult } from './edit-ops'
 import Inspector from './Inspector'
 import { build, positions, sides, statusOf, NODE_W, NODE_H, type NodeData } from './layout'
 
@@ -20,6 +24,7 @@ type CanvasProps = {
   architecture: Architecture
   pending: Pending[]
   theme: string
+  onEdit?: (op: (a: Architecture) => OpResult) => void
 }
 
 function palette() {
@@ -53,10 +58,10 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
   return (
     <div className={classes.join(' ')}>
       {HANDLES.map(([key, position]) => (
-        <Handle key={`s-${key}`} id={`s-${key}`} type="source" position={position} />
+        <Handle key={`t-${key}`} id={`t-${key}`} type="target" position={position} />
       ))}
       {HANDLES.map(([key, position]) => (
-        <Handle key={`t-${key}`} id={`t-${key}`} type="target" position={position} />
+        <Handle key={`s-${key}`} id={`s-${key}`} type="source" position={position} />
       ))}
       <div className="node-head">
         <span className="node-id">{data.label}</span>
@@ -83,12 +88,16 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
 
 const nodeTypes = { component: ComponentNode }
 
-export default function Canvas({ architecture, pending, theme }: CanvasProps) {
+const DELETE_KEYS = ['Delete', 'Backspace']
+
+export default function Canvas({ architecture, pending, theme, onEdit }: CanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes, edges, realIds } = useMemo(() => {
     const { nodes: logical, links } = build(architecture, pending)
     const at = positions(logical, links)
 
@@ -96,6 +105,7 @@ export default function Canvas({ architecture, pending, theme }: CanvasProps) {
       id: n.id,
       type: 'component',
       draggable: false,
+      deletable: editing ? false : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
       data: n.data
     }))
@@ -113,6 +123,7 @@ export default function Canvas({ architecture, pending, theme }: CanvasProps) {
         id: l.id,
         source: l.from,
         target: l.to,
+        deletable: editing ? l.kind === 'real' : undefined,
         sourceHandle: `s-${s}`,
         targetHandle: `t-${t}`,
         markerEnd: marker(color),
@@ -133,8 +144,10 @@ export default function Canvas({ architecture, pending, theme }: CanvasProps) {
       }
     })
 
-    return { nodes: rfNodes, edges: rfEdges }
-  }, [architecture, pending, colors])
+    const real = new Set(links.filter((l) => l.kind === 'real').map((l) => l.id))
+
+    return { nodes: rfNodes, edges: rfEdges, realIds: real }
+  }, [architecture, pending, colors, editing])
 
   const marked = useMemo(
     () => nodes.map((n) => ({ ...n, selected: n.id === selectedId })),
@@ -145,6 +158,38 @@ export default function Canvas({ architecture, pending, theme }: CanvasProps) {
 
   const close = useCallback(() => setSelectedId(null), [])
 
+  const connect = useCallback(
+    (connection: Connection) => {
+      if (!onEdit) return
+      const ids = new Set(architecture.components.map((c) => c.id))
+      const { source, target } = connection
+      if (!ids.has(source) || !ids.has(target)) return
+      onEdit((a) => addEdge(a, source, target))
+    },
+    [onEdit, architecture]
+  )
+
+  // xyflow still deletes on Backspace inside a focused field when a modifier is held
+  const beforeDelete = useCallback<OnBeforeDelete<Node<NodeData>, RFEdge>>(async () => {
+    const active = document.activeElement
+    return !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
+  }, [])
+
+  const disconnect = useCallback(
+    (removed: RFEdge[]) => {
+      if (!onEdit) return
+      const cut = removed.filter((e) => realIds.has(e.id))
+      if (cut.length === 0) return
+      onEdit((a) =>
+        cut.reduce<OpResult>(
+          (acc, e) => (acc.ok ? removeEdge(acc.architecture, e.source, e.target) : acc),
+          { ok: true, architecture: a }
+        )
+      )
+    },
+    [onEdit, realIds]
+  )
+
   useEffect(() => {
     if (!selected) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelectedId(null)
@@ -153,12 +198,18 @@ export default function Canvas({ architecture, pending, theme }: CanvasProps) {
   }, [selected])
 
   return (
-    <div className="canvas-stage">
+    <div className={editing ? 'canvas-stage canvas-editing' : 'canvas-stage'}>
       <ReactFlow
         nodes={marked}
         edges={edges}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
+        nodesConnectable={editing}
+        connectionMode={editing ? ConnectionMode.Loose : undefined}
+        deleteKeyCode={editing ? DELETE_KEYS : undefined}
+        onBeforeDelete={editing ? beforeDelete : undefined}
+        onConnect={editing ? connect : undefined}
+        onEdgesDelete={editing ? disconnect : undefined}
         fitView
         fitViewOptions={{ padding: 0.14 }}
         minZoom={0.2}
@@ -169,7 +220,7 @@ export default function Canvas({ architecture, pending, theme }: CanvasProps) {
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
       </ReactFlow>
-      {selected && <Inspector node={selected} onClose={close} />}
+      {selected && <Inspector key={selectedId} node={selected} onClose={close} onEdit={onEdit} />}
     </div>
   )
 }

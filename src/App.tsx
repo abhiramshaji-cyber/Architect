@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Architecture, McpBridgeInfo, Pending } from '../shared/types'
+import type { Architecture, Edit, EditSummary, McpBridgeInfo, Pending } from '../shared/types'
 import Canvas from './Canvas'
 import ConnectMcpPanel from './ConnectMcpPanel'
+import { addComponent, type OpResult } from './edit-ops'
 import { folderName, hasCycle } from './layout'
 
 type ProjectSummary = { root: string; title: string }
+
+function placeholderId(a: Architecture): string {
+  const taken = new Set(a.components.map((c) => c.id))
+  let n = 1
+  while (taken.has(`component${n}`)) n++
+  return `component${n}`
+}
 
 function describe(p: Pending): string {
   const proposal = p.proposal
@@ -25,6 +33,11 @@ export default function App() {
   const [showConnectMcp, setShowConnectMcp] = useState(false)
   const [bridge, setBridge] = useState<McpBridgeInfo | null>(null)
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? 'dark')
+  const [edits, setEdits] = useState<EditSummary[]>([])
+  const [draft, setDraft] = useState<Edit | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const flipTheme = useCallback(() => {
     const next = theme === 'light' ? 'dark' : 'light'
@@ -35,12 +48,35 @@ export default function App() {
     setTheme(next)
   }, [theme])
 
-  const openProject = useCallback((root: string) => {
-    window.architect.open(root).then((a) => {
-      setArchitecture(a)
-      setCurrentRoot(root)
-    })
+  const discardOk = useCallback(
+    () => !dirty || confirm('This edit has unsaved changes. Discard them?'),
+    [dirty]
+  )
+
+  const run = useCallback(async (fn: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await fn()
+    } catch (err) {
+      setMessage({ text: err instanceof Error ? err.message : String(err), error: true })
+    } finally {
+      setBusy(false)
+    }
   }, [])
+
+  const openProject = useCallback(
+    (root: string) => {
+      if (busy || !discardOk()) return
+      window.architect.open(root).then((a) => {
+        setArchitecture(a)
+        setCurrentRoot(root)
+        setDraft(null)
+        setDirty(false)
+        setMessage(null)
+      })
+    },
+    [busy, discardOk]
+  )
 
   useEffect(() => {
     window.architect.projects().then(setProjects)
@@ -56,6 +92,111 @@ export default function App() {
     const root = pending[0]?.projectRoot ?? projects[0]?.root
     if (root) openProject(root)
   }, [currentRoot, pending, projects, openProject])
+
+  useEffect(() => {
+    if (!currentRoot) {
+      setEdits([])
+      return
+    }
+    let live = true
+    window.architect
+      .edits(currentRoot)
+      .then((list) => {
+        if (live) setEdits(list)
+      })
+      .catch((err: unknown) => {
+        if (live) setMessage({ text: err instanceof Error ? err.message : String(err), error: true })
+      })
+    return () => {
+      live = false
+    }
+  }, [currentRoot])
+
+  const refreshEdits = useCallback(async (root: string) => {
+    setEdits(await window.architect.edits(root))
+  }, [])
+
+  const newEdit = useCallback(() => {
+    if (!currentRoot || !architecture || busy || !discardOk()) return
+    void run(async () => {
+      const created = await window.architect.createEdit(currentRoot, architecture)
+      setDraft(created)
+      setDirty(false)
+      setMessage(null)
+      await refreshEdits(currentRoot)
+    })
+  }, [currentRoot, architecture, busy, discardOk, run, refreshEdits])
+
+  const openEdit = useCallback(
+    (id: string) => {
+      if (!currentRoot || busy || !discardOk()) return
+      void run(async () => {
+        const opened = await window.architect.edit(currentRoot, id)
+        setDraft(opened)
+        setDirty(false)
+        setMessage(null)
+      })
+    },
+    [currentRoot, busy, discardOk, run]
+  )
+
+  const applyEdit = useCallback(
+    (op: (a: Architecture) => OpResult) => {
+      if (!draft || draft.status === 'handed') return
+      const result = op(draft.architecture)
+      if (!result.ok) {
+        setMessage({ text: result.error, error: true })
+        return
+      }
+      setDraft({ ...draft, architecture: result.architecture })
+      setDirty(true)
+      setMessage(null)
+    },
+    [draft]
+  )
+
+  const saveEdit = useCallback(() => {
+    if (!currentRoot || !draft || draft.status === 'handed' || busy) return
+    void run(async () => {
+      const saved = await window.architect.updateEdit(currentRoot, draft.id, draft.architecture)
+      setDraft(saved)
+      setDirty(false)
+      setMessage({ text: 'Saved', error: false })
+      await refreshEdits(currentRoot)
+    })
+  }, [currentRoot, draft, busy, run, refreshEdits])
+
+  const handToClaude = useCallback(() => {
+    if (!currentRoot || !draft || draft.status === 'handed' || busy) return
+    const warning = dirty ? ' Unsaved changes will not be included.' : ''
+    if (!confirm(`Hand edit ${draft.id} to Claude? It becomes permanently read only.${warning}`)) return
+    void run(async () => {
+      const handed = await window.architect.handEdit(currentRoot, draft.id)
+      setDraft(handed)
+      setDirty(false)
+      setMessage({ text: 'Handed to Claude. This edit is now read only.', error: false })
+      await refreshEdits(currentRoot)
+    })
+  }, [currentRoot, draft, dirty, busy, run, refreshEdits])
+
+  const removeEdit = useCallback(() => {
+    if (!currentRoot || !draft || busy) return
+    if (!confirm(`Delete edit ${draft.id}? This cannot be undone.`)) return
+    void run(async () => {
+      await window.architect.deleteEdit(currentRoot, draft.id)
+      setDraft(null)
+      setDirty(false)
+      setMessage(null)
+      await refreshEdits(currentRoot)
+    })
+  }, [currentRoot, draft, busy, run, refreshEdits])
+
+  const closeEdit = useCallback(() => {
+    if (busy || !discardOk()) return
+    setDraft(null)
+    setDirty(false)
+    setMessage(null)
+  }, [busy, discardOk])
 
   const projectPending = useMemo(
     () =>
@@ -83,6 +224,8 @@ export default function App() {
     },
     [decide, reassign]
   )
+
+  const shown = draft ? draft.architecture : architecture
 
   const openConnectMcp = useCallback(() => {
     setShowConnectMcp(true)
@@ -129,6 +272,7 @@ export default function App() {
                   <button
                     className={p.root === currentRoot ? 'project active' : 'project'}
                     onClick={() => openProject(p.root)}
+                    disabled={busy}
                   >
                     <span className="project-folder">{folder}</span>
                     {p.title !== folder && <span className="project-title">{p.title}</span>}
@@ -144,6 +288,29 @@ export default function App() {
           <button className="sidebar-action" onClick={flipTheme}>
             {theme === 'light' ? 'Dark mode' : 'Light mode'}
           </button>
+        </div>
+
+        <div className="sidebar-section">
+          <h2>Edits</h2>
+          <button className="sidebar-action" onClick={newEdit} disabled={!currentRoot || !architecture || busy}>
+            New edit
+          </button>
+          <ul className="edits-list">
+            {edits.map((e) => (
+              <li key={e.id}>
+                <button
+                  className={draft && draft.id === e.id ? 'edit-item active' : 'edit-item'}
+                  onClick={() => openEdit(e.id)}
+                  disabled={e.error !== undefined || busy}
+                >
+                  <span>{e.title === '' ? e.id : e.title}</span>
+                  <span className={`edit-status ${e.status}`}>{e.status}</span>
+                </button>
+                {e.error !== undefined && <div className="edit-error">{e.error}</div>}
+              </li>
+            ))}
+            {edits.length === 0 && <li className="empty">No edits yet</li>}
+          </ul>
         </div>
 
         <div className="sidebar-section inbox">
@@ -205,14 +372,56 @@ export default function App() {
       </aside>
 
       <main className="canvas-area">
-        {architecture ? (
+        {shown ? (
           <>
             <header className="canvas-header">
-              <h2>{architecture.title}</h2>
+              <h2>{shown.title}</h2>
               {currentRoot && <p className="canvas-path">{currentRoot}</p>}
-              <p>{architecture.summary}</p>
+              <p>{shown.summary}</p>
             </header>
-            <Canvas key={currentRoot} architecture={architecture} pending={projectPending} theme={theme} />
+            {draft && (
+              <div className="edit-bar">
+                <div className="edit-bar-label">
+                  Editing {draft.id} · {draft.status === 'handed' ? 'handed, read only' : 'draft'}
+                  {dirty && ' · unsaved changes'}
+                </div>
+                <div className="edit-bar-actions">
+                  {draft.status === 'draft' && (
+                    <>
+                      <button
+                        className="ghost"
+                        onClick={() => applyEdit((a) => addComponent(a, placeholderId(a)))}
+                        disabled={busy}
+                      >
+                        Add component
+                      </button>
+                      <button className="primary" onClick={saveEdit} disabled={busy}>
+                        Save
+                      </button>
+                      <button className="hand" onClick={handToClaude} disabled={busy}>
+                        Hand to Claude
+                      </button>
+                    </>
+                  )}
+                  <button className="ghost" onClick={closeEdit} disabled={busy}>
+                    Close
+                  </button>
+                  <button className="ghost" onClick={removeEdit} disabled={busy}>
+                    Delete
+                  </button>
+                </div>
+                {message && (
+                  <div className={message.error ? 'edit-bar-message error' : 'edit-bar-message'}>{message.text}</div>
+                )}
+              </div>
+            )}
+            <Canvas
+              key={draft ? `${currentRoot}:${draft.id}:${draft.status}` : currentRoot}
+              architecture={shown}
+              pending={draft ? [] : projectPending}
+              theme={theme}
+              onEdit={draft && draft.status === 'draft' ? applyEdit : undefined}
+            />
           </>
         ) : (
           <div className="empty-state">Select a project to open its architecture</div>

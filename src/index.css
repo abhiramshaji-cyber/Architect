@@ -731,3 +731,262 @@ body {
   font-size: 11px;
   color: var(--text-dim);
 }
+
+.edits-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.edit-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.edit-item:hover {
+  background: var(--hover);
+}
+
+.edit-item.active {
+  background: var(--active-bg);
+  border-color: var(--active-border);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+.edit-item:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.edit-status {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.edit-status.draft {
+  color: var(--accent);
+  border: 1px dashed var(--accent);
+}
+
+.edit-status.handed {
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+}
+
+.edit-error {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 24px;
+  background: var(--raise);
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.edit-bar-label {
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.edit-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.edit-bar button {
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.edit-bar button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.edit-bar button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.edit-bar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.edit-bar .primary {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.edit-bar .primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+}
+
+.edit-bar .hand {
+  border-color: color-mix(in srgb, var(--propose) 55%, var(--border));
+  background: color-mix(in srgb, var(--propose) 14%, var(--panel));
+  color: var(--propose);
+  font-weight: 600;
+}
+
+.edit-bar .hand:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--propose) 24%, var(--panel));
+}
+
+.edit-bar .ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.edit-bar .ghost:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.edit-bar-message {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.edit-bar-message.error {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.inspector-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.inspector-field label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.inspector-input,
+.inspector-textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+
+.inspector-input:focus-visible,
+.inspector-textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.inspector-textarea {
+  min-height: 84px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.inspector-danger {
+  width: 100%;
+  margin-top: 16px;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.inspector-danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: var(--danger);
+}
+
+.inspector-danger:focus-visible {
+  outline: none;
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 26%, transparent);
+}
+
+.canvas-editing .react-flow__handle {
+  opacity: 1;
+  pointer-events: all;
+  width: 9px;
+  height: 9px;
+  background: var(--panel);
+  border: 1.5px solid var(--accent);
+}
+
+.canvas-editing .react-flow__handle:hover {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
+}
