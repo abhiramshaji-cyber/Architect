@@ -51,7 +51,6 @@ export type Request =
 
 export type ArchitectApi = {
   projects(): Promise<{ root: string; title: string }[]>
-  add(): Promise<{ root: string; title: string } | { error: string } | null>
   open(root: string): Promise<Architecture>
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>

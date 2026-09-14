@@ -221,17 +221,7 @@ body {
   font-size: 14px;
 }
 
-.sidebar-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.sidebar-buttons .add-project {
-  margin-top: 0;
-}
-
-.add-project {
+.sidebar-action {
   width: 100%;
   margin-top: 10px;
   padding: 7px 10px;
@@ -244,17 +234,10 @@ body {
   cursor: pointer;
 }
 
-.add-project:hover {
+.sidebar-action:hover {
   color: var(--text);
   border-color: var(--text-dim);
   background: rgb(255 255 255 / 0.03);
-}
-
-.add-error {
-  margin: 8px 0 0;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--danger);
 }
 
 .react-flow__handle {

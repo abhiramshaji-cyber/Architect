@@ -51,20 +51,6 @@ function createTray() {
 function wireIpc() {
   ipcMain.handle('architect:projects', () => daemon.projects())
   ipcMain.handle('architect:open', (_event, root: string) => daemon.open(root))
-  ipcMain.handle('architect:add', async () => {
-    const picked = await dialog.showOpenDialog({
-      title: 'Pick a repo containing architect.md',
-      properties: ['openDirectory'],
-    })
-    const root = picked.filePaths[0]
-    if (picked.canceled || !root) return null
-    try {
-      const architecture = await daemon.open(root)
-      return { root, title: architecture.title }
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) }
-    }
-  })
   ipcMain.handle('architect:mcp-bridge-info', () => ({
     path: MCP_BRIDGE_PATH,
     exists: fs.existsSync(MCP_BRIDGE_PATH),

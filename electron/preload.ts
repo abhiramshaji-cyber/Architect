@@ -3,7 +3,6 @@ import type { Architecture, ArchitectApi, Pending } from '../shared/types'
 
 const architect: ArchitectApi = {
   projects: () => ipcRenderer.invoke('architect:projects'),
-  add: () => ipcRenderer.invoke('architect:add'),
   open: (root) => ipcRenderer.invoke('architect:open', root),
   pending: () => ipcRenderer.invoke('architect:pending'),
   mcpBridgeInfo: () => ipcRenderer.invoke('architect:mcp-bridge-info'),

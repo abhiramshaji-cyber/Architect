@@ -22,7 +22,6 @@ export default function App() {
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [reassign, setReassign] = useState<Record<string, string>>({})
-  const [addError, setAddError] = useState<string | null>(null)
   const [showConnectMcp, setShowConnectMcp] = useState(false)
   const [bridge, setBridge] = useState<McpBridgeInfo | null>(null)
 
@@ -75,17 +74,6 @@ export default function App() {
     [decide, reassign]
   )
 
-  const addProject = useCallback(async () => {
-    const result = await window.architect.add()
-    if (!result) return
-    if ('error' in result) {
-      setAddError(result.error)
-      return
-    }
-    setAddError(null)
-    openProject(result.root)
-  }, [openProject])
-
   const openConnectMcp = useCallback(() => {
     setShowConnectMcp(true)
     setBridge(null)
@@ -110,15 +98,9 @@ export default function App() {
             ))}
             {projects.length === 0 && <li className="empty">No projects yet</li>}
           </ul>
-          <div className="sidebar-buttons">
-            <button className="add-project" onClick={addProject}>
-              Add project
-            </button>
-            <button className="add-project" onClick={openConnectMcp}>
-              Connect MCP
-            </button>
-          </div>
-          {addError && <p className="add-error">{addError}</p>}
+          <button className="sidebar-action" onClick={openConnectMcp}>
+            Connect MCP
+          </button>
         </div>
 
         <div className="sidebar-section inbox">
