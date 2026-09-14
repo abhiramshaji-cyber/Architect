@@ -21,19 +21,27 @@ export default function App() {
   const [reason, setReason] = useState('')
   const [reassign, setReassign] = useState<Record<string, string>>({})
 
-  useEffect(() => {
-    window.architect.projects().then(setProjects)
-    window.architect.pending().then(setPending)
-    window.architect.onChange(setArchitecture)
-    window.architect.onPending(setPending)
-  }, [])
-
   const openProject = useCallback((root: string) => {
     window.architect.open(root).then((a) => {
       setArchitecture(a)
       setCurrentRoot(root)
     })
   }, [])
+
+  useEffect(() => {
+    window.architect.projects().then(setProjects)
+    window.architect.pending().then(setPending)
+    window.architect.onChange(setArchitecture)
+    window.architect.onPending(setPending)
+    window.architect.onProjects(setProjects)
+  }, [])
+
+  // auto-open
+  useEffect(() => {
+    if (currentRoot) return
+    const root = pending[0]?.projectRoot ?? projects[0]?.root
+    if (root) openProject(root)
+  }, [currentRoot, pending, projects, openProject])
 
   const projectPending = useMemo(
     () =>

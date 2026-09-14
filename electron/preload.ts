@@ -13,6 +13,9 @@ const architect: ArchitectApi = {
   onPending: (fn: (p: Pending[]) => void) => {
     ipcRenderer.on('architect:pending-update', (_event, pending: Pending[]) => fn(pending))
   },
+  onProjects: (fn: (p: { root: string; title: string }[]) => void) => {
+    ipcRenderer.on('architect:projects-update', (_event, projects: { root: string; title: string }[]) => fn(projects))
+  },
 }
 
 contextBridge.exposeInMainWorld('architect', architect)

@@ -158,6 +158,37 @@ describe('project resolution', () => {
     if (res.ok) expect((res.result as { title: string }).title).toBe('Test')
     c.close()
   })
+
+  it('notifies subscribers when an mcp call registers a project', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    const seen: { root: string; title: string }[][] = []
+    daemon.onProjects((p) => seen.push(p))
+    await daemon.listen()
+
+    expect(daemon.projects()).toEqual([])
+
+    const c = await client(socketPath)
+    await c.request({ op: 'get_architecture', cwd: tmpRoot })
+    c.close()
+
+    expect(seen.at(-1)).toEqual([{ root: tmpRoot, title: 'Test' }])
+  })
+
+  it('does not notify again for an already registered project', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    let calls = 0
+    daemon.onProjects(() => calls++)
+    await daemon.listen()
+
+    const c = await client(socketPath)
+    await c.request({ op: 'get_architecture', cwd: tmpRoot })
+    await c.request({ op: 'get_architecture', cwd: tmpRoot })
+    c.close()
+
+    expect(calls).toBe(1)
+  })
 })
 
 describe('correctness requirements', () => {

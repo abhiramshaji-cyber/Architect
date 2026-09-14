@@ -6,6 +6,7 @@
   --text-dim: #8a8f98;
   --accent: #5b8cff;
   --danger: #e5484d;
+  --propose: #6ee7b7;
   --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
   --mono: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
 }
@@ -220,33 +221,71 @@ body {
   font-size: 14px;
 }
 
-.node {
-  min-width: 160px;
-  background: #171b23;
+.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.react-flow__controls {
+  box-shadow: none;
+  gap: 1px;
+  display: flex;
+  flex-direction: column;
+}
+
+.react-flow__controls-button {
+  background: #161a22;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  fill: var(--text-dim);
+}
+
+.react-flow__controls-button:hover {
+  background: #1d232d;
+  fill: var(--text);
+}
+
+.node {
+  box-sizing: border-box;
+  width: 220px;
+  background: linear-gradient(180deg, #1a1f28, #151921);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px 12px;
   color: var(--text);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 6px 16px rgb(0 0 0 / 0.35);
 }
 
 .node-id {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .node-purpose {
   font-size: 11px;
   color: var(--text-dim);
-  margin-top: 3px;
-  line-height: 1.35;
+  margin-top: 4px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .node-owns {
   font-size: 10px;
   color: var(--text-dim);
   font-family: var(--mono);
-  margin-top: 6px;
-  opacity: 0.8;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgb(255 255 255 / 0.06);
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .node-badges {
@@ -265,20 +304,37 @@ body {
 }
 
 .node-ghost {
-  background: transparent;
-  border-style: dashed;
-  border-color: var(--text-dim);
-  opacity: 0.85;
+  background: rgb(110 231 183 / 0.05);
+  border: 1px dashed var(--propose);
+  box-shadow: 0 0 0 4px rgb(110 231 183 / 0.06);
 }
 
 .node-ghost .node-id {
-  color: var(--text-dim);
+  color: var(--propose);
+}
+
+.node-ghost .node-id::after {
+  content: 'proposed';
+  float: right;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--propose);
+  opacity: 0.75;
 }
 
 .node-unassigned {
+  background: rgb(229 72 77 / 0.06);
   border-color: var(--danger);
+  box-shadow: 0 0 0 4px rgb(229 72 77 / 0.06);
 }
 
 .node-unassigned .node-id {
+  color: var(--danger);
+}
+
+.node-unassigned .node-id::after {
+  content: 'no owner';
   color: var(--danger);
 }

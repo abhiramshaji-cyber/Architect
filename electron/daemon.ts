@@ -37,6 +37,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   let activeRoot: string | null = null
   let changeListener: ((a: Architecture) => void) | null = null
   let pendingListener: ((p: Pending[]) => void) | null = null
+  let projectsListener: ((p: { root: string; title: string }[]) => void) | null = null
   let server: net.Server | null = null
 
   function architectMdPath(root: string) {
@@ -45,6 +46,14 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   function notifyPending() {
     pendingListener?.([...pending.values()].map((e) => e.pending))
+  }
+
+  function listProjects() {
+    return [...projects.values()].map((p) => ({ root: p.root, title: p.architecture.title }))
+  }
+
+  function notifyProjects() {
+    projectsListener?.(listProjects())
   }
 
   function resolveRoot(cwd: string): string | null {
@@ -98,6 +107,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     state.watcher = watcher
 
     projects.set(root, state)
+    notifyProjects()
     return state
   }
 
@@ -324,7 +334,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   return {
     listen,
     close,
-    projects: () => [...projects.values()].map((p) => ({ root: p.root, title: p.architecture.title })),
+    projects: listProjects,
     open,
     pending: () => [...pending.values()].map((e) => e.pending),
     decide,
@@ -334,6 +344,9 @@ export function createDaemon(options: DaemonOptions = {}) {
     },
     onPending: (fn: (p: Pending[]) => void) => {
       pendingListener = fn
+    },
+    onProjects: (fn: (p: { root: string; title: string }[]) => void) => {
+      projectsListener = fn
     },
   }
 }

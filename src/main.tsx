@@ -157,6 +157,9 @@ function installMock() {
     },
     onPending(fn) {
       pendingListeners.add(fn)
+    },
+    onProjects(fn) {
+      fn(Object.entries(roots).map(([root, title]) => ({ root, title })))
     }
   }
 }

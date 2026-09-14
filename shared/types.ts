@@ -58,6 +58,7 @@ export type ArchitectApi = {
   move(id: string, x: number, y: number): Promise<void>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
+  onProjects(fn: (p: { root: string; title: string }[]) => void): void
 }
 
 export type Response =

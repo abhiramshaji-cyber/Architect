@@ -65,6 +65,9 @@ app.whenReady().then(async () => {
     updateTray(pending)
     mainWindow?.webContents.send('architect:pending-update', pending)
   })
+  daemon.onProjects((projects: { root: string; title: string }[]) => {
+    mainWindow?.webContents.send('architect:projects-update', projects)
+  })
 
   await daemon.listen()
   app.setLoginItemSettings({ openAtLogin: true })
