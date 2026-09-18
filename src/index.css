@@ -280,6 +280,19 @@ body {
   font-size: 12px;
 }
 
+.pending-actions button:focus-visible,
+.reject-form button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.reject-form input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .canvas-area {
   flex: 1;
   min-width: 0;
