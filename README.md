@@ -52,7 +52,7 @@ At that moment a dashed ghost node appears on your canvas, sitting exactly where
 
 ## The file
 
-Everything lives in one `architect.md` at your repo root. It is readable with no tooling, diffs cleanly, and gets reviewed in a pull request like any other file. Layout positions hide in an HTML comment so they never pollute the prose.
+Everything lives in one `architect.md` at your repo root. It is readable with no tooling, diffs cleanly, and gets reviewed in a pull request like any other file. The serializer writes only the architecture itself — title, summary, Components, Dependencies, Forbidden and Packages — no hidden metadata blocks.
 
 ```markdown
 ## Components
