@@ -29,6 +29,10 @@ export function parse(markdown: string): Architecture {
   for (const chunk of componentChunks) {
     const lines = chunk.split('\n')
     const id = (lines[0] ?? '').trim()
+    if (id.length === 0) throw new Error('component id cannot be empty')
+    if (/\s/.test(id) || id.includes('->')) {
+      throw new Error(`invalid component id "${id}": ids must be one word with no spaces and no "->"`)
+    }
     if (seenIds.has(id)) throw new Error(`duplicate component: ${id}`)
     seenIds.add(id)
 

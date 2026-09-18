@@ -105,6 +105,21 @@ describe('parse', () => {
     )
     expect(() => parse(bad)).toThrow(/ui/)
   })
+
+  it('throws on an empty component id', () => {
+    const bad = fixture.replace(`${h3} ui`, `${h3} `)
+    expect(() => parse(bad)).toThrow(/empty/)
+  })
+
+  it('throws on a component id with whitespace', () => {
+    const bad = fixture.replace(`${h3} ui`, `${h3} user service`)
+    expect(() => parse(bad)).toThrow(/invalid component id/)
+  })
+
+  it('throws on a component id containing ->', () => {
+    const bad = fixture.replace(`${h3} ui`, `${h3} ui->db`)
+    expect(() => parse(bad)).toThrow(/invalid component id/)
+  })
 })
 
 describe('serialize', () => {
