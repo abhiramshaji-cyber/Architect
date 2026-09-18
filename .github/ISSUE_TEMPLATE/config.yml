@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Roadmap and design debate
+    url: https://github.com/abhiramshaji-cyber/Architect/issues/17
+    about: Start here for roadmap, open questions, and how decisions get made.

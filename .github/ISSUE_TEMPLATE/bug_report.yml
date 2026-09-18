@@ -1,0 +1,62 @@
+name: Bug report
+description: Report something in Architect that behaves incorrectly
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw Architect do.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open architect.md
+        2. Draw a node
+        3. Ask the agent to propose a change
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.3, Ubuntu 24.04, Windows 11
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: output of node --version
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Architect version
+      placeholder: version from package.json or the commit you built
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Agent or MCP client
+      placeholder: Claude Code, Claude Desktop, Cursor, other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional.
+    validations:
+      required: false
