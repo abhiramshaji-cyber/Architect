@@ -25,8 +25,7 @@ function installMock() {
         { id: 'api', purpose: 'HTTP API layer', owns: ['src/api/**'] },
         {
           id: 'db',
-          purpose:
-            'Buckets fetched records by their own createdAt hour and computes the rolling counts every reader depends on. It owns every migration, every prepared statement and the connection pool, so nothing else in the tree may open a socket to Postgres. Reads go through a replica when one is configured, writes never do.',
+          purpose: 'Postgres access layer',
           owns: ['src/db/**', 'migrations/*.sql', 'scripts/seed/*.ts', 'shared/queries/**']
         },
         { id: 'worker', purpose: 'Background jobs', owns: ['src/worker/**'] }
