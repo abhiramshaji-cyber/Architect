@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && vite build --config vite.mcp.config.ts",
-    "install:local": "npm run build && electron-builder --dir && node scripts/install-local.mjs",
+    "install:local": "npm run build && node scripts/build-local-target.mjs && node scripts/install-local.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "shot": "node scripts/shot.mjs",
