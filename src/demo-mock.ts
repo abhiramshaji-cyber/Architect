@@ -132,9 +132,8 @@ export function installMock() {
           functions: file.functions.map((entry) => ({
             ...entry,
             calls: entry.calls.flatMap((call) => {
-              if (typeof call === 'number') return file.functions[call] ? [call] : []
-              const at = file.functions.findIndex((other) => other.name === call)
-              return at === -1 ? [] : [at]
+              const at = typeof call === 'number' ? call : file.functions.findIndex((other) => other.name === call)
+              return at < 0 || !file.functions[at] ? [] : [{ file: file.path, fn: at }]
             })
           }))
         }))
@@ -331,7 +330,7 @@ export function installMock() {
       lines.push(`export function ${f.name}(input: Input, options: Options = {}): Result {`)
       for (let i = 0; i < body; i += 1) {
         const at = f.calls[i % Math.max(1, f.calls.length)]
-        const call = at === undefined ? undefined : entry.functions[at]?.name
+        const call = at === undefined ? undefined : entry.functions[at.fn]?.name
         if (i % 5 === 4) {
           lines.push(
             `      const merged = await gather(input.records.filter((r) => r.active && r.owner === options.owner), { retries: 3, timeout: 15000, label: 'attempt ${i}' })`

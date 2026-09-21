@@ -14,6 +14,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import type { CodeMap } from '../shared/types'
 import {
+  baseName,
   callPositions,
   codePositions,
   fileIndex,
@@ -118,8 +119,10 @@ function FileNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
 }
 
 function FunctionNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
-  const className = card('code-fnnode', useContext(Picked) === id)
+  const picked = useContext(Picked) === id
   if (data.kind !== 'codefn') return null
+
+  const className = card(data.external ? 'code-fnnode code-fnout' : 'code-fnnode', picked)
 
   return (
     <div className={className}>
@@ -128,8 +131,9 @@ function FunctionNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
       <div className="node-head">
         <span className="node-id code-fn-name">{data.name}</span>
         <span className="node-role">
-          {data.line}–{data.endLine}
+          {data.external ? baseName(data.path) : `${data.line}–${data.endLine}`}
         </span>
+        {data.external && <Open path={data.path} name={baseName(data.path)} />}
       </div>
       {data.description !== '' && <div className="code-fn-desc code-fn-lead">{data.description}</div>}
     </div>
@@ -160,17 +164,18 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
 
   const colors = useMemo(() => ({ dots: cssVar('--dots'), ink: cssVar('--ink') }), [theme])
 
-  const file = useMemo(() => fileIndex(map).get(path) ?? null, [map, path])
+  const index = useMemo(() => fileIndex(map), [map])
+  const file = useMemo(() => index.get(path) ?? null, [index, path])
 
   const world = useMemo(() => {
     if (file) {
-      const logical = functionNodes(file)
-      const links = functionEdges(file)
+      const logical = functionNodes(file, index)
+      const links = functionEdges(file, index)
       return { nodes: toFlow(logical, callPositions(logical, links)), links }
     }
     const logical = worldNodes(folderIndex(map), path)
     return { nodes: toFlow(logical, codePositions(logical)), links: [] }
-  }, [map, path, file])
+  }, [map, path, file, index])
 
   const edges = useMemo<Edge[]>(
     () =>
@@ -242,7 +247,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
             proOptions={{ hideAttribution: true }}
             onNodeClick={(_event, node) => setSelectedId(node.id)}
             onNodeDoubleClick={(_event, node) => {
-              if (node.data.kind !== 'codefn') onEnter(node.data.path)
+              if (node.data.kind !== 'codefn' || node.data.external) onEnter(node.data.path)
             }}
             onPaneClick={close}
           >

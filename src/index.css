@@ -1267,6 +1267,11 @@ body.resizing {
   letter-spacing: 0;
 }
 
+.code-fnout {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
 .code-fn-lead {
   margin-top: 5px;
   white-space: normal;

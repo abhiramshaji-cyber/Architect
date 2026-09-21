@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { scan } from './scan'
-import type { CodeMap, FolderEntry, FunctionEntry } from '../shared/types'
+import type { CallRef, CodeMap, FolderEntry, FunctionEntry } from '../shared/types'
 
 const roots: string[] = []
 
@@ -35,10 +35,22 @@ function entries(map: CodeMap, file: string): FunctionEntry[] {
   return entry.functions
 }
 
-function calls(map: CodeMap, file: string, name: string): number[] {
+function refs(map: CodeMap, file: string, name: string): CallRef[] {
   const fn = entries(map, file).find((f) => f.name === name)
   if (!fn) throw new Error(`missing function: ${name}`)
-  return [...fn.calls].sort((a, b) => a - b)
+  return fn.calls
+}
+
+function calls(map: CodeMap, file: string, name: string): number[] {
+  return refs(map, file, name)
+    .flatMap((call) => (call.file === file ? [call.fn] : []))
+    .sort((a, b) => a - b)
+}
+
+function targets(map: CodeMap, file: string, name: string): string[] {
+  return refs(map, file, name)
+    .map((call) => `${call.file}:${entries(map, call.file)[call.fn]?.name}`)
+    .sort()
 }
 
 function names(map: CodeMap, file: string): string[] {
@@ -449,7 +461,7 @@ describe('function calls', () => {
       ['visit', 6],
     ])
     expect(calls(map, 'a.ts', 'outer')).toEqual([1])
-    expect(entries(map, 'a.ts')[2]?.calls).toEqual([3])
+    expect(entries(map, 'a.ts')[2]?.calls).toEqual([{ file: 'a.ts', fn: 3 }])
   })
 
   it('never resolves an imported name to a local function of the same name', async () => {
@@ -484,5 +496,268 @@ describe('function calls', () => {
     )
 
     expect(calls(map, 'a.ts', 'caller')).toEqual([0])
+  })
+})
+
+describe('cross file calls', () => {
+  it('resolves a named import through an extensionless specifier', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { helper } from './b'\nexport function caller() {\n  helper()\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('resolves an aliased named import, a default import and a namespace import', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import wrapped, { helper as aid } from './b'\nimport * as ns from './b'\n" +
+          'export function caller() {\n  aid()\n  wrapped()\n  ns.other()\n}\n',
+        'b.ts': 'export function helper() {}\nexport function other() {}\nexport default function main() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper', 'b.ts:main', 'b.ts:other'])
+  })
+
+  it('resolves a method reached through a namespace import', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import * as ns from './b'\nexport function caller() {\n  ns.Store.load()\n}\n",
+        'b.ts': 'export class Store {\n  static load() {}\n}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:Store.load'])
+  })
+
+  it('resolves a directory specifier to its index file and a tsx sibling', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import { helper } from './lib'\nimport { view } from './view'\n" +
+          'export function caller() {\n  helper()\n  view()\n}\n',
+        'lib/index.ts': 'export function helper() {}\n',
+        'view.tsx': 'export function view() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['lib/index.ts:helper', 'view.tsx:view'])
+  })
+
+  it('resolves a .js specifier to the .ts file it means', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { helper } from './b.js'\nexport function caller() {\n  helper()\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('follows a named re-export and a star re-export to the declaring file', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import { helper, other } from './barrel'\nexport function caller() {\n  helper()\n  other()\n}\n",
+        'barrel.ts': "export { helper } from './b'\nexport * from './c'\n",
+        'b.ts': 'export function helper() {}\n',
+        'c.ts': 'export function other() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper', 'c.ts:other'])
+  })
+
+  it('renames across a re-export alias', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { aid } from './barrel'\nexport function caller() {\n  aid()\n}\n",
+        'barrel.ts': "export { helper as aid } from './b'\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('records both directions of a circular import without hanging', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { down } from './b'\nexport function up() {\n  down()\n}\n",
+        'b.ts': "import { up } from './a'\nexport function down() {\n  up()\n}\n",
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'up')).toEqual(['b.ts:down'])
+    expect(targets(map, 'b.ts', 'down')).toEqual(['a.ts:up'])
+  })
+
+  it('survives a barrel that re-exports itself', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { ghost } from './barrel'\nexport function caller() {\n  ghost()\n}\n",
+        'barrel.ts': "export * from './barrel'\nexport * from './b'\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('resolves nothing for a bare package, a node builtin or a missing file', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import { readFileSync } from 'node:fs'\nimport ts from 'typescript'\nimport { gone } from './nowhere'\n" +
+          'export function caller() {\n  readFileSync("x")\n  ts.createSourceFile()\n  gone()\n}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('resolves nothing for a specifier that points outside the scanned root', async () => {
+    const root = fixture({
+      'inner/a.ts': "import { helper } from '../outside'\nexport function caller() {\n  helper()\n}\n",
+      'outside.ts': 'export function helper() {}\n',
+    })
+    const map = await scan(path.join(root, 'inner'))
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('resolves nothing for a name the other file does not export', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { helper } from './b'\nexport function caller() {\n  helper()\n}\n",
+        'b.ts': 'function helper() {}\nexport const value = 1\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('resolves nothing for a type only import', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import type { helper } from './b'\nexport function caller() {\n  helper()\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual([])
+  })
+
+  it('lets a local binding shadow an import of the same name', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import { helper } from './b'\nexport function caller() {\n  const helper = () => 1\n  return helper()\n}\nexport function other(helper: () => void) {\n  helper()\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['a.ts:helper'])
+    expect(targets(map, 'a.ts', 'other')).toEqual([])
+  })
+
+  it('keeps an import edge and a same file edge side by side', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import { helper } from './b'\nfunction near() {}\nexport function caller() {\n  near()\n  helper()\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(calls(map, 'a.ts', 'caller')).toEqual([0])
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['a.ts:near', 'b.ts:helper'])
+  })
+
+  it('follows a barrel that imports then re-exports under a local export clause', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { helper } from './barrel'\nexport function caller() {\n  helper()\n}\n",
+        'barrel.ts': "import { helper } from './b'\nexport { helper }\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('resolves a default export that names a local function', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import run from './b'\nexport function caller() {\n  run()\n}\n",
+        'b.ts': 'function helper() {}\nexport default helper\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('resolves through an export star as namespace', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { deep } from './barrel'\nexport function caller() {\n  deep.helper()\n}\n",
+        'barrel.ts': "export * as deep from './b'\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('resolves an import equals require of a relative file', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import b = require('./b')\nexport function caller() {\n  b.helper()\n}\n",
+        'b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('resolves a tsconfig path alias', async () => {
+    const map = await scan(
+      fixture({
+        'tsconfig.json': '{ "compilerOptions": { "baseUrl": ".", "paths": { "@lib/*": ["src/lib/*"] } } }',
+        'a.ts': "import { helper } from '@lib/b'\nexport function caller() {\n  helper()\n}\n",
+        'src/lib/b.ts': 'export function helper() {}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['src/lib/b.ts:helper'])
+  })
+
+  it('resolves through a root reached by a symlink', async () => {
+    const real = fixture({
+      'a.ts': "import { helper } from './b'\nexport function caller() {\n  helper()\n}\n",
+      'b.ts': 'export function helper() {}\n',
+    })
+    const alias = `${real}-link`
+    fs.symlinkSync(real, alias)
+    roots.push(alias)
+
+    expect(targets(await scan(alias), 'a.ts', 'caller')).toEqual(['b.ts:helper'])
+  })
+
+  it('points at the exported arrow constant, not the first name in the file', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import { later } from './b'\nexport function caller() {\n  later()\n}\n",
+        'b.ts': 'export const early = () => 1\nexport const later = () => 2\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:later'])
   })
 })

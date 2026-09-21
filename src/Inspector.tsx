@@ -113,7 +113,7 @@ type InspectorProps = {
 
 const KINDS = { folder: 'folder', codefile: 'file', codefn: 'function' } as const
 
-function Names({ title, refs }: { title: string; refs: FnRef[] }) {
+function Names({ title, refs, home }: { title: string; refs: FnRef[]; home: string }) {
   return (
     <section className="inspector-section">
       <h3>{title}</h3>
@@ -122,8 +122,8 @@ function Names({ title, refs }: { title: string; refs: FnRef[] }) {
       ) : (
         <ul className="inspector-owns">
           {refs.map((ref) => (
-            <li key={ref.index} className="code-fn-name">
-              {ref.name}
+            <li key={`${ref.file}#${ref.index}`} className="code-fn-name">
+              {ref.file === home ? ref.name : `${ref.name} · ${ref.file}`}
             </li>
           ))}
         </ul>
@@ -185,8 +185,8 @@ export function CodeInspector({
               </section>
             )}
 
-            <Names title="Calls" refs={node.calls} />
-            <Names title="Called by" refs={node.callers} />
+            <Names title="Calls" refs={node.calls} home={node.path} />
+            <Names title="Called by" refs={node.callers} home={node.path} />
 
             <section className="inspector-section">
               <h3>Source</h3>

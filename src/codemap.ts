@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre'
-import type { CodeMap, FileEntry, FolderEntry, FunctionEntry, Pt } from '../shared/types'
+import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry, Pt } from '../shared/types'
 import { NODE_W } from './layout'
 
 export const FUNCTIONS_SHOWN = 8
@@ -14,7 +14,7 @@ export const FN_DESC_H = 30
 
 export type Counts = { files: number; functions: number }
 
-export type FnRef = { index: number; name: string }
+export type FnRef = { file: string; index: number; name: string }
 
 export type CodeNodeData =
   | { kind: 'folder'; name: string; path: string; counts: Counts }
@@ -28,6 +28,7 @@ export type CodeNodeData =
       description: string
       calls: FnRef[]
       callers: FnRef[]
+      external: boolean
     }
 
 export type CodeNode = { id: string; data: CodeNodeData; height: number }
@@ -115,21 +116,38 @@ export function fnNodeId(path: string, index: number, name: string): string {
   return `codefn:${path}#${index}:${name}`
 }
 
-export function functionNodes(file: FileEntry): CodeNode[] {
-  const refs = file.functions.map((fn, i) => ({ index: i, name: fn.name }))
+function refKey(ref: { file: string; index: number }): string {
+  return `${ref.file}#${ref.index}`
+}
 
-  const resolved = file.functions.map((fn, i) =>
-    [...new Set(fn.calls)].flatMap((call) => (call === i ? [] : (refs[call] ?? [])))
+function uniqueRefs(refs: FnRef[]): FnRef[] {
+  return [...new Map(refs.map((ref) => [refKey(ref), ref])).values()]
+}
+
+function callRefs(file: FileEntry, index: Map<string, FileEntry>): FnRef[][] {
+  return file.functions.map((fn, i) =>
+    uniqueRefs(
+      fn.calls.flatMap((call) => {
+        if (call.file === file.path && call.fn === i) return []
+        const target = index.get(call.file)?.functions[call.fn]
+        return target === undefined ? [] : [{ file: call.file, index: call.fn, name: target.name }]
+      })
+    )
   )
+}
 
-  const callers = new Map<number, FnRef[]>()
+export function functionNodes(file: FileEntry, index: Map<string, FileEntry>): CodeNode[] {
+  const resolved = callRefs(file, index)
+
+  const callers = new Map<string, FnRef[]>()
   for (const [i, calls] of resolved.entries()) {
-    const from = refs[i]
-    if (from === undefined) continue
-    for (const call of calls) callers.set(call.index, [...(callers.get(call.index) ?? []), from])
+    const entry = file.functions[i]
+    if (entry === undefined) continue
+    const from: FnRef = { file: file.path, index: i, name: entry.name }
+    for (const call of calls) callers.set(refKey(call), [...(callers.get(refKey(call)) ?? []), from])
   }
 
-  return file.functions.map((fn, i) => {
+  const local = file.functions.map((fn, i) => {
     const data: CodeNodeData = {
       kind: 'codefn',
       name: fn.name,
@@ -138,24 +156,44 @@ export function functionNodes(file: FileEntry): CodeNode[] {
       endLine: fn.endLine,
       description: fn.description,
       calls: resolved[i] ?? [],
-      callers: callers.get(i) ?? []
+      callers: callers.get(refKey({ file: file.path, index: i })) ?? [],
+      external: false
     }
     return { id: fnNodeId(file.path, i, fn.name), data, height: heightOf(data) }
   })
+
+  const outside = uniqueRefs(resolved.flat().filter((ref) => ref.file !== file.path)).flatMap<CodeNode>((ref) => {
+    const fn = index.get(ref.file)?.functions[ref.index]
+    if (fn === undefined) return []
+    const data: CodeNodeData = {
+      kind: 'codefn',
+      name: fn.name,
+      path: ref.file,
+      line: fn.line,
+      endLine: fn.endLine,
+      description: fn.description,
+      calls: [],
+      callers: callers.get(refKey(ref)) ?? [],
+      external: true
+    }
+    return [{ id: fnNodeId(ref.file, ref.index, fn.name), data, height: heightOf(data) }]
+  })
+
+  return [...local, ...outside]
 }
 
-export function functionEdges(file: FileEntry): CodeLink[] {
+export function functionEdges(file: FileEntry, index: Map<string, FileEntry>): CodeLink[] {
   const links: CodeLink[] = []
   const seen = new Set<string>()
 
-  for (const [i, fn] of file.functions.entries()) {
+  for (const [i, refs] of callRefs(file, index).entries()) {
+    const fn = file.functions[i]
+    if (fn === undefined) continue
     const source = fnNodeId(file.path, i, fn.name)
-    for (const call of fn.calls) {
-      const target = file.functions[call]
-      if (target === undefined || call === i) continue
 
-      const link = { id: `${source}->${call}`, source, target: fnNodeId(file.path, call, target.name) }
-      if (seen.has(link.id)) continue
+    for (const ref of refs) {
+      const link = { id: `${source}->${refKey(ref)}`, source, target: fnNodeId(ref.file, ref.index, ref.name) }
+      if (seen.has(link.id) || link.source === link.target) continue
       seen.add(link.id)
       links.push(link)
     }

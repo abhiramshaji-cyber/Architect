@@ -263,22 +263,27 @@ describe('columnsFor', () => {
 })
 
 function fn(name: string, line: number, endLine: number, calls: number[] = [], description = ''): FunctionEntry {
-  return { name, line, endLine, description, calls }
+  return { name, line, endLine, description, calls: calls.map((to) => ({ file: '', fn: to })) }
 }
 
-const chart: FileEntry = {
-  path: 'src/runner.ts',
-  functions: [
-    fn('run', 1, 20, [1, 2]),
-    fn('load', 22, 30, [5]),
-    fn('execute', 32, 60, [3, 4]),
-    fn('step', 62, 70, [5]),
-    fn('retry', 72, 90, [4, 3]),
-    fn('key', 92, 96),
-    fn('report', 100, 400),
-    fn('noop', 402, 404)
-  ]
+function entry(path: string, functions: FunctionEntry[]): FileEntry {
+  return { path, functions: functions.map((f) => ({ ...f, calls: f.calls.map((c) => ({ ...c, file: path })) })) }
 }
+
+function only(file: FileEntry): Map<string, FileEntry> {
+  return new Map([[file.path, file]])
+}
+
+const chart: FileEntry = entry('src/runner.ts', [
+  fn('run', 1, 20, [1, 2]),
+  fn('load', 22, 30, [5]),
+  fn('execute', 32, 60, [3, 4]),
+  fn('step', 62, 70, [5]),
+  fn('retry', 72, 90, [4, 3]),
+  fn('key', 92, 96),
+  fn('report', 100, 400),
+  fn('noop', 402, 404)
+])
 
 const id = (name: string) => fnNodeId(chart.path, chart.functions.findIndex((f) => f.name === name), name)
 
@@ -345,13 +350,14 @@ describe('function node size', () => {
       endLine: 900,
       description,
       calls: [],
-      callers: []
+      callers: [],
+      external: false
     })
 
   it('ignores the line span now that the card carries no source', () => {
     expect(at('')).toBe(FN_BASE_H)
     expect(
-      heightOf({ kind: 'codefn', name: 'run', path: 'a.ts', line: 1, endLine: 1, description: '', calls: [], callers: [] })
+      heightOf({ kind: 'codefn', name: 'run', path: 'a.ts', line: 1, endLine: 1, description: '', calls: [], callers: [], external: false })
     ).toBe(FN_BASE_H)
   })
 
@@ -368,7 +374,8 @@ describe('function node size', () => {
       endLine: 2,
       description: '',
       calls: [],
-      callers: []
+      callers: [],
+      external: false
     })
     expect(fnWidth).toBe(FN_NODE_W)
     expect(fnWidth).toBeGreaterThan(NODE_W)
@@ -379,7 +386,7 @@ describe('function node size', () => {
 
 describe('functionNodes', () => {
   it('gives every function a unique id and its own height', () => {
-    const nodes = functionNodes(chart)
+    const nodes = functionNodes(chart, only(chart))
     expect(nodes).toHaveLength(8)
     expect(new Set(nodes.map((n) => n.id)).size).toBe(8)
     expect(nodes.every((n) => n.height === heightOf(n.data))).toBe(true)
@@ -387,7 +394,7 @@ describe('functionNodes', () => {
 
   it('reverses calls into callers, ignoring self recursion', () => {
     const callersOf = (name: string) => {
-      const data = functionNodes(chart).find((n) => n.data.name === name)?.data
+      const data = functionNodes(chart, only(chart)).find((n) => n.data.name === name)?.data
       return data?.kind === 'codefn' ? data.callers.map((c) => c.name) : null
     }
     expect(callersOf('step')).toEqual(['execute', 'retry'])
@@ -396,23 +403,20 @@ describe('functionNodes', () => {
   })
 
   it('keeps distinct ids for two functions sharing a name', () => {
-    const dup: FileEntry = { path: 'a.ts', functions: [fn('go', 1, 2), fn('go', 4, 5)] }
-    expect(new Set(functionNodes(dup).map((n) => n.id)).size).toBe(2)
+    const dup = entry('a.ts', [fn('go', 1, 2), fn('go', 4, 5)])
+    expect(new Set(functionNodes(dup, only(dup)).map((n) => n.id)).size).toBe(2)
   })
 
   it('keeps callers apart for two functions sharing a name', () => {
-    const dup: FileEntry = {
-      path: 'a.ts',
-      functions: [fn('visit', 1, 2), fn('visit', 4, 5), fn('a', 7, 8, [0]), fn('b', 10, 11, [1])]
-    }
-    const callers = functionNodes(dup).map((n) => (n.data.kind === 'codefn' ? n.data.callers.map((c) => c.name) : null))
+    const dup = entry('a.ts', [fn('visit', 1, 2), fn('visit', 4, 5), fn('a', 7, 8, [0]), fn('b', 10, 11, [1])])
+    const callers = functionNodes(dup, only(dup)).map((n) => (n.data.kind === 'codefn' ? n.data.callers.map((c) => c.name) : null))
     expect(callers).toEqual([['a'], ['b'], [], []])
   })
 })
 
 describe('functionEdges', () => {
   it('draws one edge per resolved call, caller to callee', () => {
-    const links = functionEdges(chart)
+    const links = functionEdges(chart, only(chart))
     expect(links.map((l) => [l.source, l.target])).toEqual([
       [id('run'), id('load')],
       [id('run'), id('execute')],
@@ -425,38 +429,36 @@ describe('functionEdges', () => {
   })
 
   it('points an edge at the called index, not the first function with that name', () => {
-    const dup: FileEntry = {
-      path: 'a.ts',
-      functions: [fn('parse', 1, 1), fn('parse', 2, 2), fn('parse', 3, 6), fn('main', 8, 10, [2])]
-    }
-    const links = functionEdges(dup)
+    const dup = entry('a.ts', [fn('parse', 1, 1), fn('parse', 2, 2), fn('parse', 3, 6), fn('main', 8, 10, [2])])
+    const links = functionEdges(dup, only(dup))
     expect(links.map((l) => [l.source, l.target])).toEqual([
       [fnNodeId('a.ts', 3, 'main'), fnNodeId('a.ts', 2, 'parse')]
     ])
   })
 
   it('omits the self edge of a recursive function', () => {
-    expect(functionEdges(chart).some((l) => l.source === l.target)).toBe(false)
-    expect(functionEdges({ path: 'a.ts', functions: [fn('loop', 1, 9, [0])] })).toEqual([])
+    expect(functionEdges(chart, only(chart)).some((l) => l.source === l.target)).toBe(false)
+    const loop = entry('a.ts', [fn('loop', 1, 9, [0])])
+    expect(functionEdges(loop, only(loop))).toEqual([])
   })
 
   it('drops a call that names nothing in this file, and never repeats an edge', () => {
-    const file: FileEntry = { path: 'a.ts', functions: [fn('go', 1, 5, [9, 1, 1]), fn('stop', 7, 9)] }
-    const links = functionEdges(file)
+    const file = entry('a.ts', [fn('go', 1, 5, [9, 1, 1]), fn('stop', 7, 9)])
+    const links = functionEdges(file, only(file))
     expect(links).toHaveLength(1)
     expect(links[0]?.target).toBe(fnNodeId('a.ts', 1, 'stop'))
   })
 
   it('has a unique id per edge', () => {
-    const links = functionEdges(chart)
+    const links = functionEdges(chart, only(chart))
     expect(new Set(links.map((l) => l.id)).size).toBe(links.length)
   })
 })
 
 describe('callPositions', () => {
   it('places callers above their callees', () => {
-    const nodes = functionNodes(chart)
-    const at = callPositions(nodes, functionEdges(chart))
+    const nodes = functionNodes(chart, only(chart))
+    const at = callPositions(nodes, functionEdges(chart, only(chart)))
     const y = (name: string) => at.get(id(name))?.y ?? 0
     expect(y('run')).toBeLessThan(y('execute'))
     expect(y('execute')).toBeLessThan(y('retry'))
@@ -465,23 +467,23 @@ describe('callPositions', () => {
   })
 
   it('places isolated functions somewhere real, not on top of each other', () => {
-    const nodes = functionNodes(chart)
-    const at = callPositions(nodes, functionEdges(chart))
+    const nodes = functionNodes(chart, only(chart))
+    const at = callPositions(nodes, functionEdges(chart, only(chart)))
     expect(at.size).toBe(8)
     expect(at.get(id('report'))).not.toEqual(at.get(id('noop')))
   })
 
   it('lays out a world where nothing calls anything', () => {
-    const lonely: FileEntry = { path: 'a.ts', functions: [fn('a', 1, 4), fn('b', 6, 9), fn('c', 11, 14)] }
-    const nodes = functionNodes(lonely)
-    const at = callPositions(nodes, functionEdges(lonely))
+    const lonely = entry('a.ts', [fn('a', 1, 4), fn('b', 6, 9), fn('c', 11, 14)])
+    const nodes = functionNodes(lonely, only(lonely))
+    const at = callPositions(nodes, functionEdges(lonely, only(lonely)))
     expect(at.size).toBe(3)
     expect(new Set([...at.values()].map((p) => `${p.x},${p.y}`)).size).toBe(3)
   })
 
   it('never overlaps two function cards', () => {
-    const nodes = functionNodes(chart)
-    const at = callPositions(nodes, functionEdges(chart))
+    const nodes = functionNodes(chart, only(chart))
+    const at = callPositions(nodes, functionEdges(chart, only(chart)))
     const boxes = nodes.map((n) => {
       const p = at.get(n.id) ?? { x: 0, y: 0 }
       return { x: p.x, y: p.y, w: widthOf(n.data), h: n.height }

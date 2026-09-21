@@ -23,16 +23,22 @@ import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } fro
 import { apply, check, parse, serialize } from './graph'
 import { scan } from './scan'
 
-const MAP_VERSION = 2
+const MAP_VERSION = 3
 
 function mapPath(root: string) {
   return path.join(root, '.architect', 'map.json')
 }
 
+function isCallRef(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const ref = value as Record<string, unknown>
+  return typeof ref.file === 'string' && Number.isInteger(ref.fn)
+}
+
 function isFunctionEntry(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const fn = value as Record<string, unknown>
-  if (!Array.isArray(fn.calls) || !fn.calls.every((c) => Number.isInteger(c))) return false
+  if (!Array.isArray(fn.calls) || !fn.calls.every(isCallRef)) return false
   if (typeof fn.endLine !== 'number') return false
   return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
 }

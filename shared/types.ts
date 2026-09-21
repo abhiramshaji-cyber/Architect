@@ -83,7 +83,9 @@ export const requestSchema = z.discriminatedUnion('op', [
 
 export type Request = z.infer<typeof requestSchema>
 
-export type FunctionEntry = { name: string; line: number; endLine: number; description: string; calls: number[] }
+export type CallRef = { file: string; fn: number }
+
+export type FunctionEntry = { name: string; line: number; endLine: number; description: string; calls: CallRef[] }
 
 export type FileEntry = { path: string; functions: FunctionEntry[] }
 

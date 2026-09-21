@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
-import type { CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../shared/types'
+import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../shared/types'
 
 const IGNORED_DIRS = new Set([
   'node_modules',
@@ -116,28 +116,120 @@ function isOverloadSignature(node: ts.Node): boolean {
   )
 }
 
-function importedNames(source: ts.SourceFile): Set<string> {
-  const names = new Set<string>()
+type ImportBinding = { spec: string; name: string | null }
+
+function moduleSpecifier(node: ts.Expression | undefined): string | undefined {
+  return node !== undefined && ts.isStringLiteral(node) ? node.text : undefined
+}
+
+function importBindings(source: ts.SourceFile): Map<string, ImportBinding | null> {
+  const bindings = new Map<string, ImportBinding | null>()
 
   for (const statement of source.statements) {
-    if (ts.isImportEqualsDeclaration(statement)) names.add(statement.name.text)
+    if (ts.isImportEqualsDeclaration(statement)) {
+      const spec = ts.isExternalModuleReference(statement.moduleReference)
+        ? moduleSpecifier(statement.moduleReference.expression)
+        : undefined
+      bindings.set(statement.name.text, spec === undefined ? null : { spec, name: null })
+    }
+
     if (!ts.isImportDeclaration(statement) || statement.importClause === undefined) continue
 
     const clause = statement.importClause
-    if (clause.name) names.add(clause.name.text)
+    const spec = clause.isTypeOnly ? undefined : moduleSpecifier(statement.moduleSpecifier)
 
-    const bindings = clause.namedBindings
-    if (bindings && ts.isNamespaceImport(bindings)) names.add(bindings.name.text)
-    if (bindings && ts.isNamedImports(bindings)) for (const element of bindings.elements) names.add(element.name.text)
+    if (clause.name) bindings.set(clause.name.text, spec === undefined ? null : { spec, name: 'default' })
+
+    const named = clause.namedBindings
+    if (named && ts.isNamespaceImport(named)) {
+      bindings.set(named.name.text, spec === undefined ? null : { spec, name: null })
+    }
+    if (named && ts.isNamedImports(named)) {
+      for (const element of named.elements) {
+        const name = (element.propertyName ?? element.name).text
+        const to = spec === undefined || element.isTypeOnly ? null : { spec, name }
+        bindings.set(element.name.text, to)
+      }
+    }
   }
 
-  return names
+  return bindings
 }
 
 function boundNames(name: ts.BindingName, into: Set<string>): void {
   if (ts.isIdentifier(name)) return void into.add(name.text)
   for (const element of name.elements) {
     if (ts.isBindingElement(element)) boundNames(element.name, into)
+  }
+}
+
+function hasKeyword(statement: ts.Statement, kind: ts.SyntaxKind): boolean {
+  if (!ts.canHaveModifiers(statement)) return false
+  return (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === kind)
+}
+
+function exportedFrom(
+  statement: ts.Statement,
+  imported: Map<string, ImportBinding | null>,
+  into: Map<string, string>,
+  forward: Map<string, { spec: string; name: string }>,
+): void {
+  const relay = (name: string, local: string): void => {
+    const binding = imported.get(local)
+    if (binding === null) return
+    if (binding === undefined) return void into.set(name, local)
+    forward.set(name, { spec: binding.spec, name: binding.name ?? '*' })
+  }
+
+  if (ts.isExportAssignment(statement)) {
+    const expression = statement.expression
+    return void (ts.isIdentifier(expression) ? relay('default', expression.text) : into.set('default', 'default'))
+  }
+
+  if (
+    ts.isExportDeclaration(statement) &&
+    statement.moduleSpecifier === undefined &&
+    statement.exportClause &&
+    ts.isNamedExports(statement.exportClause)
+  ) {
+    for (const element of statement.exportClause.elements) {
+      relay(element.name.text, (element.propertyName ?? element.name).text)
+    }
+    return
+  }
+
+  if (!hasKeyword(statement, ts.SyntaxKind.ExportKeyword)) return
+  const fallback = hasKeyword(statement, ts.SyntaxKind.DefaultKeyword)
+
+  if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) {
+    const name = statement.name?.text ?? 'default'
+    into.set(name, name)
+    if (fallback) into.set('default', name)
+    return
+  }
+
+  if (ts.isVariableStatement(statement)) {
+    const names = new Set<string>()
+    for (const declaration of statement.declarationList.declarations) boundNames(declaration.name, names)
+    for (const name of names) into.set(name, name)
+  }
+}
+
+function reexportedFrom(
+  statement: ts.Statement,
+  into: Map<string, { spec: string; name: string }>,
+  stars: string[],
+): void {
+  if (!ts.isExportDeclaration(statement)) return
+  const spec = moduleSpecifier(statement.moduleSpecifier)
+  if (spec === undefined) return
+
+  const clause = statement.exportClause
+  if (clause === undefined) return void stars.push(spec)
+  if (ts.isNamespaceExport(clause)) return void into.set(clause.name.text, { spec, name: '*' })
+
+  for (const element of clause.elements) {
+    into.set(element.name.text, { spec, name: (element.propertyName ?? element.name).text })
   }
 }
 
@@ -184,20 +276,22 @@ function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
   return byScope
 }
 
+type Call = number | { name: string; root: string }
+
 function resolveCall(
   name: string,
   at: ts.Node,
   byScope: Map<ts.Node, Map<string, number>>,
   shadows: Map<ts.Node, Set<string>>,
-  imported: Set<string>,
-): number | undefined {
+  imported: Map<string, ImportBinding | null>,
+): Call | undefined {
   const root = name.split('.')[0] ?? name
 
   for (let scope = scopeOf(at); scope !== undefined; scope = scopeOf(scope)) {
     const hit = byScope.get(scope)?.get(name)
     if (hit !== undefined) return hit
     if (shadows.get(scope)?.has(root)) return undefined
-    if (ts.isSourceFile(scope) && imported.has(root)) return undefined
+    if (ts.isSourceFile(scope) && imported.has(root)) return { name, root }
   }
 
   return undefined
@@ -207,9 +301,9 @@ function callsIn(
   node: ts.Node,
   self: string,
   nested: Set<ts.Node>,
-  resolve: (name: string, at: ts.Node) => number | undefined,
-): number[] {
-  const found = new Set<number>()
+  resolve: (name: string, at: ts.Node) => Call | undefined,
+): Call[] {
+  const found = new Map<string, Call>()
 
   const visit = (child: ts.Node): void => {
     if (child !== node && nested.has(child)) return
@@ -217,22 +311,37 @@ function callsIn(
     if (ts.isCallExpression(child)) {
       const name = calleeName(child.expression, self)
       const target = name === undefined ? undefined : resolve(name, child)
-      if (target !== undefined) found.add(target)
+      if (target !== undefined) found.set(typeof target === 'number' ? `#${target}` : `@${target.name}`, target)
     }
 
     ts.forEachChild(child, visit)
   }
 
   visit(node)
-  return [...found]
+  return [...found.values()]
 }
 
-function functionsIn(source: string, file: string): FunctionEntry[] {
+type Pending = { from: number; spec: string; key: string }
+
+type Parsed = {
+  functions: FunctionEntry[]
+  topLevel: Map<string, number>
+  exports: Map<string, string>
+  reexports: Map<string, { spec: string; name: string }>
+  stars: string[]
+  pending: Pending[]
+}
+
+function empty(): Parsed {
+  return { functions: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [] }
+}
+
+function parseFile(source: string, file: string): Parsed {
   const lower = file.toLowerCase()
-  if (lower.endsWith('.d.ts') || lower.endsWith('.d.mts') || lower.endsWith('.d.cts')) return []
+  if (lower.endsWith('.d.ts') || lower.endsWith('.d.mts') || lower.endsWith('.d.cts')) return empty()
 
   const kind = SCRIPT_KINDS.get(path.extname(lower))
-  if (kind === undefined) return []
+  if (kind === undefined) return empty()
 
   try {
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind)
@@ -255,7 +364,7 @@ function functionsIn(source: string, file: string): FunctionEntry[] {
     const nested = new Set(found.map((f) => f.node))
     const byScope = bindingsOf(found)
     const shadows = shadowsOf(sourceFile)
-    const imported = importedNames(sourceFile)
+    const imported = importBindings(sourceFile)
     const calls = found.map((f) =>
       callsIn(f.node, f.owner, nested, (name, at) => resolveCall(name, at, byScope, shadows, imported)),
     )
@@ -265,12 +374,137 @@ function functionsIn(source: string, file: string): FunctionEntry[] {
       .sort((a, b) => a.f.entry.line - b.f.entry.line || a.f.entry.name.localeCompare(b.f.entry.name))
     const rank = new Map(order.map(({ i }, to) => [i, to]))
 
-    return order.map(({ f, i }) => ({
-      ...f.entry,
-      calls: (calls[i] ?? []).flatMap((c) => (rank.has(c) ? [rank.get(c) as number] : [])).sort((a, b) => a - b),
-    }))
+    const exports = new Map<string, string>()
+    const reexports = new Map<string, { spec: string; name: string }>()
+    const stars: string[] = []
+    for (const statement of sourceFile.statements) {
+      exportedFrom(statement, imported, exports, reexports)
+      reexportedFrom(statement, reexports, stars)
+    }
+
+    const topLevel = new Map<string, number>()
+    for (const [name, at] of byScope.get(sourceFile) ?? []) {
+      const to = rank.get(at)
+      if (to !== undefined) topLevel.set(name, to)
+    }
+
+    const pending: Pending[] = []
+    const functions = order.map(({ f, i }, from) => {
+      const refs: CallRef[] = []
+      for (const call of calls[i] ?? []) {
+        if (typeof call === 'number') {
+          const to = rank.get(call)
+          if (to !== undefined) refs.push({ file, fn: to })
+          continue
+        }
+
+        const binding = imported.get(call.root)
+        if (binding === null || binding === undefined) continue
+
+        const rest = call.name.slice(call.root.length)
+        const key = binding.name === null ? rest.slice(1) : binding.name + rest
+        if (key !== '') pending.push({ from, spec: binding.spec, key })
+      }
+
+      return { ...f.entry, calls: refs.sort((a, b) => a.fn - b.fn) }
+    })
+
+    return { functions, topLevel, exports, reexports, stars, pending }
   } catch {
-    return []
+    return empty()
+  }
+}
+
+function resolutionOptions(root: string): ts.CompilerOptions {
+  const options: ts.CompilerOptions = {
+    allowJs: true,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+  }
+
+  const config = path.join(root, 'tsconfig.json')
+  try {
+    const read = ts.readConfigFile(config, ts.sys.readFile)
+    if (read.error !== undefined || typeof read.config !== 'object' || read.config === null) return options
+    const parsed = ts.parseJsonConfigFileContent({ ...read.config, files: [], include: [] }, ts.sys, root)
+    return { ...options, baseUrl: parsed.options.baseUrl, paths: parsed.options.paths }
+  } catch {
+    return options
+  }
+}
+
+function realRoot(root: string): string {
+  try {
+    return fs.realpathSync(root)
+  } catch {
+    return root
+  }
+}
+
+function link(root: string, parsed: Map<string, Parsed>): void {
+  const options = resolutionOptions(root)
+  const cache = ts.createModuleResolutionCache(root, (name) => name, options)
+  const bases = [...new Set([root, realRoot(root)])]
+
+  const target = (from: string, spec: string): string | undefined => {
+    const hit = ts.resolveModuleName(spec, path.join(root, from), options, ts.sys, cache).resolvedModule
+    if (hit === undefined || hit.isExternalLibraryImport === true) return undefined
+
+    for (const base of bases) {
+      const relative = path.relative(base, hit.resolvedFileName).split(path.sep).join('/')
+      if (parsed.has(relative)) return relative
+    }
+
+    return undefined
+  }
+
+  const find = (file: string, key: string, seen: Set<string>): CallRef | undefined => {
+    const at = parsed.get(file)
+    if (at === undefined || key === '') return undefined
+
+    const mark = `${file}\0${key}`
+    if (seen.has(mark)) return undefined
+    seen.add(mark)
+
+    for (let cut = key.length; cut > 0; cut = key.lastIndexOf('.', cut - 1)) {
+      const prefix = key.slice(0, cut)
+      const rest = key.slice(cut)
+
+      const local = at.exports.get(prefix)
+      const fn = local === undefined ? undefined : at.topLevel.get(local + rest)
+      if (fn !== undefined) return { file, fn }
+
+      const via = at.reexports.get(prefix)
+      const to = via === undefined ? undefined : target(file, via.spec)
+      const hit =
+        via === undefined || to === undefined
+          ? undefined
+          : find(to, via.name === '*' ? rest.slice(1) : via.name + rest, seen)
+      if (hit !== undefined) return hit
+    }
+
+    for (const spec of at.stars) {
+      const to = target(file, spec)
+      const hit = to === undefined ? undefined : find(to, key, seen)
+      if (hit !== undefined) return hit
+    }
+
+    return undefined
+  }
+
+  for (const [file, at] of parsed) {
+    for (const { from, spec, key } of at.pending) {
+      const entry = at.functions[from]
+      const to = target(file, spec)
+      const hit = to === undefined || entry === undefined ? undefined : find(to, key, new Set())
+      if (hit === undefined || entry === undefined) continue
+      if (entry.calls.some((c) => c.file === hit.file && c.fn === hit.fn)) continue
+      entry.calls.push(hit)
+    }
+
+    for (const entry of at.functions) {
+      entry.calls.sort((a, b) => a.file.localeCompare(b.file) || a.fn - b.fn)
+    }
   }
 }
 
@@ -288,7 +522,13 @@ function yieldToLoop() {
   return new Promise<void>((resolve) => setImmediate(resolve))
 }
 
-async function walk(root: string, relative: string, into: FolderEntry[], counter: { seen: number }): Promise<void> {
+async function walk(
+  root: string,
+  relative: string,
+  into: FolderEntry[],
+  parsed: Map<string, Parsed>,
+  counter: { seen: number },
+): Promise<void> {
   const absolute = relative ? path.join(root, relative) : root
 
   let entries: fs.Dirent[]
@@ -307,7 +547,7 @@ async function walk(root: string, relative: string, into: FolderEntry[], counter
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue
       folders.push(child)
-      await walk(root, child, into, counter)
+      await walk(root, child, into, parsed, counter)
       continue
     }
 
@@ -319,7 +559,9 @@ async function walk(root: string, relative: string, into: FolderEntry[], counter
     const source = readText(path.join(absolute, entry.name))
     if (source === undefined) continue
 
-    files.push({ path: child, functions: functionsIn(source, entry.name) })
+    const file = parseFile(source, child)
+    parsed.set(child, file)
+    files.push({ path: child, functions: file.functions })
   }
 
   folders.sort((a, b) => a.localeCompare(b))
@@ -330,7 +572,10 @@ async function walk(root: string, relative: string, into: FolderEntry[], counter
 
 export async function scan(root: string): Promise<CodeMap> {
   const folders: FolderEntry[] = []
-  await walk(root, '', folders, { seen: 0 })
+  const parsed = new Map<string, Parsed>()
+
+  await walk(root, '', folders, parsed, { seen: 0 })
+  link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 
   return { root, scannedAt: Date.now(), folders }
