@@ -99,6 +99,18 @@ describe('parse', () => {
     expect(() => parse(bad)).toThrow(/ui \u2192 api/)
   })
 
+  it('throws on an owns line that does not match, naming the text and document line', () => {
+    const bad = fixture.replace('owns: `src/api/**`', 'owns: src/api/**')
+    expect(() => parse(bad)).toThrow(/line 9/)
+    expect(() => parse(bad)).toThrow(/owns: src\/api\/\*\*/)
+  })
+
+  it('throws on an owns line with a missing backtick, naming the text and document line', () => {
+    const bad = fixture.replace('owns: `src/api/**`', 'owns: `src/api/**')
+    expect(() => parse(bad)).toThrow(/line 9/)
+    expect(() => parse(bad)).toThrow(/owns: `src\/api\/\*\*/)
+  })
+
   it('throws on a forbidden line that does not match, naming the text and document line', () => {
     const bad = fixture.replace('- ui -> db : bypasses the api layer', '- ui -> db - bypasses the api layer')
     expect(() => parse(bad)).toThrow(/line 27/)

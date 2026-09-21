@@ -60,7 +60,7 @@ export function parse(markdown: string): Architecture {
   const components: Component[] = []
   const seenIds = new Set<string>()
 
-  for (const { text } of sectionLines(markdown, 'Components')) {
+  for (const { text, line } of sectionLines(markdown, 'Components')) {
     if (text === '###' || text.startsWith('### ')) {
       const id = text.slice(3).trim()
       if (id.length === 0) throw new Error('component id cannot be empty')
@@ -75,8 +75,11 @@ export function parse(markdown: string): Architecture {
 
     const current = components[components.length - 1]
     if (!current) continue
-    if (text.startsWith('owns:')) current.owns.push(text.match(/`([^`]*)`/)?.[1] ?? '')
-    else if (current.purpose.length === 0) current.purpose = text
+    if (text.startsWith('owns:')) {
+      const m = text.match(/`([^`]*)`/)
+      if (!m) throw new Error(`malformed owns on line ${line}: ${text}`)
+      current.owns.push(m[1] ?? '')
+    } else if (current.purpose.length === 0) current.purpose = text
   }
 
   const knownIds = new Set(components.map((c) => c.id))
