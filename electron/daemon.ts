@@ -12,6 +12,7 @@ import {
   type Edit,
   type EditSummary,
   type Pending,
+  pendingSchema,
   type Proposal,
   requestSchema,
   type Request,
@@ -182,8 +183,40 @@ export function createDaemon(options: DaemonOptions = {}) {
     saveProjects()
   }
 
+  const pendingPath = path.join(path.dirname(socketPath), 'pending.json')
+
+  function listPending() {
+    return [...pending.values()].map((e) => e.pending)
+  }
+
+  function savePending() {
+    try {
+      fs.mkdirSync(path.dirname(pendingPath), { recursive: true })
+      fs.writeFileSync(pendingPath, JSON.stringify(listPending(), null, 2))
+    } catch (err) {
+      console.error('could not persist pending proposals:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  function restorePending() {
+    let stored: unknown
+    try {
+      stored = JSON.parse(fs.readFileSync(pendingPath, 'utf8'))
+    } catch {
+      return
+    }
+    if (!Array.isArray(stored)) return
+
+    for (const raw of stored) {
+      const parsed = pendingSchema.safeParse(raw)
+      if (!parsed.success || pending.has(parsed.data.id)) continue
+      pending.set(parsed.data.id, { pending: parsed.data, waiters: new Set() })
+    }
+  }
+
   function notifyPending() {
-    pendingListener?.([...pending.values()].map((e) => e.pending))
+    savePending()
+    pendingListener?.(listPending())
   }
 
   function listProjects() {
@@ -249,6 +282,14 @@ export function createDaemon(options: DaemonOptions = {}) {
     saveProjects()
     notifyProjects()
     return state
+  }
+
+  function reopen(root: string): ProjectState | undefined {
+    try {
+      return loadProject(root)
+    } catch {
+      return undefined
+    }
   }
 
   function sameProposal(a: Proposal, b: Proposal): boolean {
@@ -329,7 +370,8 @@ export function createDaemon(options: DaemonOptions = {}) {
     const entry = pending.get(id)
     if (!entry) return
 
-    const project = projects.get(entry.pending.projectRoot)
+    const root = entry.pending.projectRoot
+    const project = approved ? reopen(root) : undefined
 
     if (approved && project) {
       let proposal = entry.pending.proposal
@@ -347,7 +389,7 @@ export function createDaemon(options: DaemonOptions = {}) {
         resolveWaiters(entry, { status: 'rejected', reason: err instanceof Error ? err.message : String(err) })
       }
     } else {
-      resolveWaiters(entry, { status: 'rejected', reason: reason ?? '' })
+      resolveWaiters(entry, { status: 'rejected', reason: reason ?? (approved ? `could not open ${root}` : '') })
     }
 
     pending.delete(id)
@@ -464,6 +506,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   async function listen(): Promise<void> {
     restoreProjects()
+    restorePending()
 
     if (process.platform !== 'win32') {
       fs.mkdirSync(path.dirname(socketPath), { recursive: true })
@@ -497,7 +540,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     close,
     projects: listProjects,
     open,
-    pending: () => [...pending.values()].map((e) => e.pending),
+    pending: listPending,
     decide,
     edits: (root: string): EditSummary[] => {
       loadProject(root)

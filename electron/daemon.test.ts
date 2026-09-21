@@ -535,6 +535,178 @@ describe('project persistence', () => {
   })
 })
 
+describe('pending persistence', () => {
+  let pendingPath: string
+
+  beforeEach(() => {
+    pendingPath = path.join(path.dirname(socketPath), 'pending.json')
+    writeArchitect(tmpRoot, fixture(component('api') + component('db')))
+  })
+
+  function writeStore(entries: unknown) {
+    fs.mkdirSync(path.dirname(pendingPath), { recursive: true })
+    fs.writeFileSync(pendingPath, typeof entries === 'string' ? entries : JSON.stringify(entries))
+  }
+
+  it('saves a pending proposal, reloads it, and approves it for a waiter that arrived after the restart', async () => {
+    const first = createDaemon({ socketPath, proposalTimeoutMs: 30 })
+    await first.listen()
+    const c1 = await client(socketPath)
+
+    const res = await c1.request({
+      op: 'propose_change',
+      cwd: tmpRoot,
+      proposal: { kind: 'edge', from: 'api', to: 'db' },
+      rationale: 'wiring',
+    })
+    const id = res.ok ? (res.result as { status: 'pending'; id: string }).id : ''
+    expect(JSON.parse(fs.readFileSync(pendingPath, 'utf8'))).toEqual([
+      { id, projectRoot: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring', createdAt: expect.any(Number) },
+    ])
+    c1.close()
+    await first.close()
+
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 })
+    await daemon.listen()
+    expect(daemon.pending().map((p) => p.id)).toEqual([id])
+
+    const c2 = await client(socketPath)
+    const awaited = c2.request({ op: 'await_proposal', cwd: tmpRoot, proposalId: id })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    await daemon.decide(id, true)
+
+    const decided = await awaited
+    expect(decided.ok && decided.result).toEqual({ status: 'approved' })
+    expect(daemon.pending()).toHaveLength(0)
+    expect(JSON.parse(fs.readFileSync(pendingPath, 'utf8'))).toEqual([])
+    expect(fs.readFileSync(path.join(tmpRoot, 'architect.md'), 'utf8')).toMatch(/api -> db/)
+    c2.close()
+  })
+
+  it('keeps both proposals on disk while two are pending at once', async () => {
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 })
+    await daemon.listen()
+    const c = await client(socketPath)
+
+    void c.request({ op: 'propose_change', cwd: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring' })
+    void c.request({ op: 'propose_change', cwd: tmpRoot, proposal: { kind: 'file', path: 'db/x.ts', component: 'db' }, rationale: 'new file' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const stored = JSON.parse(fs.readFileSync(pendingPath, 'utf8')) as { proposal: { kind: string } }[]
+    expect(stored.map((p) => p.proposal.kind).sort()).toEqual(['edge', 'file'])
+    c.close()
+  })
+
+  it('reloads a proposal whose project is gone and rejects it instead of throwing', async () => {
+    const gone = path.join(tmpRoot, 'gone')
+    writeStore([{ id: 'orphan', projectRoot: gone, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring', createdAt: 1 }])
+
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 })
+    await daemon.listen()
+    expect(daemon.pending()).toHaveLength(1)
+
+    const c = await client(socketPath)
+    const awaited = c.request({ op: 'await_proposal', cwd: tmpRoot, proposalId: 'orphan' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    await expect(daemon.decide('orphan', true)).resolves.toBeUndefined()
+
+    const res = await awaited
+    expect(res.ok && res.result).toEqual({ status: 'rejected', reason: `could not open ${gone}` })
+    expect(daemon.pending()).toHaveLength(0)
+    c.close()
+  })
+
+  it('decides a reloaded proposal that nobody is waiting on', async () => {
+    writeStore([{ id: 'orphan', projectRoot: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring', createdAt: 1 }])
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    await expect(daemon.decide('orphan', true)).resolves.toBeUndefined()
+    expect(daemon.pending()).toHaveLength(0)
+    expect(fs.readFileSync(path.join(tmpRoot, 'architect.md'), 'utf8')).toMatch(/api -> db/)
+  })
+
+  it('starts with an empty inbox when the store is unreadable', async () => {
+    const corrupt = [
+      '',
+      'not json',
+      '{"id":"x"}',
+      JSON.stringify([1, null, 'x']),
+      JSON.stringify([{ id: 'a', projectRoot: tmpRoot, proposal: { kind: 'ghost' }, rationale: '', createdAt: 0 }]),
+      JSON.stringify([{ id: 'a', projectRoot: tmpRoot, proposal: { kind: 'edge', from: 'api' }, rationale: '', createdAt: 0 }]),
+    ]
+
+    for (const contents of corrupt) {
+      writeStore(contents)
+      const d = createDaemon({ socketPath })
+      await d.listen()
+      expect(d.pending()).toEqual([])
+      await d.close()
+    }
+  })
+
+  it('keeps the valid entries of a partly corrupt store and drops unknown fields', async () => {
+    writeStore([
+      { id: 'bad', proposal: { kind: 'edge' } },
+      { id: 'good', projectRoot: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring', createdAt: 1, extra: 'ignored' },
+    ])
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    expect(daemon.pending()).toEqual([
+      { id: 'good', projectRoot: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring', createdAt: 1 },
+    ])
+  })
+
+  it('reattaches a reproposing agent to the reloaded proposal instead of duplicating it', async () => {
+    writeStore([{ id: 'orphan', projectRoot: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring', createdAt: 1 }])
+
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 })
+    await daemon.listen()
+
+    const c = await client(socketPath)
+    const awaited = c.request({ op: 'propose_change', cwd: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(daemon.pending().map((p) => p.id)).toEqual(['orphan'])
+
+    await daemon.decide('orphan', true)
+
+    const res = await awaited
+    expect(res.ok && res.result).toEqual({ status: 'approved' })
+    c.close()
+  })
+
+  it('rejects a reloaded proposal that nobody is waiting on', async () => {
+    writeStore([{ id: 'orphan', projectRoot: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring', createdAt: 1 }])
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    await expect(daemon.decide('orphan', false, 'not now')).resolves.toBeUndefined()
+    expect(daemon.pending()).toEqual([])
+    expect(fs.readFileSync(path.join(tmpRoot, 'architect.md'), 'utf8')).not.toMatch(/api -> db/)
+  })
+
+  it('still queues a proposal when the store cannot be written', async () => {
+    fs.mkdirSync(pendingPath, { recursive: true })
+
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 })
+    await daemon.listen()
+    const c = await client(socketPath)
+
+    void c.request({ op: 'propose_change', cwd: tmpRoot, proposal: { kind: 'edge', from: 'api', to: 'db' }, rationale: 'wiring' })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(daemon.pending()).toHaveLength(1)
+    c.close()
+  })
+})
+
 describe('edits', () => {
   const drafted: Architecture = {
     title: 'Drafted',

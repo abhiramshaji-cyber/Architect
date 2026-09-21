@@ -40,13 +40,15 @@ export const proposalSchema = z.discriminatedUnion('kind', [
 
 export type Proposal = z.infer<typeof proposalSchema>
 
-export type Pending = {
-  id: string
-  projectRoot: string
-  proposal: Proposal
-  rationale: string
-  createdAt: number
-}
+export const pendingSchema = z.object({
+  id: z.string(),
+  projectRoot: z.string(),
+  proposal: proposalSchema,
+  rationale: z.string(),
+  createdAt: z.number(),
+})
+
+export type Pending = z.infer<typeof pendingSchema>
 
 export type EditStatus = 'draft' | 'handed'
 
