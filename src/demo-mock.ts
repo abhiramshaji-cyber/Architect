@@ -1,4 +1,4 @@
-import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, Pending, Proposal } from '../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, Ownership, Pending, Proposal } from '../shared/types'
 
 declare global {
   interface Window {
@@ -353,6 +353,20 @@ export function installMock() {
     '/Users/demo/code/architect': mockCodeMap('/Users/demo/code/architect')
   }
 
+  const ownerships: Record<string, Ownership> = {
+    '/Users/demo/code/architect': {
+      owned: [
+        { path: 'src/api/routes.ts', owner: 'api' },
+        { path: 'src/db/client.ts', owner: 'db' },
+        { path: 'src/ui/App.tsx', owner: 'ui' },
+        { path: 'src/worker/queue.ts', owner: 'worker' }
+      ],
+      unowned: ['README.md', 'src/index.ts'],
+      multi: [{ path: 'src/db/schema.ts', owners: ['api', 'db'] }],
+      dead: [{ component: 'db', pattern: 'scripts/seed/*.ts' }]
+    }
+  }
+
   const changeListeners = new Set<(a: Architecture) => void>()
   const pendingListeners = new Set<(p: Pending[]) => void>()
 
@@ -448,6 +462,9 @@ export function installMock() {
       const lines = mockFileText(root, file).split('\n')
       if (from < 1 || to < from) return ''
       return lines.slice(from - 1, Math.min(to, from + 399)).join('\n')
+    },
+    async ownership(root) {
+      return ownerships[root] ?? null
     },
     async rescan(root) {
       const scanned = mockCodeMap(root)

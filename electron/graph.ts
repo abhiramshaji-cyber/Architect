@@ -1,4 +1,6 @@
-import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Proposal, type Pt, type Verdict } from '../shared/types'
+import picomatch from 'picomatch'
+
+import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Ownership, type Proposal, type Pt, type Verdict } from '../shared/types'
 
 const LAYOUT_OPEN = '<!-- architect:layout'
 const LAYOUT_CLOSE = '-->'
@@ -197,4 +199,71 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
   }
 
   return next
+}
+
+function canonical(raw: string): string {
+  const parts: string[] = []
+
+  for (const part of raw.replace(/\\/g, '/').split('/')) {
+    if (part === '' || part === '.') continue
+    if (part !== '..') {
+      parts.push(part)
+      continue
+    }
+    if (parts.length === 0 || parts[parts.length - 1] === '..') parts.push('..')
+    else parts.pop()
+  }
+
+  return parts.join('/')
+}
+
+function canonicalPattern(raw: string): string {
+  const negated = raw.startsWith('!')
+  const body = canonical(negated ? raw.slice(1) : raw)
+  if (body === '') return ''
+  return negated ? `!${body}` : body
+}
+
+function hits(pattern: string, paths: string[]): string[] {
+  if (pattern === '') return []
+  try {
+    const isMatch = picomatch(pattern, { dot: true, nocase: false })
+    // picomatch's second argument is returnObject, so never hand it filter's index
+    return paths.filter((path) => isMatch(path))
+  } catch {
+    return []
+  }
+}
+
+export function ownership(files: string[], components: Component[]): Ownership {
+  const paths = [...new Set(files.map(canonical))].filter((p) => p !== '').sort()
+  const owners = new Map(paths.map((p) => [p, new Set<string>()]))
+  const dead: Ownership['dead'] = []
+
+  for (const component of components) {
+    const seen = new Set<string>()
+
+    for (const raw of component.owns) {
+      const pattern = canonicalPattern(raw)
+      if (seen.has(pattern)) continue
+      seen.add(pattern)
+
+      const matched = hits(pattern, paths)
+      for (const p of matched) owners.get(p)?.add(component.id)
+      if (matched.length === 0) dead.push({ component: component.id, pattern: raw })
+    }
+  }
+
+  const owned: Ownership['owned'] = []
+  const unowned: string[] = []
+  const multi: Ownership['multi'] = []
+
+  for (const path of paths) {
+    const claimed = [...(owners.get(path) ?? [])].sort()
+    if (claimed.length === 0) unowned.push(path)
+    else if (claimed.length === 1) owned.push({ path, owner: claimed[0] as string })
+    else multi.push({ path, owners: claimed })
+  }
+
+  return { owned, unowned, multi, dead }
 }

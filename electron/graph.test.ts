@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { apply, check, parse, serialize } from './graph'
+import { apply, check, ownership, parse, serialize } from './graph'
 
 const h1 = '#'
 const h2 = '##'
@@ -413,5 +413,173 @@ describe('layout', () => {
     const inside = `${h1} T\n\nS.\n\n${h2} Components\n\n${h3} a\nDoes a.\n\n${h2} Dependencies\n\n- a -> a\n\n<!-- architect:layout\na: 1,2\n-->\n`
     expect(() => parse(inside)).not.toThrow()
     expect(parse(inside).layout).toEqual({ a: { x: 1, y: 2 } })
+  })
+})
+
+function component(id: string, ...owns: string[]) {
+  return { id, purpose: '', owns }
+}
+
+describe('ownership', () => {
+  it('leaves every file unowned when no component declares a glob', () => {
+    const result = ownership(['a.ts', 'b.ts'], [component('one'), component('two')])
+
+    expect(result.owned).toEqual([])
+    expect(result.multi).toEqual([])
+    expect(result.dead).toEqual([])
+    expect(result.unowned).toEqual(['a.ts', 'b.ts'])
+  })
+
+  it('classifies nothing when there are no files', () => {
+    const result = ownership([], [component('one', 'src/**')])
+
+    expect(result.owned).toEqual([])
+    expect(result.unowned).toEqual([])
+    expect(result.multi).toEqual([])
+    expect(result.dead).toEqual([{ component: 'one', pattern: 'src/**' }])
+  })
+
+  it('counts a file matched twice by one component only once', () => {
+    const result = ownership(['src/a.ts'], [component('one', 'src/**', 'src/*.ts', '**/a.ts')])
+
+    expect(result.owned).toEqual([{ path: 'src/a.ts', owner: 'one' }])
+    expect(result.multi).toEqual([])
+    expect(result.dead).toEqual([])
+  })
+
+  it('reports a file claimed by two different components', () => {
+    const result = ownership(['src/a.ts', 'src/b.ts'], [component('one', 'src/**'), component('two', 'src/a.ts')])
+
+    expect(result.multi).toEqual([{ path: 'src/a.ts', owners: ['one', 'two'] }])
+    expect(result.owned).toEqual([{ path: 'src/b.ts', owner: 'one' }])
+    expect(result.unowned).toEqual([])
+  })
+
+  it('sorts multi owners deterministically whatever the component order', () => {
+    const files = ['src/a.ts']
+    const a = ownership(files, [component('zed', 'src/**'), component('alf', 'src/**')])
+    const b = ownership(files, [component('alf', 'src/**'), component('zed', 'src/**')])
+
+    expect(a.multi).toEqual([{ path: 'src/a.ts', owners: ['alf', 'zed'] }])
+    expect(a).toEqual(b)
+  })
+
+  it('reports a glob that matches nothing as dead, in its declared form', () => {
+    const result = ownership(['src/a.ts'], [component('one', 'src/**', './does/not/exist/**')])
+
+    expect(result.dead).toEqual([{ component: 'one', pattern: './does/not/exist/**' }])
+  })
+
+  it('reports an empty pattern as dead and lets it own nothing', () => {
+    const result = ownership(['src/a.ts'], [component('one', '')])
+
+    expect(result.dead).toEqual([{ component: 'one', pattern: '' }])
+    expect(result.unowned).toEqual(['src/a.ts'])
+  })
+
+  it('reports a pattern escaping the root as dead', () => {
+    const result = ownership(['src/a.ts'], [component('one', '../outside/**')])
+
+    expect(result.dead).toEqual([{ component: 'one', pattern: '../outside/**' }])
+    expect(result.unowned).toEqual(['src/a.ts'])
+  })
+
+  it('reports a malformed pattern as dead instead of throwing', () => {
+    const result = ownership(['src/a.ts'], [component('one', 'src/[a-')])
+
+    expect(result.dead).toEqual([{ component: 'one', pattern: 'src/[a-' }])
+  })
+
+  it('does not report the same canonical pattern twice', () => {
+    const result = ownership([], [component('one', 'nope/**', './nope/**', 'nope//**')])
+
+    expect(result.dead).toEqual([{ component: 'one', pattern: 'nope/**' }])
+  })
+
+  it('normalises leading ./, doubled slashes, a root slash and backslashes on both sides', () => {
+    const files = ['./src/a.ts', 'src\\deep\\b.ts', 'src//c.ts']
+    const result = ownership(files, [component('one', './src/**'), component('two', '/nope/**')])
+
+    expect(result.owned).toEqual([
+      { path: 'src/a.ts', owner: 'one' },
+      { path: 'src/c.ts', owner: 'one' },
+      { path: 'src/deep/b.ts', owner: 'one' },
+    ])
+    expect(result.dead).toEqual([{ component: 'two', pattern: '/nope/**' }])
+  })
+
+  it('treats a root anchored file path as root relative and an out of tree absolute path as foreign', () => {
+    const result = ownership(['/src/a.ts', '/Users/dev/elsewhere/b.ts'], [component('one', 'src/**')])
+
+    expect(result.owned).toEqual([{ path: 'src/a.ts', owner: 'one' }])
+    expect(result.unowned).toEqual(['Users/dev/elsewhere/b.ts'])
+  })
+
+  it('stays total when two components share an id', () => {
+    const result = ownership(['src/a.ts'], [component('one', 'src/**'), component('one', 'src/a.ts')])
+
+    expect(result.owned).toEqual([{ path: 'src/a.ts', owner: 'one' }])
+    expect(result.multi).toEqual([])
+  })
+
+  it('treats a root anchored pattern as root relative', () => {
+    const result = ownership(['src/a.ts'], [component('one', '/src/**')])
+
+    expect(result.owned).toEqual([{ path: 'src/a.ts', owner: 'one' }])
+  })
+
+  it('collapses a path listed twice in different spellings', () => {
+    const result = ownership(['src/a.ts', './src/a.ts', 'src\\a.ts'], [component('one', 'src/**')])
+
+    expect(result.owned).toEqual([{ path: 'src/a.ts', owner: 'one' }])
+  })
+
+  it('matches star, question mark, braces and nested globstars', () => {
+    const files = ['src/a.ts', 'src/deep/deeper/b.tsx', 'docs/x.md', 'a.ts']
+    const result = ownership(files, [component('one', 'src/**/*.{ts,tsx}'), component('two', 'docs/?.md')])
+
+    expect(result.owned).toEqual([
+      { path: 'docs/x.md', owner: 'two' },
+      { path: 'src/a.ts', owner: 'one' },
+      { path: 'src/deep/deeper/b.tsx', owner: 'one' },
+    ])
+    expect(result.unowned).toEqual(['a.ts'])
+  })
+
+  it('matches dotfiles under a globstar', () => {
+    const result = ownership(['src/.keep'], [component('one', 'src/**')])
+
+    expect(result.owned).toEqual([{ path: 'src/.keep', owner: 'one' }])
+  })
+
+  it('honours a negated pattern', () => {
+    const result = ownership(['src/a.ts', 'src/b.ts'], [component('one', '!src/a.ts')])
+
+    expect(result.owned).toEqual([{ path: 'src/b.ts', owner: 'one' }])
+    expect(result.unowned).toEqual(['src/a.ts'])
+  })
+
+  it('matches case sensitively on every platform', () => {
+    const result = ownership(['src/App.tsx'], [component('one', 'src/app.tsx')])
+
+    expect(result.unowned).toEqual(['src/App.tsx'])
+    expect(result.dead).toEqual([{ component: 'one', pattern: 'src/app.tsx' }])
+  })
+
+  it('is pure, returning an equal result for a repeated call and mutating no input', () => {
+    const files = ['src/a.ts', 'b.ts']
+    const components = [component('one', 'src/**')]
+
+    expect(ownership(files, components)).toEqual(ownership(files, components))
+    expect(files).toEqual(['src/a.ts', 'b.ts'])
+    expect(components).toEqual([{ id: 'one', purpose: '', owns: ['src/**'] }])
+  })
+
+  it('classifies every file into exactly one bucket', () => {
+    const files = ['src/a.ts', 'src/b.ts', 'docs/c.md']
+    const result = ownership(files, [component('one', 'src/**'), component('two', 'src/a.ts')])
+
+    const seen = [...result.owned.map((o) => o.path), ...result.unowned, ...result.multi.map((m) => m.path)]
+    expect(seen.sort()).toEqual([...files].sort())
   })
 })

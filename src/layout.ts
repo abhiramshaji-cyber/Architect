@@ -11,6 +11,7 @@ export type NodeData = {
   ghost: boolean
   role: Role
   badges: string[]
+  files?: number
   unassigned?: boolean
 }
 

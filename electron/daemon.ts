@@ -11,6 +11,7 @@ import {
   type Decision,
   type Edit,
   type EditSummary,
+  type Ownership,
   type Pending,
   pendingSchema,
   type ProjectSummary,
@@ -22,7 +23,7 @@ import {
 } from '../shared/types'
 import { describe, type DescriptionCache } from './describe'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './edits'
-import { apply, check, parse, serialize } from './graph'
+import { apply, check, ownership, parse, serialize } from './graph'
 import { scan } from './scan'
 
 const MAP_VERSION = 3
@@ -622,6 +623,13 @@ export function createDaemon(options: DaemonOptions = {}) {
       deleteEdit(root, id)
     },
     codeMap: (root: string): CodeMap | null => readStoredMap(root)?.map ?? null,
+    ownership: (root: string): Ownership | null => {
+      const map = readStoredMap(root)?.map
+      const architecture = loadProject(root).architecture
+      if (!map || !architecture) return null
+      const files = map.folders.flatMap((folder) => folder.files.map((file) => file.path))
+      return ownership(files, architecture.components)
+    },
     readSource,
     rescan: async (root: string): Promise<CodeMap> => {
       const stored = readStoredMap(root)

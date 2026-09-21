@@ -15,6 +15,7 @@ const architect: ArchitectApi = {
   deleteEdit: (root, id) => ipcRenderer.invoke('architect:delete-edit', root, id),
   getCodeMap: (root) => ipcRenderer.invoke('architect:code-map', root),
   rescan: (root) => ipcRenderer.invoke('architect:rescan', root),
+  ownership: (root) => ipcRenderer.invoke('architect:ownership', root),
   readSource: (root, file, from, to) => ipcRenderer.invoke('architect:read-source', root, file, from, to),
   onChange: (fn: (a: Architecture) => void) => {
     ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))

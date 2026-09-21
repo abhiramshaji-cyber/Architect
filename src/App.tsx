@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Architecture, CodeMap, Edit, EditSummary, McpBridgeInfo, Pending, ProjectSummary } from '../shared/types'
+import type { Architecture, CodeMap, Edit, EditSummary, McpBridgeInfo, Ownership, Pending, ProjectSummary } from '../shared/types'
 import Canvas from './Canvas'
 import CodeCanvas from './CodeCanvas'
 import { crumbs, parentOf, worldPath } from './codemap'
@@ -45,6 +45,7 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [mode, setMode] = useState<'contract' | 'code'>('contract')
   const [codeMap, setCodeMap] = useState<CodeMap | null | undefined>(undefined)
+  const [owners, setOwners] = useState<Ownership | null>(null)
   const [codePath, setCodePath] = useState('')
   const [codeBusy, setCodeBusy] = useState(false)
   const [codeError, setCodeError] = useState<string | null>(null)
@@ -123,6 +124,21 @@ export default function App() {
   }, [currentRoot])
 
   const codeRoot = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!currentRoot) {
+      setOwners(null)
+      return
+    }
+    let live = true
+    window.architect
+      .ownership(currentRoot)
+      .then((o) => live && setOwners(o))
+      .catch(() => live && setOwners(null))
+    return () => {
+      live = false
+    }
+  }, [currentRoot, architecture, codeMap])
 
   useEffect(() => {
     codeRoot.current = currentRoot
@@ -569,6 +585,7 @@ export default function App() {
             <Canvas
               key={draft ? `${currentRoot}:${draft.id}:${draft.status}` : currentRoot}
               architecture={shown}
+              ownership={draft ? null : owners}
               pending={draft ? [] : projectPending}
               theme={theme}
               selectedId={selectedId}

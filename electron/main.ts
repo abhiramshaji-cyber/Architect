@@ -71,6 +71,7 @@ function wireIpc() {
   ipcMain.handle('architect:delete-edit', (_event, root: string, id: string) => daemon.deleteEdit(root, id))
   ipcMain.handle('architect:code-map', (_event, root: string) => daemon.codeMap(root))
   ipcMain.handle('architect:rescan', (_event, root: string) => daemon.rescan(root))
+  ipcMain.handle('architect:ownership', (_event, root: string) => daemon.ownership(root))
   ipcMain.handle('architect:read-source', (_event, root: string, file: string, from: number, to: number) =>
     daemon.readSource(root, file, from, to),
   )

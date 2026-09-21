@@ -17,7 +17,7 @@ import {
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { Architecture, Pending } from '../shared/types'
+import type { Architecture, Ownership, Pending } from '../shared/types'
 import { addEdge, removeEdge, type OpResult } from './edit-ops'
 import Inspector from './Inspector'
 import {
@@ -34,6 +34,7 @@ import {
 
 type CanvasProps = {
   architecture: Architecture
+  ownership: Ownership | null
   pending: Pending[]
   theme: string
   selectedId: string | null
@@ -85,7 +86,7 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
       <Handle type="source" position={Position.Bottom} id={HANDLE_OUT} />
       <div className="node-head">
         <span className="node-id">{data.label}</span>
-        <span className="node-role">{statusOf(data)}</span>
+        <span className="node-role">{data.files === undefined ? statusOf(data) : `${data.files} files`}</span>
       </div>
       {data.purpose && <div className="node-purpose">{data.purpose}</div>}
       {data.badges.length > 0 && (
@@ -99,16 +100,86 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
   )
 }
 
+function OwnershipPanel({ ownership }: { ownership: Ownership }) {
+  const total = ownership.owned.length + ownership.unowned.length + ownership.multi.length
+  if (total === 0 && ownership.dead.length === 0) return null
+
+  const flags = ownership.unowned.length + ownership.multi.length + ownership.dead.length
+
+  return (
+    <details className="owns-panel">
+      <summary>
+        <span className="owns-count">{ownership.owned.length} owned</span>
+        <span className={ownership.unowned.length > 0 ? 'owns-count warn' : 'owns-count'}>
+          {ownership.unowned.length} unowned
+        </span>
+        <span className={ownership.multi.length > 0 ? 'owns-count bad' : 'owns-count'}>
+          {ownership.multi.length} multi-owned
+        </span>
+        <span className={ownership.dead.length > 0 ? 'owns-count bad' : 'owns-count'}>
+          {ownership.dead.length} dead globs
+        </span>
+      </summary>
+      {flags === 0 ? (
+        <p className="owns-clean">Every scanned file is owned by exactly one component.</p>
+      ) : (
+        <div className="owns-lists">
+          {ownership.dead.length > 0 && (
+            <section>
+              <h4>Dead globs</h4>
+              <ul>
+                {ownership.dead.map((d) => (
+                  <li key={`${d.component}:${d.pattern}`}>
+                    <code>{d.pattern || '(empty)'}</code> on {d.component} matches nothing
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {ownership.multi.length > 0 && (
+            <section>
+              <h4>Claimed by more than one component</h4>
+              <ul>
+                {ownership.multi.map((m) => (
+                  <li key={m.path}>
+                    <code>{m.path}</code> {m.owners.join(', ')}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {ownership.unowned.length > 0 && (
+            <section>
+              <h4>Owned by no component</h4>
+              <ul>
+                {ownership.unowned.map((u) => (
+                  <li key={u}>
+                    <code>{u}</code>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      )}
+    </details>
+  )
+}
+
 const nodeTypes = { component: ComponentNode }
 
 const DELETE_KEYS = ['Delete', 'Backspace']
 
-export default function Canvas({ architecture, pending, theme, selectedId, onSelect, onEdit }: CanvasProps) {
+export default function Canvas({ architecture, ownership, pending, theme, selectedId, onSelect, onEdit }: CanvasProps) {
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
 
   const { nodes, edges, realIds } = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const o of ownership?.owned ?? []) counts.set(o.owner, (counts.get(o.owner) ?? 0) + 1)
+    for (const m of ownership?.multi ?? []) for (const id of m.owners) counts.set(id, (counts.get(id) ?? 0) + 1)
+
     const { nodes: logical, links } = build(architecture, pending)
     const at = positions(logical, links, architecture.layout)
 
@@ -119,7 +190,7 @@ export default function Canvas({ architecture, pending, theme, selectedId, onSel
       deletable: editing ? false : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
       style: { width: NODE_W, height: heightOf(n.data) },
-      data: n.data
+      data: counts.has(n.id) ? { ...n.data, files: counts.get(n.id) } : n.data
     }))
 
     const rfEdges: RFEdge[] = links.map((l) => {
@@ -151,7 +222,7 @@ export default function Canvas({ architecture, pending, theme, selectedId, onSel
     const real = new Set(links.filter((l) => l.kind === 'real').map((l) => l.id))
 
     return { nodes: rfNodes, edges: rfEdges, realIds: real }
-  }, [architecture, pending, colors, editing])
+  }, [architecture, ownership, pending, colors, editing])
 
   const marked = useMemo(
     () => nodes.map((n) => ({ ...n, selected: n.id === selectedId })),
@@ -226,6 +297,7 @@ export default function Canvas({ architecture, pending, theme, selectedId, onSel
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
       </ReactFlow>
+      {ownership && <OwnershipPanel ownership={ownership} />}
       {selected && <Inspector node={selected} onClose={close} onSelect={onSelect} onEdit={onEdit} />}
     </div>
   )

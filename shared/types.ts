@@ -31,6 +31,13 @@ export type Architecture = {
   layout?: Layout
 }
 
+export type Ownership = {
+  owned: { path: string; owner: string }[]
+  unowned: string[]
+  multi: { path: string; owners: string[] }[]
+  dead: { component: string; pattern: string }[]
+}
+
 export const proposalSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
   z.object({ kind: z.literal('edge'), from: z.string(), to: z.string() }),
@@ -109,6 +116,7 @@ export type ArchitectApi = {
   deleteEdit(root: string, id: string): Promise<void>
   getCodeMap(root: string): Promise<CodeMap | null>
   rescan(root: string): Promise<CodeMap>
+  ownership(root: string): Promise<Ownership | null>
   readSource(root: string, file: string, from: number, to: number): Promise<string>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
