@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Architecture, ArchitectApi, Pending } from '../shared/types'
+import type { Architecture, ArchitectApi, Pending, ProjectSummary } from '../shared/types'
 
 const architect: ArchitectApi = {
   projects: () => ipcRenderer.invoke('architect:projects'),
@@ -22,8 +22,8 @@ const architect: ArchitectApi = {
   onPending: (fn: (p: Pending[]) => void) => {
     ipcRenderer.on('architect:pending-update', (_event, pending: Pending[]) => fn(pending))
   },
-  onProjects: (fn: (p: { root: string; title: string }[]) => void) => {
-    ipcRenderer.on('architect:projects-update', (_event, projects: { root: string; title: string }[]) => fn(projects))
+  onProjects: (fn: (p: ProjectSummary[]) => void) => {
+    ipcRenderer.on('architect:projects-update', (_event, projects: ProjectSummary[]) => fn(projects))
   },
 }
 

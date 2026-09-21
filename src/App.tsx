@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Architecture, CodeMap, Edit, EditSummary, McpBridgeInfo, Pending } from '../shared/types'
+import type { Architecture, CodeMap, Edit, EditSummary, McpBridgeInfo, Pending, ProjectSummary } from '../shared/types'
 import Canvas from './Canvas'
 import CodeCanvas from './CodeCanvas'
 import { crumbs, parentOf, worldPath } from './codemap'
 import ConnectMcpPanel from './ConnectMcpPanel'
 import { addComponent, type OpResult } from './edit-ops'
 import { folderName, hasCycle } from './layout'
-
-type ProjectSummary = { root: string; title: string }
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -303,6 +301,8 @@ export default function App() {
 
   const shown = draft ? draft.architecture : architecture
 
+  const parseError = projects.find((p) => p.root === currentRoot)?.parseError ?? null
+
   const codeWorld = codeMap ? worldPath(codeMap, codePath) : ''
   const trail = crumbs(currentRoot ? folderName(currentRoot) : 'root', codeWorld)
   const goUp = useCallback(() => setCodePath(parentOf(codeWorld)), [codeWorld])
@@ -449,6 +449,11 @@ export default function App() {
       </aside>
 
       <main className="canvas-area">
+        {parseError && (
+          <div className="parse-banner" role="alert">
+            <strong>architect.md could not be loaded.</strong> {parseError}
+          </div>
+        )}
         {shown ? (
           <>
             <header className="canvas-header">
@@ -574,7 +579,9 @@ export default function App() {
             )}
           </>
         ) : (
-          <div className="empty-state">Select a project to open its architecture</div>
+          <div className="empty-state">
+            {parseError ? 'Fix architect.md to see this architecture.' : 'Select a project to open its architecture'}
+          </div>
         )}
       </main>
 

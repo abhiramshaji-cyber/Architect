@@ -13,10 +13,12 @@ import {
   type EditSummary,
   type Pending,
   pendingSchema,
+  type ProjectSummary,
   type Proposal,
   requestSchema,
   type Request,
   type Response,
+  type Verdict,
 } from '../shared/types'
 import { describe, type DescriptionCache } from './describe'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './edits'
@@ -98,12 +100,17 @@ type PendingEntry = { pending: Pending; waiters: Set<Waiter> }
 
 type ProjectState = {
   root: string
-  architecture: Architecture
+  architecture: Architecture | null
+  parseError: string | null
   watcher: FSWatcher
   lastWrittenContent: string | null
 }
 
 type DaemonOptions = { socketPath?: string; proposalTimeoutMs?: number }
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
 
 function recoverId(value: unknown): string | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
@@ -225,8 +232,12 @@ export function createDaemon(options: DaemonOptions = {}) {
     pendingListener?.(listPending())
   }
 
-  function listProjects() {
-    return [...projects.values()].map((p) => ({ root: p.root, title: p.architecture.title }))
+  function listProjects(): ProjectSummary[] {
+    return [...projects.values()].map((p) => ({
+      root: p.root,
+      title: p.architecture?.title ?? path.basename(p.root),
+      ...(p.parseError === null ? {} : { parseError: p.parseError }),
+    }))
   }
 
   function notifyProjects() {
@@ -248,12 +259,38 @@ export function createDaemon(options: DaemonOptions = {}) {
     if (existing) return existing
 
     const filePath = architectMdPath(root)
-    const architecture = parse(fs.readFileSync(filePath, 'utf8'))
     const state: ProjectState = {
       root,
-      architecture,
+      architecture: null,
+      parseError: null,
       lastWrittenContent: null,
       watcher: null as unknown as FSWatcher,
+    }
+
+    function absorb(content: string) {
+      try {
+        state.architecture = parse(content)
+        state.parseError = null
+      } catch (err) {
+        state.parseError = `${filePath}: ${errorText(err)}`
+      }
+    }
+
+    absorb(fs.readFileSync(filePath, 'utf8'))
+
+    function reread(): boolean {
+      let content: string
+      try {
+        content = fs.readFileSync(filePath, 'utf8')
+      } catch (err) {
+        state.parseError = `could not read ${filePath}: ${errorText(err)}`
+        return true
+      }
+
+      if (content === state.lastWrittenContent && state.parseError === null) return false
+
+      absorb(content)
+      return true
     }
 
     const watcher = chokidar.watch(filePath, {
@@ -262,24 +299,17 @@ export function createDaemon(options: DaemonOptions = {}) {
       interval: 30,
       awaitWriteFinish: { stabilityThreshold: 20, pollInterval: 10 },
     })
-    watcher.on('change', () => {
-      let content: string
-      try {
-        content = fs.readFileSync(filePath, 'utf8')
-      } catch {
-        return
+    watcher.on('all', (event) => {
+      if (event !== 'add' && event !== 'change' && event !== 'unlink') return
+
+      const before = state.parseError
+      if (!reread()) return
+      if (before !== null && state.parseError === before) return
+
+      notifyProjects()
+      if (state.root === activeRoot && state.parseError === null && state.architecture) {
+        changeListener?.(state.architecture)
       }
-
-      if (content === state.lastWrittenContent) return
-
-      try {
-        state.architecture = parse(content)
-      } catch (err) {
-        console.error(`architect.md parse error in ${root}:`, err instanceof Error ? err.message : err)
-        return
-      }
-
-      if (state.root === activeRoot) changeListener?.(state.architecture)
     })
     state.watcher = watcher
 
@@ -379,7 +409,9 @@ export function createDaemon(options: DaemonOptions = {}) {
     const root = entry.pending.projectRoot
     const project = approved ? reopen(root) : undefined
 
-    if (approved && project) {
+    if (approved && project && project.parseError !== null) {
+      resolveWaiters(entry, { status: 'rejected', reason: project.parseError })
+    } else if (approved && project && project.architecture) {
       let proposal = entry.pending.proposal
       if (component && proposal.kind === 'file') proposal = { ...proposal, component }
 
@@ -402,10 +434,23 @@ export function createDaemon(options: DaemonOptions = {}) {
     notifyPending()
   }
 
-  async function open(root: string): Promise<Architecture> {
+  async function open(root: string): Promise<Architecture | null> {
     const state = loadProject(root)
     activeRoot = root
     return state.architecture
+  }
+
+  function verdictFor(architecture: Architecture, parseError: string | null, from: string, to: string): Verdict {
+    const verdict = check(architecture, from, to)
+    if (parseError === null) return verdict
+
+    const note =
+      `the architecture is stale: ${parseError}. ` +
+      `This ${verdict.status} verdict comes from the last version of architect.md that parsed ` +
+      `and may not match the file on disk. Fix architect.md and check again before relying on it.`
+
+    if (verdict.status === 'forbidden') return { status: 'forbidden', reason: `${verdict.reason} — ${note}` }
+    return { status: 'unknown', reason: note }
   }
 
   function handleConnection(socket: net.Socket) {
@@ -417,13 +462,17 @@ export function createDaemon(options: DaemonOptions = {}) {
         if (req.op === 'get_architecture') {
           const root = resolveRoot(req.cwd)
           if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
-          return { id: req.id, ok: true, result: loadProject(root).architecture }
+          const state = loadProject(root)
+          if (state.parseError !== null) return { id: req.id, ok: false, error: state.parseError }
+          return { id: req.id, ok: true, result: state.architecture }
         }
 
         if (req.op === 'check_change') {
           const root = resolveRoot(req.cwd)
           if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
-          return { id: req.id, ok: true, result: check(loadProject(root).architecture, req.from, req.to) }
+          const state = loadProject(root)
+          if (!state.architecture) return { id: req.id, ok: false, error: state.parseError ?? 'no architecture' }
+          return { id: req.id, ok: true, result: verdictFor(state.architecture, state.parseError, req.from, req.to) }
         }
 
         if (req.op === 'propose_change') {

@@ -59,7 +59,7 @@ export type EditSummary = { id: string; status: EditStatus; title: string; error
 export type Verdict =
   | { status: 'allowed' }
   | { status: 'forbidden'; reason: string }
-  | { status: 'unknown' }
+  | { status: 'unknown'; reason?: string }
 
 export type Decision =
   | { status: 'approved' }
@@ -93,9 +93,11 @@ export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] 
 
 export type CodeMap = { root: string; scannedAt: number; folders: FolderEntry[] }
 
+export type ProjectSummary = { root: string; title: string; parseError?: string }
+
 export type ArchitectApi = {
-  projects(): Promise<{ root: string; title: string }[]>
-  open(root: string): Promise<Architecture>
+  projects(): Promise<ProjectSummary[]>
+  open(root: string): Promise<Architecture | null>
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
   mcpBridgeInfo(): Promise<McpBridgeInfo>
@@ -110,7 +112,7 @@ export type ArchitectApi = {
   readSource(root: string, file: string, from: number, to: number): Promise<string>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
-  onProjects(fn: (p: { root: string; title: string }[]) => void): void
+  onProjects(fn: (p: ProjectSummary[]) => void): void
 }
 
 export type McpBridgeInfo = { path: string; exists: boolean }

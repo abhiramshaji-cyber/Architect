@@ -834,6 +834,18 @@ body.resizing {
   background: color-mix(in srgb, var(--ok) 10%, transparent);
 }
 
+.parse-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .edit-error {
   margin-top: 6px;
   padding: 8px 10px;

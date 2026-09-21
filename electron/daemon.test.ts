@@ -5,7 +5,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Architecture, Decision, Request, Response } from '../shared/types'
+import type { Architecture, Decision, Request, Response, Verdict } from '../shared/types'
 import { createDaemon } from './daemon'
 
 type OmitId<T> = T extends unknown ? Omit<T, 'id'> : never
@@ -356,14 +356,19 @@ describe('correctness requirements', () => {
     })
     await daemon.listen()
     const good = await daemon.open(tmpRoot)
+    await new Promise((resolve) => setTimeout(resolve, 150))
 
     writeArchitect(tmpRoot, '# Broken\n\n## Components\n\n### api\nowns: `x/**`\n\n## Dependencies\n\n- api -> ghost\n')
     await new Promise((resolve) => setTimeout(resolve, 500))
 
     const c = await client(socketPath)
     const res = await c.request({ op: 'get_architecture', cwd: tmpRoot })
-    expect(res.ok).toBe(true)
-    if (res.ok) expect(res.result).toEqual(good)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toMatch(/unknown component in dependency: ghost/)
+
+    const stale = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'api', to: 'db' })
+    expect(stale.ok && (stale.result as Verdict).status).toBe('unknown')
+    expect(daemon.projects()[0]?.title).toBe(good!.title)
     expect(changeCount).toBe(0)
     c.close()
   })
@@ -445,7 +450,7 @@ describe('correctness requirements', () => {
     expect(res.ok).toBe(true)
     if (res.ok) expect((res.result as Decision).status).toBe('approved')
 
-    const architecture = await daemon.open(tmpRoot)
+    const architecture = (await daemon.open(tmpRoot))!
     const api = architecture.components.find((comp) => comp.id === 'api')!
     const db = architecture.components.find((comp) => comp.id === 'db')!
     expect(api.owns).not.toContain('shared.ts')
@@ -511,7 +516,7 @@ describe('correctness requirements', () => {
     expect(componentRes.ok).toBe(true)
     if (componentRes.ok) expect((componentRes.result as Decision).status).toBe('approved')
 
-    const architecture = await daemon.open(tmpRoot)
+    const architecture = (await daemon.open(tmpRoot))!
     expect(architecture.components.some((comp) => comp.id === 'worker')).toBe(true)
     c.close()
   })
@@ -1030,6 +1035,215 @@ describe('malformed lines', () => {
     expect(logged).toHaveBeenCalledTimes(silent.length - 1)
 
     logged.mockRestore()
+    c.close()
+  })
+})
+
+describe('architect.md parse failure', () => {
+  const good = `${h1} Test
+
+A test architecture.
+
+${h2} Components
+
+${component('api')}${component('db')}
+${h2} Dependencies
+
+- api -> db
+
+${h2} Forbidden
+
+- db -> api : layers only point down
+
+${h2} Packages
+
+`
+
+  const broken = good.replace('- api -> db', '<<<<<<< HEAD')
+  const badLine = good.split('\n').indexOf('- api -> db') + 1
+
+  function settle() {
+    return new Promise((resolve) => setTimeout(resolve, 200))
+  }
+
+  async function daemonOn(root: string) {
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 })
+    await daemon.listen()
+    await daemon.open(root)
+    await settle()
+  }
+
+  it('reports the parser message and its line number on the project', async () => {
+    writeArchitect(tmpRoot, good)
+    await daemonOn(tmpRoot)
+
+    const seen: { root: string; parseError?: string }[][] = []
+    daemon.onProjects((p) => seen.push(p))
+
+    writeArchitect(tmpRoot, broken)
+    await settle()
+
+    expect(daemon.projects()[0]?.parseError).toMatch(new RegExp(`malformed dependency on line ${badLine}: <<<<<<< HEAD`))
+    expect(daemon.projects()[0]?.parseError).toContain(path.join(tmpRoot, 'architect.md'))
+    expect(seen.at(-1)?.[0]?.parseError).toBe(daemon.projects()[0]?.parseError)
+  })
+
+  it('clears the error and pushes the architecture again once the file is fixed', async () => {
+    writeArchitect(tmpRoot, good)
+    await daemonOn(tmpRoot)
+
+    writeArchitect(tmpRoot, broken)
+    await settle()
+    expect(daemon.projects()[0]?.parseError).toBeDefined()
+
+    const changes: Architecture[] = []
+    daemon.onChange((a) => changes.push(a))
+
+    writeArchitect(tmpRoot, good.replace('- api -> db', '- api -> db\n- db -> db'))
+    await settle()
+
+    expect(daemon.projects()[0]?.parseError).toBeUndefined()
+    expect(changes.at(-1)?.edges).toContainEqual({ from: 'db', to: 'db' })
+  })
+
+  it('never answers allowed from a stale contract', async () => {
+    writeArchitect(tmpRoot, good)
+    await daemonOn(tmpRoot)
+    writeArchitect(tmpRoot, broken)
+    await settle()
+
+    const c = await client(socketPath)
+    const res = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'api', to: 'db' })
+
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      const verdict = res.result as Verdict
+      expect(verdict.status).toBe('unknown')
+      if (verdict.status === 'unknown') {
+        expect(verdict.reason).toContain(`malformed dependency on line ${badLine}`)
+        expect(verdict.reason).toMatch(/stale/i)
+        expect(verdict.reason).toMatch(/allowed verdict/)
+      }
+    }
+    c.close()
+  })
+
+  it('keeps a forbidden verdict forbidden and says the contract is stale', async () => {
+    writeArchitect(tmpRoot, good)
+    await daemonOn(tmpRoot)
+    writeArchitect(tmpRoot, broken)
+    await settle()
+
+    const c = await client(socketPath)
+    const res = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'db', to: 'api' })
+
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      const verdict = res.result as Verdict
+      expect(verdict.status).toBe('forbidden')
+      if (verdict.status === 'forbidden') {
+        expect(verdict.reason).toContain('layers only point down')
+        expect(verdict.reason).toMatch(/stale/i)
+      }
+    }
+    c.close()
+  })
+
+  it('refuses every agent call when the file never parsed', async () => {
+    writeArchitect(tmpRoot, broken)
+    await daemonOn(tmpRoot)
+
+    expect(await daemon.open(tmpRoot)).toBeNull()
+    expect(daemon.projects()).toEqual([
+      { root: tmpRoot, title: path.basename(tmpRoot), parseError: expect.stringContaining(`line ${badLine}`) },
+    ])
+
+    const c = await client(socketPath)
+    const architecture = await c.request({ op: 'get_architecture', cwd: tmpRoot })
+    const changed = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'api', to: 'db' })
+
+    expect(architecture.ok).toBe(false)
+    if (!architecture.ok) expect(architecture.error).toContain(`line ${badLine}`)
+    expect(changed.ok).toBe(false)
+    if (!changed.ok) expect(changed.error).toContain(`line ${badLine}`)
+    c.close()
+  })
+
+  it('reports a deleted architect.md and keeps the last good architecture', async () => {
+    writeArchitect(tmpRoot, good)
+    await daemonOn(tmpRoot)
+
+    fs.rmSync(path.join(tmpRoot, 'architect.md'))
+    await settle()
+
+    expect(daemon.projects()[0]?.parseError).toMatch(/could not read .*architect\.md/)
+
+    writeArchitect(tmpRoot, good)
+    await settle()
+    expect(daemon.projects()[0]?.parseError).toBeUndefined()
+  })
+
+  it('survives rapid successive bad saves and reports the last one', async () => {
+    writeArchitect(tmpRoot, good)
+    await daemonOn(tmpRoot)
+
+    for (const bad of ['<<<<<<< HEAD', '- api ->', '- api -> ghost']) {
+      writeArchitect(tmpRoot, good.replace('- api -> db', bad))
+    }
+    await settle()
+
+    expect(daemon.projects()[0]?.parseError).toContain('unknown component in dependency: ghost')
+  })
+
+  it('marks only the broken project when two are open', async () => {
+    const other = fs.mkdtempSync(path.join(tmpRoot, 'other-'))
+    writeArchitect(tmpRoot, good)
+    writeArchitect(other, good)
+    await daemonOn(tmpRoot)
+    await daemon.open(other)
+
+    writeArchitect(tmpRoot, broken)
+    await settle()
+
+    const byRoot = Object.fromEntries(daemon.projects().map((p) => [p.root, p.parseError]))
+    expect(byRoot[tmpRoot]).toContain(`line ${badLine}`)
+    expect(byRoot[other]).toBeUndefined()
+
+    expect(await daemon.open(other)).not.toBeNull()
+    expect((await daemon.open(tmpRoot))?.edges).toEqual([{ from: 'api', to: 'db' }])
+    expect(daemon.projects().find((p) => p.root === tmpRoot)?.parseError).toContain(`line ${badLine}`)
+
+    writeArchitect(tmpRoot, good)
+    await settle()
+    expect(daemon.projects().find((p) => p.root === tmpRoot)?.parseError).toBeUndefined()
+  })
+
+  it('refuses to approve a proposal against a broken file', async () => {
+    writeArchitect(tmpRoot, good)
+    await daemonOn(tmpRoot)
+    const c = await client(socketPath)
+
+    const proposed = c.request({
+      op: 'propose_change',
+      cwd: tmpRoot,
+      proposal: { kind: 'edge', from: 'db', to: 'db' },
+      rationale: 'wiring',
+    })
+    await settle()
+
+    writeArchitect(tmpRoot, broken)
+    await settle()
+
+    await daemon.decide(daemon.pending()[0]!.id, true)
+    const res = await proposed
+
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      const decision = res.result as Decision
+      expect(decision.status).toBe('rejected')
+      if (decision.status === 'rejected') expect(decision.reason).toContain(`line ${badLine}`)
+    }
+    expect(fs.readFileSync(path.join(tmpRoot, 'architect.md'), 'utf8')).toBe(broken)
     c.close()
   })
 })
