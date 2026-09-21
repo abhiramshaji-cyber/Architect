@@ -1,15 +1,19 @@
 import type { Architecture, Component, Edge, Forbidden, Proposal, Verdict } from '../shared/types'
 
-function nonEmptyLines(block: string): string[] {
-  return block.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
-}
+function sectionLines(markdown: string, heading: string): { text: string; line: number }[] {
+  const all = markdown.split(/\r?\n/)
+  const start = all.findIndex((l) => l.startsWith(`## ${heading}`))
+  if (start === -1) return []
 
-function section(markdown: string, heading: string): string {
-  const start = markdown.indexOf(`## ${heading}`)
-  if (start === -1) return ''
-  const rest = markdown.slice(start + `## ${heading}`.length)
-  const next = rest.search(/\n(## |<!--)/)
-  return next === -1 ? rest : rest.slice(0, next)
+  const found: { text: string; line: number }[] = []
+  for (let i = start + 1; i < all.length; i++) {
+    const raw = all[i] ?? ''
+    if (raw.startsWith('## ') || raw.startsWith('<!--')) break
+    const text = raw.trim()
+    if (text.length === 0 || text.startsWith('<!--')) continue
+    found.push({ text, line: i + 1 })
+  }
+  return found
 }
 
 export function parse(markdown: string): Architecture {
@@ -21,37 +25,35 @@ export function parse(markdown: string): Architecture {
   const summary = summaryMatch?.[1]?.trim() ?? ''
 
   // components
-  const componentsBlock = section(markdown, 'Components')
-  const componentChunks = componentsBlock.split(/\n### /).slice(1)
   const components: Component[] = []
   const seenIds = new Set<string>()
 
-  for (const chunk of componentChunks) {
-    const lines = chunk.split('\n')
-    const id = (lines[0] ?? '').trim()
-    if (id.length === 0) throw new Error('component id cannot be empty')
-    if (/\s/.test(id) || id.includes('->')) {
-      throw new Error(`invalid component id "${id}": ids must be one word with no spaces and no "->"`)
+  for (const { text } of sectionLines(markdown, 'Components')) {
+    if (text === '###' || text.startsWith('### ')) {
+      const id = text.slice(3).trim()
+      if (id.length === 0) throw new Error('component id cannot be empty')
+      if (/\s/.test(id) || id.includes('->')) {
+        throw new Error(`invalid component id "${id}": ids must be one word with no spaces and no "->"`)
+      }
+      if (seenIds.has(id)) throw new Error(`duplicate component: ${id}`)
+      seenIds.add(id)
+      components.push({ id, purpose: '', owns: [] })
+      continue
     }
-    if (seenIds.has(id)) throw new Error(`duplicate component: ${id}`)
-    seenIds.add(id)
 
-    const body = nonEmptyLines(lines.slice(1).join('\n'))
-    const ownsLines = body.filter((l) => l.startsWith('owns:'))
-    const purposeLine = body.find((l) => !l.startsWith('owns:'))
-    const owns = ownsLines.map((l) => l.match(/`([^`]*)`/)?.[1] ?? '')
-    const purpose = purposeLine ?? ''
-
-    components.push({ id, purpose, owns })
+    const current = components[components.length - 1]
+    if (!current) continue
+    if (text.startsWith('owns:')) current.owns.push(text.match(/`([^`]*)`/)?.[1] ?? '')
+    else if (current.purpose.length === 0) current.purpose = text
   }
 
   const knownIds = new Set(components.map((c) => c.id))
 
   // dependencies
   const edges: Edge[] = []
-  for (const line of nonEmptyLines(section(markdown, 'Dependencies'))) {
-    const m = line.match(/^-\s*(\S+)\s*->\s*(\S+)$/)
-    if (!m) continue
+  for (const { text, line } of sectionLines(markdown, 'Dependencies')) {
+    const m = text.match(/^-\s*(\S+)\s*->\s*(\S+)$/)
+    if (!m) throw new Error(`malformed dependency on line ${line}: ${text}`)
     const from = m[1] ?? ''
     const to = m[2] ?? ''
     if (!knownIds.has(from)) throw new Error(`unknown component in dependency: ${from}`)
@@ -61,9 +63,9 @@ export function parse(markdown: string): Architecture {
 
   // forbidden
   const forbidden: Forbidden[] = []
-  for (const line of nonEmptyLines(section(markdown, 'Forbidden'))) {
-    const m = line.match(/^-\s*(\S+)\s*->\s*(\S+)\s*:\s*(.+)$/)
-    if (!m) continue
+  for (const { text, line } of sectionLines(markdown, 'Forbidden')) {
+    const m = text.match(/^-\s*(\S+)\s*->\s*(\S+)\s*:\s*(.+)$/)
+    if (!m) throw new Error(`malformed forbidden entry on line ${line}: ${text}`)
     const from = m[1] ?? ''
     const to = m[2] ?? ''
     const reason = m[3] ?? ''
@@ -74,8 +76,8 @@ export function parse(markdown: string): Architecture {
 
   // packages
   const packages: string[] = []
-  for (const line of nonEmptyLines(section(markdown, 'Packages'))) {
-    const m = line.match(/^-\s*(.+)$/)
+  for (const { text } of sectionLines(markdown, 'Packages')) {
+    const m = text.match(/^-\s*(.+)$/)
     if (m) packages.push((m[1] ?? '').trim())
   }
 

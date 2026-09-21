@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { apply, check, parse, serialize } from './graph'
 
@@ -96,6 +98,63 @@ describe('parse', () => {
   it('throws on a forbidden entry naming a component that does not exist', () => {
     const bad = fixture.replace('- ui -> db : bypasses the api layer', '- ui -> ghost : bad')
     expect(() => parse(bad)).toThrow(/ghost/)
+  })
+
+  it('throws on a dependency line that does not match, naming the text and document line', () => {
+    const bad = fixture.replace('- ui -> api', '- ui \u2192 api')
+    expect(() => parse(bad)).toThrow(/line 22/)
+    expect(() => parse(bad)).toThrow(/ui \u2192 api/)
+  })
+
+  it('throws on a forbidden line that does not match, naming the text and document line', () => {
+    const bad = fixture.replace('- ui -> db : bypasses the api layer', '- ui -> db - bypasses the api layer')
+    expect(() => parse(bad)).toThrow(/line 27/)
+    expect(() => parse(bad)).toThrow(/bypasses the api layer/)
+  })
+
+  it('reports the document line number when the malformed line is the last line of the file', () => {
+    const tail = `${h1} T\n\nS.\n\n${h2} Components\n\n${h3} a\nDoes a.\n\n${h2} Dependencies\n\n- a -> a\n- a => a`
+    expect(() => parse(tail)).toThrow(/line 13/)
+  })
+
+  it('accepts blank lines and surrounding whitespace inside a section', () => {
+    const spaced = fixture.replace('- api -> db', '\n   - api -> db   \n')
+    expect(parse(spaced).edges).toEqual(parse(fixture).edges)
+  })
+
+  it('accepts an indented comment line inside a section', () => {
+    const commented = fixture.replace('- api -> db', '  <!-- the api owns persistence -->\n- api -> db')
+    expect(parse(commented).edges).toEqual(parse(fixture).edges)
+  })
+
+  it('parses a document with CRLF line endings', () => {
+    expect(parse(fixture.replace(/\n/g, '\r\n'))).toEqual(parse(fixture))
+  })
+
+  it('ignores lines that sit before the first section heading', () => {
+    const preamble = fixture.replace(`${h2} Components`, `- stray -> line\n\n${h2} Components`)
+    expect(parse(preamble)).toEqual(parse(fixture))
+  })
+
+  it('ignores the body of a heading it does not know', () => {
+    const extra = `${fixture}\n${h2} Notes\n\n- freeform note, not an edge\n`
+    expect(parse(extra)).toEqual(parse(fixture))
+  })
+
+  it('treats a missing section as empty rather than malformed', () => {
+    const partial = `${h1} T\n\nS.\n\n${h2} Components\n\n${h3} a\nDoes a.\n`
+    const arch = parse(partial)
+    expect(arch.edges).toEqual([])
+    expect(arch.forbidden).toEqual([])
+    expect(arch.packages).toEqual([])
+  })
+
+  it('parses the architect.md of this repository', () => {
+    const doc = readFileSync(fileURLToPath(new URL('../architect.md', import.meta.url)), 'utf8')
+    const arch = parse(doc)
+    expect(arch.components.map((c) => c.id)).toContain('graph')
+    expect(arch.edges).toContainEqual({ from: 'daemon', to: 'graph' })
+    expect(arch.forbidden.length).toBe(4)
   })
 
   it('throws on a duplicate component id', () => {
