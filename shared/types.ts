@@ -1,4 +1,5 @@
 import { tmpdir } from 'node:os'
+import { z } from 'zod'
 
 export type Component = {
   id: string
@@ -19,11 +20,14 @@ export type Architecture = {
   packages: string[]
 }
 
-export type Proposal =
-  | { kind: 'component'; id: string; purpose: string; owns: string[] }
-  | { kind: 'edge'; from: string; to: string }
-  | { kind: 'package'; name: string; component: string }
-  | { kind: 'file'; path: string; component: string }
+export const proposalSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
+  z.object({ kind: z.literal('edge'), from: z.string(), to: z.string() }),
+  z.object({ kind: z.literal('package'), name: z.string(), component: z.string() }),
+  z.object({ kind: z.literal('file'), path: z.string(), component: z.string() }),
+])
+
+export type Proposal = z.infer<typeof proposalSchema>
 
 export type Pending = {
   id: string
@@ -49,13 +53,22 @@ export type Decision =
   | { status: 'rejected'; reason: string }
   | { status: 'pending'; id: string }
 
-export type Request =
-  | { id: string; op: 'get_architecture'; cwd: string }
-  | { id: string; op: 'check_change'; cwd: string; from: string; to: string }
-  | { id: string; op: 'propose_change'; cwd: string; proposal: Proposal; rationale: string }
-  | { id: string; op: 'await_proposal'; cwd: string; proposalId: string }
-  | { id: string; op: 'list_edits'; cwd: string }
-  | { id: string; op: 'get_edit'; cwd: string; editId: string }
+export const requestSchema = z.discriminatedUnion('op', [
+  z.object({ id: z.string(), op: z.literal('get_architecture'), cwd: z.string() }),
+  z.object({ id: z.string(), op: z.literal('check_change'), cwd: z.string(), from: z.string(), to: z.string() }),
+  z.object({
+    id: z.string(),
+    op: z.literal('propose_change'),
+    cwd: z.string(),
+    proposal: proposalSchema,
+    rationale: z.string(),
+  }),
+  z.object({ id: z.string(), op: z.literal('await_proposal'), cwd: z.string(), proposalId: z.string() }),
+  z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
+  z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
+])
+
+export type Request = z.infer<typeof requestSchema>
 
 export type FunctionEntry = { name: string; line: number; endLine: number; description: string; calls: number[] }
 

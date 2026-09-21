@@ -13,6 +13,7 @@ import {
   type EditSummary,
   type Pending,
   type Proposal,
+  requestSchema,
   type Request,
   type Response,
 } from '../shared/types'
@@ -96,6 +97,12 @@ type ProjectState = {
 }
 
 type DaemonOptions = { socketPath?: string; proposalTimeoutMs?: number }
+
+function recoverId(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const id = (value as { id?: unknown }).id
+  return typeof id === 'string' ? id : null
+}
 
 export function createDaemon(options: DaemonOptions = {}) {
   const socketPath = options.socketPath ?? process.env.ARCHITECT_SOCKET ?? SOCKET_PATH
@@ -394,14 +401,36 @@ export function createDaemon(options: DaemonOptions = {}) {
       }
     }
 
-    async function handleLine(line: string) {
-      const req = JSON.parse(line) as Request
-      const res = await handleRequest(req)
+    function reply(res: Response) {
       try {
         socket.write(`${JSON.stringify(res)}\n`)
       } catch {
         return
       }
+    }
+
+    async function handleLine(line: string) {
+      let decoded: unknown
+      try {
+        decoded = JSON.parse(line)
+      } catch {
+        console.error(`ignoring unparseable socket line (${line.length} bytes)`)
+        return
+      }
+
+      const parsed = requestSchema.safeParse(decoded)
+      if (!parsed.success) {
+        const id = recoverId(decoded)
+        if (id === null) {
+          console.error(`ignoring socket line with no usable request id (${line.length} bytes)`)
+          return
+        }
+        const issues = parsed.error.issues.map((i) => `${i.path.join('.') || 'request'}: ${i.message}`)
+        reply({ id, ok: false, error: `invalid request: ${issues.join('; ')}` })
+        return
+      }
+
+      reply(await handleRequest(parsed.data))
     }
 
     socket.on('data', (chunk) => {

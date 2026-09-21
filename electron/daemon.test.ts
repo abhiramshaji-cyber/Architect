@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Architecture, Decision, Request, Response } from '../shared/types'
 import { createDaemon } from './daemon'
 
@@ -49,6 +49,7 @@ async function client(path: string) {
   })
 
   const waiters = new Map<string, (res: Response) => void>()
+  const received: Response[] = []
   let buf = ''
   socket.on('data', (chunk) => {
     buf += chunk.toString()
@@ -58,6 +59,7 @@ async function client(path: string) {
       buf = buf.slice(idx + 1)
       if (!line) continue
       const res = JSON.parse(line) as Response
+      received.push(res)
       waiters.get(res.id)?.(res)
       waiters.delete(res.id)
     }
@@ -65,12 +67,19 @@ async function client(path: string) {
 
   return {
     socket,
+    received,
     request(req: RequestInput): Promise<Response> {
       return new Promise((resolve) => {
         const id = randomUUID()
         waiters.set(id, resolve)
         socket.write(`${JSON.stringify({ ...req, id } as Request)}\n`)
       })
+    },
+    send(line: string) {
+      socket.write(`${line}\n`)
+    },
+    reply(id: string): Promise<Response> {
+      return new Promise((resolve) => waiters.set(id, resolve))
     },
     close() {
       socket.destroy()
@@ -764,5 +773,91 @@ describe('readSource', () => {
 
     expect(span.split('\n')).toHaveLength(400)
     expect(span.split('\n').at(-1)).toBe('line400')
+  })
+})
+
+describe('malformed lines', () => {
+  const silent = [
+    'not json at all {',
+    '42',
+    '"just a string"',
+    'null',
+    '[1, 2, 3]',
+    '{"op":"get_architecture","cwd":"/tmp"}',
+    '{"id":123,"op":"get_architecture","cwd":"/tmp"}',
+    '',
+  ]
+
+  const answered = [
+    { id: '', line: '{"id":"","op":"teleport"}' },
+    { id: 'no-op', line: '{"id":"no-op","cwd":"/tmp"}' },
+    { id: 'bad-payload', line: '{"id":"bad-payload","op":"get_architecture"}' },
+    { id: 'unknown-op', line: '{"id":"unknown-op","op":"teleport","cwd":"/tmp"}' },
+    { id: 'wrong-types', line: '{"id":"wrong-types","op":"check_change","cwd":"/tmp","from":1,"to":2}' },
+    { id: 'huge', line: `{"id":"huge","op":"teleport","pad":"${'x'.repeat(1_000_000)}"}` },
+  ]
+
+  it('ignores a garbage line and keeps serving the connection', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    const c = await client(socketPath)
+    c.send('}{ not json')
+    const res = await c.request({ op: 'get_architecture', cwd: tmpRoot })
+
+    expect(res.ok).toBe(true)
+    expect(c.received).toHaveLength(1)
+    c.close()
+  })
+
+  it('answers an unknown op with an error carrying the same id', async () => {
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    const c = await client(socketPath)
+    const waiting = c.reply('unknown-op')
+    c.send('{"id":"unknown-op","op":"teleport","cwd":"/tmp"}')
+    const res = await waiting
+
+    expect(res).toMatchObject({ id: 'unknown-op', ok: false })
+    if (!res.ok) expect(res.error).toMatch(/invalid request/i)
+    c.close()
+  })
+
+  it('serves a valid request sent immediately after a malformed one', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    const c = await client(socketPath)
+    c.send('{"id":"unknown-op","op":"teleport","cwd":"/tmp"}')
+    const res = await c.request({ op: 'get_architecture', cwd: tmpRoot })
+
+    expect(res.ok).toBe(true)
+    if (res.ok) expect((res.result as { title: string }).title).toBe('Test')
+    c.close()
+  })
+
+  it('survives every shape of malformed line and still serves a valid request', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const c = await client(socketPath)
+
+    const replies = answered.map((a) => c.reply(a.id))
+    for (const line of [...silent, ...answered.map((a) => a.line)]) c.send(line)
+
+    for (const res of await Promise.all(replies)) expect(res.ok).toBe(false)
+
+    const res = await c.request({ op: 'get_architecture', cwd: tmpRoot })
+    expect(res.ok).toBe(true)
+    expect(c.received.map((r) => r.id).sort()).toEqual([...answered.map((a) => a.id), res.id].sort())
+    expect(logged).toHaveBeenCalledTimes(silent.length - 1)
+
+    logged.mockRestore()
+    c.close()
   })
 })
