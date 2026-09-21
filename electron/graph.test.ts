@@ -83,13 +83,6 @@ describe('parse', () => {
     expect(arch.packages).toEqual(['express', 'react'])
   })
 
-  it('ignores a leftover layout block from before the migration', () => {
-    const withLayout = `${fixture}\n<!-- architect:layout\napi: 100,200\ndb: 300,200\nui: 100,50\n-->\n`
-    const arch = parse(withLayout)
-    expect(arch).toEqual(parse(fixture))
-    expect(serialize(arch)).not.toMatch(/architect:layout/)
-  })
-
   it('throws on an edge naming a component that does not exist', () => {
     const bad = fixture.replace('- ui -> api', '- ui -> ghost')
     expect(() => parse(bad)).toThrow(/ghost/)
@@ -283,5 +276,142 @@ describe('apply', () => {
     const before = JSON.parse(JSON.stringify(arch))
     apply(arch, { kind: 'file' as const, path: 'src/api/new.ts', component: 'api' })
     expect(arch).toEqual(before)
+  })
+})
+
+describe('layout', () => {
+  const block = (...entries: string[]) => `${fixture}\n<!-- architect:layout\n${entries.join('\n')}\n-->\n`
+
+  it('reads stored positions as a layout hint', () => {
+    expect(parse(block('api: 100,200', 'db: 300,200', 'ui: 100,50')).layout).toEqual({
+      api: { x: 100, y: 200 },
+      db: { x: 300, y: 200 },
+      ui: { x: 100, y: 50 },
+    })
+  })
+
+  it('leaves the rest of the document untouched by the block', () => {
+    const arch = parse(block('api: 100,200'))
+    const { layout, ...rest } = arch
+    expect(rest).toEqual(parse(fixture))
+  })
+
+  it('reports no layout when there is no block', () => {
+    expect(parse(fixture).layout).toBeUndefined()
+    expect(serialize(parse(fixture))).toBe(serialize(parse(fixture)))
+    expect(serialize(parse(fixture))).not.toMatch(/architect:layout/)
+  })
+
+  it('writes positions in component order', () => {
+    const arch = { ...parse(fixture), layout: { ui: { x: 1, y: 2 }, api: { x: 3, y: 4 } } }
+    expect(serialize(arch)).toMatch(/<!-- architect:layout\napi: 3,4\nui: 1,2\n-->$/)
+  })
+
+  it('round trips positions through serialize and parse', () => {
+    const arch = parse(block('api: 100.5,200', 'db: 300,0', 'ui: 0,50'))
+    expect(parse(serialize(arch))).toEqual(arch)
+  })
+
+  it('serializes a document with a layout block byte identically', () => {
+    const document = serialize(parse(block('api: 100,200', 'db: 300,200', 'ui: 100,50')))
+    expect(serialize(parse(document))).toBe(document)
+  })
+
+  it('serializes a document with no layout block byte identically', () => {
+    const document = serialize(parse(fixture))
+    expect(serialize(parse(document))).toBe(document)
+  })
+
+  it('keeps positions through apply', () => {
+    const arch = parse(block('api: 100,200'))
+    const next = apply(arch, { kind: 'component', id: 'cache', purpose: 'Caches.', owns: [] })
+    expect(next.layout).toEqual({ api: { x: 100, y: 200 } })
+  })
+
+  it('drops positions for components that no longer exist', () => {
+    const arch = parse(block('api: 100,200', 'ghost: 10,10'))
+    expect(arch.layout).toEqual({ api: { x: 100, y: 200 } })
+    expect(serialize(arch)).not.toMatch(/ghost/)
+  })
+
+  it('keeps the positions it can read when only some components are stored', () => {
+    expect(parse(block('api: 100,200')).layout).toEqual({ api: { x: 100, y: 200 } })
+  })
+
+  it('keeps the first entry when a component is stored twice', () => {
+    expect(parse(block('api: 1,2', 'api: 9,9')).layout).toEqual({ api: { x: 1, y: 2 } })
+  })
+
+  it.each([
+    ['not a number', 'api: x,y'],
+    ['NaN', 'api: NaN,NaN'],
+    ['Infinity', 'api: Infinity,0'],
+    ['negative', 'api: -10,20'],
+    ['empty coordinates', 'api: ,'],
+    ['a missing coordinate', 'api: 100'],
+    ['too many coordinates', 'api: 1,2,3'],
+    ['no separator', 'api 100 200'],
+    ['an empty id', ': 100,200'],
+    ['prose', 'this block was written by hand and means nothing'],
+  ])('falls back to auto layout on %s', (_name, entry) => {
+    const arch = parse(block(entry))
+    expect(arch.layout).toBeUndefined()
+    expect(arch.components).toEqual(parse(fixture).components)
+  })
+
+  it('reads the valid entries of a partly corrupt block', () => {
+    expect(parse(block('api: 1,2', 'db: oops', 'ui: 3,4')).layout).toEqual({
+      api: { x: 1, y: 2 },
+      ui: { x: 3, y: 4 },
+    })
+  })
+
+  it('does not throw on an unterminated block', () => {
+    const open = `${fixture}\n<!-- architect:layout\napi: 1,2\n`
+    expect(parse(open).layout).toEqual({ api: { x: 1, y: 2 } })
+  })
+
+  it('does not throw on an enormous block', () => {
+    const many = Array.from({ length: 50_000 }, (_, i) => `c${i}: ${i},${i}`)
+    const arch = parse(block(...many, 'api: 7,8'))
+    expect(arch.layout).toEqual({ api: { x: 7, y: 8 } })
+  })
+
+  it('reads the last block when the document carries more than one', () => {
+    const twice = `${block('api: 1,2')}\n<!-- architect:layout\napi: 8,9\n-->\n`
+    expect(parse(twice).layout).toEqual({ api: { x: 8, y: 9 } })
+  })
+
+  it('writes no block when every stored position is unusable', () => {
+    const arch = { ...parse(fixture), layout: { api: { x: NaN, y: 0 }, db: 'here', ui: null } }
+    expect(serialize(arch as never)).not.toMatch(/architect:layout/)
+  })
+
+  it('writes nothing for a layout that is not a record of points', () => {
+    for (const layout of [null, 'somewhere', 42, ['api']]) {
+      expect(serialize({ ...parse(fixture), layout } as never)).not.toMatch(/architect:layout/)
+    }
+  })
+
+  it('treats a component named after an object prototype key as any other', () => {
+    const proto = fixture.replace(`${h3} ui`, `${h3} toString`).replace(/\bui\b/g, 'toString')
+    const arch = parse(`${proto}\n<!-- architect:layout\ntoString: 5,6\n-->\n`)
+    expect(arch.layout).toEqual({ toString: { x: 5, y: 6 } })
+    expect(parse(serialize(arch))).toEqual(arch)
+  })
+
+  it('reads a layout block written with CRLF line endings', () => {
+    const crlf = block('api: 100,200').replace(/\n/g, '\r\n')
+    expect(parse(crlf).layout).toEqual({ api: { x: 100, y: 200 } })
+  })
+
+  it('does not let the block reach the packages section', () => {
+    expect(parse(block('api: 100,200')).packages).toEqual(['express', 'react'])
+  })
+
+  it('does not read the block as a malformed dependency', () => {
+    const inside = `${h1} T\n\nS.\n\n${h2} Components\n\n${h3} a\nDoes a.\n\n${h2} Dependencies\n\n- a -> a\n\n<!-- architect:layout\na: 1,2\n-->\n`
+    expect(() => parse(inside)).not.toThrow()
+    expect(parse(inside).layout).toEqual({ a: { x: 1, y: 2 } })
   })
 })

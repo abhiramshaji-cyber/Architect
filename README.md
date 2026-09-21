@@ -74,7 +74,7 @@ At that moment a dashed ghost node appears on your canvas, sitting exactly where
 
 ## The file
 
-Everything lives in one `architect.md` at your repo root. It is readable with no tooling, diffs cleanly, and gets reviewed in a pull request like any other file. Layout is derived from the graph at render time, so the file stores semantics rather than cosmetic positions.
+Everything lives in one `architect.md` at your repo root. It is readable with no tooling, diffs cleanly, and gets reviewed in a pull request like any other file. The prose above the fold is the whole contract: everything the tool enforces is spelled out in it.
 
 ```markdown
 ## Components
@@ -90,6 +90,15 @@ owns: `src/api/**`
 ## Forbidden
 
 - ui -> db : the ui goes through api, it never touches the database directly
+```
+
+Node positions trail the document in an HTML comment, one `id: x,y` per line. They are a hint and nothing else. Anything the block cannot answer for, the graph lays out automatically, so deleting the block or garbling it costs you an arrangement and never a file.
+
+```markdown
+<!-- architect:layout
+api: 320,40
+billing: 320,220
+-->
 ```
 
 Architect ships with its own [`architect.md`](architect.md) describing Architect. It is the demo, the test fixture, and the proof the tool survives contact with itself.

@@ -37,10 +37,13 @@ export function renameComponent(a: Architecture, from: string, to: string): OpRe
 
   const renamed = (id: string) => (id === source ? target : id)
 
+  const layout = a.layout && Object.fromEntries(Object.entries(a.layout).map(([id, pt]) => [renamed(id), pt]))
+
   return {
     ok: true,
     architecture: {
       ...a,
+      ...(layout && { layout }),
       components: a.components.map((c) => (c.id === source ? { ...c, id: target } : c)),
       edges: a.edges.map((e) => ({ ...e, from: renamed(e.from), to: renamed(e.to) })),
       forbidden: a.forbidden.map((f) => ({ ...f, from: renamed(f.from), to: renamed(f.to) }))

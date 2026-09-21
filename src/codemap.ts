@@ -1,6 +1,6 @@
 import dagre from '@dagrejs/dagre'
-import type { CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../shared/types'
-import { NODE_W, type Pt } from './layout'
+import type { CodeMap, FileEntry, FolderEntry, FunctionEntry, Pt } from '../shared/types'
+import { NODE_W } from './layout'
 
 export const FUNCTIONS_SHOWN = 8
 export const FOLDER_H = 56

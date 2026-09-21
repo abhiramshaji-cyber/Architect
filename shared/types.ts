@@ -11,6 +11,16 @@ export type Edge = { from: string; to: string }
 
 export type Forbidden = { from: string; to: string; reason: string }
 
+export type Pt = { x: number; y: number }
+
+export type Layout = Record<string, Pt>
+
+export function isPt(value: unknown): value is Pt {
+  const pt = value as Pt | null | undefined
+  if (!pt || typeof pt !== 'object') return false
+  return Number.isFinite(pt.x) && Number.isFinite(pt.y) && pt.x >= 0 && pt.y >= 0
+}
+
 export type Architecture = {
   title: string
   summary: string
@@ -18,6 +28,7 @@ export type Architecture = {
   edges: Edge[]
   forbidden: Forbidden[]
   packages: string[]
+  layout?: Layout
 }
 
 export const proposalSchema = z.discriminatedUnion('kind', [

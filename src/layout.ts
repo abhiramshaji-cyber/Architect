@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre'
-import type { Architecture, Edge, Pending, Proposal } from '../shared/types'
+import { isPt, type Architecture, type Edge, type Layout, type Pending, type Proposal, type Pt } from '../shared/types'
 
 export type Role = 'entry' | 'foundation' | 'middle'
 
@@ -37,8 +37,6 @@ export function clampInspectorWidth(px: number, stage: number): number {
   if (!Number.isFinite(px)) return Math.round(Math.min(INSPECTOR_W, max))
   return Math.round(Math.min(Math.max(px, min), max))
 }
-
-export type Pt = { x: number; y: number }
 
 export function findCycleEdges(edges: Edge[], from: string, to: string): Edge[] | null {
   if (from === to) return []
@@ -185,7 +183,15 @@ export function build(architecture: Architecture, pending: Pending[]) {
   return { nodes, links }
 }
 
-export function positions(nodes: Logical[], links: Link[]): Map<string, Pt> {
+type Box = { x: number; y: number; w: number; h: number }
+
+const SETTLE_GAP = 24
+
+function hits(a: Box, b: Box): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+export function positions(nodes: Logical[], links: Link[], hint?: Layout): Map<string, Pt> {
   const g = new dagre.graphlib.Graph()
   g.setGraph({ rankdir: 'TB', ranksep: 44, nodesep: 30, marginx: 40, marginy: 40 })
   g.setDefaultEdgeLabel(() => ({}))
@@ -201,8 +207,35 @@ export function positions(nodes: Logical[], links: Link[]): Map<string, Pt> {
   })
 
   const minY = Math.min(...placed.map((p) => p.y))
+  const auto = new Map(placed.map((p) => [p.id, { x: p.x, y: p.y - minY }]))
 
-  return new Map(placed.map((p) => [p.id, { x: p.x, y: p.y - minY }]))
+  // pin
+  const at = new Map<string, Pt>()
+  const taken: Box[] = []
+  for (const n of nodes) {
+    const pt = hint?.[n.id]
+    if (!isPt(pt)) continue
+    at.set(n.id, pt)
+    taken.push({ x: pt.x, y: pt.y, w: NODE_W, h: heightOf(n.data) })
+  }
+
+  if (at.size === 0) return auto
+
+  // settle
+  for (const n of nodes) {
+    if (at.has(n.id)) continue
+    const from = auto.get(n.id) ?? { x: 0, y: 0 }
+    const box: Box = { x: from.x, y: from.y, w: NODE_W, h: heightOf(n.data) }
+    for (;;) {
+      const clash = taken.find((t) => hits(box, t))
+      if (!clash) break
+      box.y = clash.y + clash.h + SETTLE_GAP
+    }
+    at.set(n.id, { x: box.x, y: box.y })
+    taken.push(box)
+  }
+
+  return at
 }
 
 export const HANDLE_IN = 'in'

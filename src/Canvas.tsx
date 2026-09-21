@@ -110,7 +110,7 @@ export default function Canvas({ architecture, pending, theme, selectedId, onSel
 
   const { nodes, edges, realIds } = useMemo(() => {
     const { nodes: logical, links } = build(architecture, pending)
-    const at = positions(logical, links)
+    const at = positions(logical, links, architecture.layout)
 
     const rfNodes: Node<NodeData>[] = logical.map((n) => ({
       id: n.id,

@@ -340,3 +340,94 @@ describe('dependency', () => {
     expect(dependency({ source: 'a', target: 'b', sourceHandle: null, targetHandle: null })).toBeNull()
   })
 })
+
+describe('positions with a stored layout', () => {
+  const a = architecture(['ui', 'api', 'db'], [
+    ['ui', 'api'],
+    ['api', 'db']
+  ])
+  const { nodes, links } = build(a, [])
+
+  const boxes = (at: Map<string, { x: number; y: number }>) =>
+    nodes.map((n) => {
+      const p = at.get(n.id)!
+      return { id: n.id, x0: p.x, x1: p.x + NODE_W, y0: p.y, y1: p.y + heightOf(n.data) }
+    })
+
+  const disjoint = (at: Map<string, { x: number; y: number }>) => {
+    const all = boxes(at)
+    for (const [i, b] of all.entries()) {
+      for (const c of all.slice(i + 1)) {
+        expect(b.x1 <= c.x0 || c.x1 <= b.x0 || b.y1 <= c.y0 || c.y1 <= b.y0).toBe(true)
+      }
+    }
+  }
+
+  it('places every stored node exactly where it was stored', () => {
+    const at = positions(nodes, links, { ui: { x: 10, y: 20 }, api: { x: 400, y: 20 }, db: { x: 800, y: 20 } })
+    expect(at.get('ui')).toEqual({ x: 10, y: 20 })
+    expect(at.get('api')).toEqual({ x: 400, y: 20 })
+    expect(at.get('db')).toEqual({ x: 800, y: 20 })
+  })
+
+  it('auto lays out every node when nothing is stored', () => {
+    expect(positions(nodes, links, {})).toEqual(positions(nodes, links))
+    expect(positions(nodes, links, undefined)).toEqual(positions(nodes, links))
+  })
+
+  it('gives a node with no stored position a place of its own', () => {
+    const at = positions(nodes, links, { ui: { x: 0, y: 0 } })
+    expect(at.get('ui')).toEqual({ x: 0, y: 0 })
+    expect(at.get('api')).toBeDefined()
+    expect(at.get('db')).toBeDefined()
+    disjoint(at)
+  })
+
+  it('moves an unstored node off a stored one it would have landed on', () => {
+    const auto = positions(nodes, links)
+    const at = positions(nodes, links, { ui: auto.get('api')! })
+    expect(at.get('ui')).toEqual(auto.get('api'))
+    disjoint(at)
+  })
+
+  it('honours stored positions even when the user stacked them', () => {
+    const at = positions(nodes, links, { ui: { x: 0, y: 0 }, api: { x: 0, y: 0 }, db: { x: 0, y: 0 } })
+    expect(at.size).toBe(3)
+    for (const n of nodes) expect(at.get(n.id)).toEqual({ x: 0, y: 0 })
+  })
+
+  it('ignores a stored position that is not a usable point', () => {
+    const auto = positions(nodes, links)
+    for (const bad of [
+      { x: NaN, y: 0 },
+      { x: 0, y: Infinity },
+      { x: -1, y: 0 },
+      { x: 0, y: -1 },
+      '10,20',
+      null,
+      undefined,
+      {}
+    ]) {
+      expect(positions(nodes, links, { ui: bad } as never)).toEqual(auto)
+    }
+  })
+
+  it('ignores a stored position for a node that is not on the canvas', () => {
+    expect(positions(nodes, links, { ghost: { x: 5, y: 5 } })).toEqual(positions(nodes, links))
+  })
+
+  it('auto places a ghost node beside the stored ones', () => {
+    const { nodes: withGhost, links: ghostLinks } = build(a, [
+      {
+        id: 'p1',
+        projectRoot: '/r',
+        proposal: { kind: 'component', id: 'cache', purpose: 'Caches.', owns: [] },
+        rationale: '',
+        createdAt: 0
+      }
+    ])
+    const at = positions(withGhost, ghostLinks, { ui: { x: 0, y: 0 }, api: { x: 0, y: 200 }, db: { x: 0, y: 400 } })
+    expect(at.size).toBe(withGhost.length)
+    for (const id of withGhost.map((n) => n.id)) expect(at.get(id)).toBeDefined()
+  })
+})

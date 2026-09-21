@@ -1,4 +1,7 @@
-import type { Architecture, Component, Edge, Forbidden, Proposal, Verdict } from '../shared/types'
+import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Proposal, type Pt, type Verdict } from '../shared/types'
+
+const LAYOUT_OPEN = '<!-- architect:layout'
+const LAYOUT_CLOSE = '-->'
 
 function sectionLines(markdown: string, heading: string): { text: string; line: number }[] {
   const all = markdown.split(/\r?\n/)
@@ -14,6 +17,33 @@ function sectionLines(markdown: string, heading: string): { text: string; line: 
     found.push({ text, line: i + 1 })
   }
   return found
+}
+
+function layoutHint(markdown: string, known: Set<string>): Layout | undefined {
+  const start = markdown.lastIndexOf(LAYOUT_OPEN)
+  if (start === -1) return undefined
+
+  const from = start + LAYOUT_OPEN.length
+  const end = markdown.indexOf(LAYOUT_CLOSE, from)
+  const body = end === -1 ? markdown.slice(from) : markdown.slice(from, end)
+
+  const found = new Map<string, Pt>()
+  for (const raw of body.split(/\r?\n/)) {
+    const colon = raw.indexOf(':')
+    if (colon === -1) continue
+
+    const id = raw.slice(0, colon).trim()
+    if (!known.has(id) || found.has(id)) continue
+
+    const coords = raw.slice(colon + 1).split(',')
+    if (coords.length !== 2) continue
+
+    const [x, y] = coords.map((c) => (c.trim() === '' ? NaN : Number(c)))
+    const pt = { x: x as number, y: y as number }
+    if (isPt(pt)) found.set(id, pt)
+  }
+
+  return found.size === 0 ? undefined : Object.fromEntries(found)
 }
 
 export function parse(markdown: string): Architecture {
@@ -81,7 +111,9 @@ export function parse(markdown: string): Architecture {
     if (m) packages.push((m[1] ?? '').trim())
   }
 
-  return { title, summary, components, edges, forbidden, packages }
+  const layout = layoutHint(markdown, knownIds)
+
+  return { title, summary, components, edges, forbidden, packages, ...(layout && { layout }) }
 }
 
 export function serialize(architecture: Architecture): string {
@@ -98,6 +130,16 @@ export function serialize(architecture: Architecture): string {
   for (const f of architecture.forbidden) lines.push(`- ${f.from} -> ${f.to} : ${f.reason}`)
   lines.push('', '## Packages', '')
   for (const p of architecture.packages) lines.push(`- ${p}`)
+
+  const placed = architecture.components
+    .map((c) => [c.id, architecture.layout?.[c.id]] as const)
+    .filter((entry): entry is readonly [string, Pt] => isPt(entry[1]))
+
+  if (placed.length > 0) {
+    lines.push('', LAYOUT_OPEN)
+    for (const [id, pt] of placed) lines.push(`${id}: ${pt.x},${pt.y}`)
+    lines.push(LAYOUT_CLOSE)
+  }
 
   return lines.join('\n')
 }
@@ -120,6 +162,7 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
     edges: [...architecture.edges],
     forbidden: [...architecture.forbidden],
     packages: [...architecture.packages],
+    layout: architecture.layout,
   }
 
   if (proposal.kind === 'component') {
