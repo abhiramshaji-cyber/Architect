@@ -18,7 +18,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Architecture, Ownership, Pending } from '../shared/types'
-import { addEdge, removeEdge, type OpResult } from './edit-ops'
+import { addEdge, removeComponent, removeEdge, type OpResult } from './edit-ops'
 import Inspector from './Inspector'
 import {
   build,
@@ -187,7 +187,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
       id: n.id,
       type: 'component',
       draggable: false,
-      deletable: editing ? false : undefined,
+      deletable: editing ? !n.data.ghost : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
       style: { width: NODE_W, height: heightOf(n.data) },
       data: counts.has(n.id) ? { ...n.data, files: counts.get(n.id) } : n.data
@@ -251,6 +251,27 @@ export default function Canvas({ architecture, ownership, pending, theme, select
     return !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
   }, [])
 
+  const drop = useCallback(
+    (ids: string[]) => {
+      if (!onEdit) return
+      const known = new Set(architecture.components.map((c) => c.id))
+      const gone = ids.filter((id) => known.has(id))
+      if (gone.length === 0) return
+
+      const what = gone.length === 1 ? `"${gone[0]}"` : `${gone.length} components`
+      const its = gone.length === 1 ? 'it' : 'them'
+      if (!confirm(`Delete ${what} and every edge touching ${its}? Saving the edit writes this to architect.md.`)) return
+
+      onEdit((a) =>
+        gone.reduce<OpResult>(
+          (acc, id) => (acc.ok ? removeComponent(acc.architecture, id) : acc),
+          { ok: true, architecture: a }
+        )
+      )
+    },
+    [onEdit, architecture]
+  )
+
   const disconnect = useCallback(
     (removed: RFEdge[]) => {
       if (!onEdit) return
@@ -285,6 +306,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
         deleteKeyCode={editing ? DELETE_KEYS : undefined}
         onBeforeDelete={editing ? beforeDelete : undefined}
         onConnect={editing ? connect : undefined}
+        onNodesDelete={editing ? (removed) => drop(removed.map((n) => n.id)) : undefined}
         onEdgesDelete={editing ? disconnect : undefined}
         fitView
         fitViewOptions={FIT}
@@ -298,7 +320,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
         <Controls showInteractive={false} />
       </ReactFlow>
       {ownership && <OwnershipPanel ownership={ownership} />}
-      {selected && <Inspector node={selected} onClose={close} onSelect={onSelect} onEdit={onEdit} />}
+      {selected && <Inspector node={selected} onClose={close} onSelect={onSelect} onEdit={onEdit} onDrop={(id) => drop([id])} />}
     </div>
   )
 }

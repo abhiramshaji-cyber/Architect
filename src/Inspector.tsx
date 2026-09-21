@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
 import type { Architecture } from '../shared/types'
 import { hangingIndent, type CodeNodeData, type FnRef } from './codemap'
-import { removeComponent, renameComponent, setOwns, setPurpose, type OpResult } from './edit-ops'
+import { renameComponent, setOwns, setPurpose, type OpResult } from './edit-ops'
 import { clampInspectorWidth, statusOf, INSPECTOR_W, type NodeData } from './layout'
 
 const WIDTH_KEY = 'architect.inspector.width'
@@ -109,6 +109,7 @@ type InspectorProps = {
   onClose: () => void
   onSelect: (id: string | null) => void
   onEdit?: (op: (a: Architecture) => OpResult) => boolean
+  onDrop?: (id: string) => void
 }
 
 const KINDS = { folder: 'folder', codefile: 'file', codefn: 'function' } as const
@@ -224,7 +225,7 @@ export function CodeInspector({
   )
 }
 
-export default function Inspector({ node, onClose, onSelect, onEdit }: InspectorProps) {
+export default function Inspector({ node, onClose, onSelect, onEdit, onDrop }: InspectorProps) {
   const [pass, setPass] = useState(0)
   const { panel, width, grab } = useWidth()
 
@@ -235,11 +236,6 @@ export default function Inspector({ node, onClose, onSelect, onEdit }: Inspector
 
   const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') e.currentTarget.blur()
-  }
-
-  const drop = () => {
-    if (!confirm(`Delete "${node.label}" and every edge touching it?`)) return
-    if (commit((a) => removeComponent(a, node.label))) onSelect(null)
   }
 
   return (
@@ -310,9 +306,10 @@ export default function Inspector({ node, onClose, onSelect, onEdit }: Inspector
               />
             </div>
 
-            <button className="inspector-danger" onClick={drop}>
+            <button className="inspector-danger" onClick={() => onDrop?.(node.label)}>
               Delete component
             </button>
+            <p className="inspector-hint">Or select it on the canvas and press Delete.</p>
           </section>
         ) : (
           <>

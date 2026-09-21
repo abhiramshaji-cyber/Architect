@@ -242,7 +242,15 @@ export default function App() {
   const addAndSelect = useCallback(() => {
     if (!draft) return
     const id = placeholderId(draft.architecture)
-    if (applyEdit((a) => addComponent(a, id))) setSelectedId(id)
+    if (!applyEdit((a) => addComponent(a, id))) return
+    setSelectedId(id)
+
+    requestAnimationFrame(() => {
+      const field = document.getElementById('inspector-id-input')
+      if (!(field instanceof HTMLInputElement)) return
+      field.focus()
+      field.select()
+    })
   }, [draft, applyEdit])
 
   const saveEdit = useCallback(() => {
@@ -271,7 +279,7 @@ export default function App() {
 
   const removeEdit = useCallback(() => {
     if (!currentRoot || !draft || busy) return
-    if (!confirm(`Delete edit ${draft.id}? This cannot be undone.`)) return
+    if (!confirm(`Delete the whole edit ${draft.id} and every change in it? This cannot be undone.`)) return
     void run(async () => {
       await window.architect.deleteEdit(currentRoot, draft.id)
       setDraft(null)
@@ -574,7 +582,7 @@ export default function App() {
                     Close
                   </button>
                   <button className="ghost" onClick={removeEdit} disabled={busy}>
-                    Delete
+                    Delete edit
                   </button>
                 </div>
                 {message && (

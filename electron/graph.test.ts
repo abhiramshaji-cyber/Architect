@@ -180,6 +180,11 @@ describe('serialize', () => {
     const again = parse(serialize(arch))
     expect(again).toEqual(arch)
   })
+
+  it('round trips after the last component is deleted', () => {
+    const emptied = { ...parse(fixture), components: [], edges: [], forbidden: [] }
+    expect(parse(serialize(emptied))).toEqual(emptied)
+  })
 })
 
 describe('check', () => {
