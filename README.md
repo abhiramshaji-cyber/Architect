@@ -13,6 +13,28 @@ Coding agents generate structure faster than anyone reviews it. Architect puts t
 
 ---
 
+## What it looks like
+
+![The approval gate](docs/screenshots/approval-gate.png)
+
+*Five blocked calls waiting in the inbox, each one already drawn on the canvas as a dashed ghost. The `db -> api` edge would close a cycle, so the cycle lights up red.*
+
+![The contract canvas](docs/screenshots/contract-canvas.png)
+
+*The same project once the inbox is clear: the architecture as you drew it, reading top to bottom.*
+
+![Code mode, folders](docs/screenshots/code-folders.png)
+
+*Code mode drops the contract and reads the repo as it actually is, folder by folder.*
+
+![The call graph](docs/screenshots/code-call-graph.png)
+
+*Descend into a file and its functions become the graph, with the calls between them as edges.*
+
+![Function source](docs/screenshots/function-source.png)
+
+*Pick a function to get its callers, its calls and its source without leaving the canvas.*
+
 ## The problem
 
 Left alone, an agent invents a new service, a new util layer, a new dependency and a new folder nobody asked for. Each one is defensible on its own. Together they are how a clean codebase becomes unreviewable in a week.
@@ -52,7 +74,7 @@ At that moment a dashed ghost node appears on your canvas, sitting exactly where
 
 ## The file
 
-Everything lives in one `architect.md` at your repo root. It is readable with no tooling, diffs cleanly, and gets reviewed in a pull request like any other file. The serializer writes only the architecture itself — title, summary, Components, Dependencies, Forbidden and Packages — no hidden metadata blocks.
+Everything lives in one `architect.md` at your repo root. It is readable with no tooling, diffs cleanly, and gets reviewed in a pull request like any other file. Layout is derived from the graph at render time, so the file stores semantics rather than cosmetic positions.
 
 ```markdown
 ## Components
