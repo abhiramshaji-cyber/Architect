@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { SOCKET_PATH, type Request, type Proposal } from '../shared/types.js'
+import { SOCKET_PATH } from '../shared/socket.js'
+import { type Request, type Proposal } from '../shared/types.js'
 
 type RequestInput = { [K in Request['op']]: Omit<Extract<Request, { op: K }>, 'id' | 'cwd'> }[Request['op']]
 

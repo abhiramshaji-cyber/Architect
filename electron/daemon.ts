@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
+import { SOCKET_PATH } from '../shared/socket'
 import {
   PROPOSAL_TIMEOUT_MS,
-  SOCKET_PATH,
   type Architecture,
   type CodeMap,
   type Decision,

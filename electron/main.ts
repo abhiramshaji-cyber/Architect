@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
-import { SOCKET_PATH, type Architecture, type Pending, type ProjectSummary } from '../shared/types'
+import { SOCKET_PATH } from '../shared/socket'
+import { type Architecture, type Pending, type ProjectSummary } from '../shared/types'
 import { createDaemon } from './daemon'
 
 const MCP_BRIDGE_PATH = path.join(os.homedir(), '.architect', 'bin', 'architect-mcp.mjs')

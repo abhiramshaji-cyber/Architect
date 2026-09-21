@@ -1,4 +1,3 @@
-import { tmpdir } from 'node:os'
 import { z } from 'zod'
 
 export type Component = {
@@ -128,12 +127,5 @@ export type McpBridgeInfo = { path: string; exists: boolean }
 export type Response =
   | { id: string; ok: true; result: unknown }
   | { id: string; ok: false; error: string }
-
-const home = process.env.HOME ?? process.env.USERPROFILE ?? tmpdir()
-
-export const SOCKET_PATH =
-  process.platform === 'win32'
-    ? '\\\\.\\pipe\\architect'
-    : `${home}/.architect/sock`
 
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
