@@ -149,10 +149,11 @@ function main() {
     'propose_change',
     {
       description:
-        'Propose an architecture change for approval. For a file proposal, component is your best guess at the owner, not a certainty; the engineer can reassign it before approving.',
+        'Propose an architecture change for approval. For a file proposal, component is your best guess at the owner, not a certainty; the engineer can reassign it before approving. A remove_component proposal deletes a component along with every edge and forbidden rule touching it; any file it owned becomes unowned rather than being deleted.',
       inputSchema: {
         proposal: z.union([
           z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
+          z.object({ kind: z.literal('remove_component'), id: z.string() }),
           z.object({ kind: z.literal('edge'), from: z.string(), to: z.string() }),
           z.object({ kind: z.literal('package'), name: z.string(), component: z.string() }),
           z.object({

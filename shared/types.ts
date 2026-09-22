@@ -48,6 +48,7 @@ export type Ownership = {
 
 export const proposalSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
+  z.object({ kind: z.literal('remove_component'), id: z.string() }),
   z.object({ kind: z.literal('edge'), from: z.string(), to: z.string() }),
   z.object({ kind: z.literal('package'), name: z.string(), component: z.string() }),
   z.object({ kind: z.literal('file'), path: z.string(), component: z.string() }),

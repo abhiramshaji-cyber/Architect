@@ -350,6 +350,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   function sameProposal(a: Proposal, b: Proposal): boolean {
     if (a.kind !== b.kind) return false
     if (a.kind === 'component' && b.kind === 'component') return a.id === b.id
+    if (a.kind === 'remove_component' && b.kind === 'remove_component') return a.id === b.id
     if (a.kind === 'edge' && b.kind === 'edge') return a.from === b.from && a.to === b.to
     if (a.kind === 'package' && b.kind === 'package') return a.name === b.name && a.component === b.component
     if (a.kind === 'file' && b.kind === 'file') return a.path === b.path && a.component === b.component

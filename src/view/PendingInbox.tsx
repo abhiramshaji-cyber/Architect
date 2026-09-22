@@ -6,6 +6,7 @@ import { decide, reassignFile, useProject } from '../model/store'
 function describe(p: Pending): string {
   const proposal = p.proposal
   if (proposal.kind === 'component') return `new component: ${proposal.id}`
+  if (proposal.kind === 'remove_component') return `remove component: ${proposal.id}`
   if (proposal.kind === 'edge') return `new edge: ${proposal.from} → ${proposal.to}`
   if (proposal.kind === 'package') return `new package: ${proposal.name} on ${proposal.component}`
   return `new file: ${proposal.path}`
@@ -37,7 +38,7 @@ export default function PendingInbox() {
               ? hasCycle(architecture.edges, p.proposal.from, p.proposal.to)
               : false
           return (
-            <li key={p.id} className="pending-item">
+            <li key={p.id} className={`pending-item${p.proposal.kind === 'remove_component' ? ' pending-removal' : ''}`}>
               <div className="pending-summary">{describe(p)}</div>
               <div className="pending-rationale">{p.rationale}</div>
               {cycle && <div className="pending-cycle">would introduce a cycle</div>}
