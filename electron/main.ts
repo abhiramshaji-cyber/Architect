@@ -5,6 +5,7 @@ import { SOCKET_PATH } from '../shared/socket'
 import { type Architecture, type CodeMap, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
 import { createDaemon } from './daemon'
 import * as git from './git/git'
+import * as github from './github/github'
 import { createPtyHost } from './pty/pty'
 
 const TRAY_ICON = nativeImage.createFromPath(
@@ -109,6 +110,11 @@ function wireIpc() {
     git.removeWorktree(root, target),
   )
   ipcMain.handle('architect:git-prune-worktrees', (_event, root: string) => git.pruneWorktrees(root))
+
+  ipcMain.handle('architect:github-auth', () => github.auth())
+  ipcMain.handle('architect:github-repos', (_event, limit?: number) => github.repos(limit))
+  ipcMain.handle('architect:github-branches', (_event, owner: string, repo: string) => github.branches(owner, repo))
+  ipcMain.handle('architect:github-rates', () => github.rates())
 }
 
 app.whenReady().then(async () => {

@@ -50,6 +50,10 @@ const architect: ArchitectApi = {
     ipcRenderer.invoke('architect:git-create-worktree', root, path, name, base),
   gitRemoveWorktree: (root, path) => ipcRenderer.invoke('architect:git-remove-worktree', root, path),
   gitPruneWorktrees: (root) => ipcRenderer.invoke('architect:git-prune-worktrees', root),
+  githubAuth: () => ipcRenderer.invoke('architect:github-auth'),
+  githubRepos: (limit) => ipcRenderer.invoke('architect:github-repos', limit),
+  githubBranches: (owner, repo) => ipcRenderer.invoke('architect:github-branches', owner, repo),
+  githubRates: () => ipcRenderer.invoke('architect:github-rates'),
 }
 
 contextBridge.exposeInMainWorld('architect', architect)

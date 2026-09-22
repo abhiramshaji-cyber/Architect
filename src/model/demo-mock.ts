@@ -391,6 +391,8 @@ export function installMock() {
     return { ok: false, error: { kind: 'not-a-repo', root } }
   }
 
+  const demoGithub = { ok: false, error: { kind: 'not-installed' } } as const
+
   window.architect = {
     async projects() {
       return Object.entries(roots).map(([root, title]) => ({ root, title }))
@@ -530,6 +532,18 @@ export function installMock() {
     },
     async gitPruneWorktrees(root) {
       return demoGit(root)
+    },
+    async githubAuth() {
+      return { ok: true, value: { kind: 'not-installed' } }
+    },
+    async githubRepos() {
+      return demoGithub
+    },
+    async githubBranches() {
+      return demoGithub
+    },
+    async githubRates() {
+      return demoGithub
     }
   }
 }
