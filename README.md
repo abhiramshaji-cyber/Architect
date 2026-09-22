@@ -130,6 +130,18 @@ One registration covers every repo. The bridge sends its working directory with 
 
 The app must be running for the bridge to reach it. It launches at login and lives in your tray.
 
+## Editing architect.md
+
+`npm run build` also produces a language server at `out/lsp/server.js`. Point any LSP client at it and `architect.md` gets diagnostics as you type, completion of component ids on dependency and forbidden lines, go to definition from an edge endpoint to the component that defines it, and rename across every reference including the layout hint.
+
+The server speaks stdio and needs the `--stdio` flag:
+
+```bash
+node /path/to/architect/out/lsp/server.js --stdio
+```
+
+In Neovim that is `vim.lsp.start({ cmd = { 'node', '/path/to/architect/out/lsp/server.js', '--stdio' }, filetypes = { 'markdown' } })`. In VS Code it is the `serverOptions.command` of a `LanguageClient`. The server only answers for a document named `architect.md`, so pointing it at markdown in general is safe.
+
 ## Status
 
 V1 is in active development. It is deliberately small:
