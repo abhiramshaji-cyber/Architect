@@ -5,37 +5,62 @@ import { isPt, type Architecture, type Component, type Edge, type Forbidden, typ
 const LAYOUT_OPEN = '<!-- architect:layout'
 const LAYOUT_CLOSE = '-->'
 
-function sectionLines(markdown: string, heading: string): { text: string; line: number }[] {
+export type Problem = { message: string; line: number; col: number; end: number }
+
+export type Ref = { id: string; line: number; col: number; definition: boolean }
+
+export type Scan = { architecture: Architecture; problems: Problem[]; refs: Ref[] }
+
+const HEADING = /^###(?:\s+(.*))?$/
+const OWNS = /^(owns:\s*)`([^`]+)`\s*$/
+const EDGE = /^(-\s*)(\S+)(\s*->\s*)(\S+)\s*$/
+const FORBIDDEN = /^(-\s*)(\S+)(\s*->\s*)(\S+)\s*:\s*(.+)$/
+const PACKAGE = /^-\s*(.+)$/
+
+type Line = { text: string; line: number; col: number }
+
+function sectionLines(markdown: string, heading: string): Line[] {
   const all = markdown.split(/\r?\n/)
   const start = all.findIndex((l) => l.startsWith(`## ${heading}`))
   if (start === -1) return []
 
-  const found: { text: string; line: number }[] = []
+  const found: Line[] = []
   for (let i = start + 1; i < all.length; i++) {
     const raw = all[i] ?? ''
     if (raw.startsWith('## ') || raw.startsWith('<!--')) break
     const text = raw.trim()
     if (text.length === 0 || text.startsWith('<!--')) continue
-    found.push({ text, line: i + 1 })
+    found.push({ text, line: i + 1, col: raw.indexOf(text) })
   }
   return found
 }
 
-function layoutHint(markdown: string, known: Set<string>): Layout | undefined {
+export function sectionAt(markdown: string, line: number): string | undefined {
+  const all = markdown.split(/\r?\n/)
+  for (let i = Math.min(line, all.length - 1); i >= 0; i--) {
+    const raw = all[i] ?? ''
+    if (raw.startsWith('## ')) return raw.slice(3).trim()
+  }
+  return undefined
+}
+
+function layoutHint(markdown: string, known: Set<string>, refs: Ref[]): Layout | undefined {
   const start = markdown.lastIndexOf(LAYOUT_OPEN)
   if (start === -1) return undefined
 
   const from = start + LAYOUT_OPEN.length
   const end = markdown.indexOf(LAYOUT_CLOSE, from)
   const body = end === -1 ? markdown.slice(from) : markdown.slice(from, end)
+  const opened = markdown.slice(0, start).split(/\r?\n/).length - 1
 
   const found = new Map<string, Pt>()
-  for (const raw of body.split(/\r?\n/)) {
+  for (const [offset, raw] of body.split(/\r?\n/).entries()) {
     const colon = raw.indexOf(':')
     if (colon === -1) continue
 
     const id = raw.slice(0, colon).trim()
     if (!known.has(id) || found.has(id)) continue
+    if (offset > 0) refs.push({ id, line: opened + offset, col: raw.indexOf(id), definition: false })
 
     const coords = raw.slice(colon + 1).split(',')
     if (coords.length !== 2) continue
@@ -48,10 +73,17 @@ function layoutHint(markdown: string, known: Set<string>): Layout | undefined {
   return found.size === 0 ? undefined : Object.fromEntries(found)
 }
 
-export function parse(markdown: string): Architecture {
+export function scan(markdown: string): Scan {
+  const problems: Problem[] = []
+  const refs: Ref[] = []
+  const note = (message: string, line: number, col: number, end: number) =>
+    problems.push({ message, line: line - 1, col, end })
+
+  // title
   const titleMatch = markdown.match(/^# (.+)$/m)
   const title = titleMatch?.[1]?.trim() ?? ''
 
+  // summary
   const afterTitle = titleMatch ? markdown.slice(markdown.indexOf(titleMatch[0]) + titleMatch[0].length) : markdown
   const summaryMatch = afterTitle.match(/^\s*\n+(.+)$/m)
   const summary = summaryMatch?.[1]?.trim() ?? ''
@@ -59,67 +91,113 @@ export function parse(markdown: string): Architecture {
   // components
   const components: Component[] = []
   const seenIds = new Set<string>()
+  let stale = false
 
-  for (const { text, line } of sectionLines(markdown, 'Components')) {
-    if (text === '###' || text.startsWith('### ')) {
-      const id = text.slice(3).trim()
-      if (id.length === 0) throw new Error('component id cannot be empty')
-      if (/\s/.test(id) || id.includes('->')) {
-        throw new Error(`invalid component id "${id}": ids must be one word with no spaces and no "->"`)
+  for (const { text, line, col } of sectionLines(markdown, 'Components')) {
+    const heading = text.match(HEADING)
+
+    if (heading) {
+      stale = true
+      const body = heading[1] ?? ''
+      const id = body.trim()
+      const idCol = col + text.length - body.length + body.indexOf(id)
+
+      if (id.length === 0) {
+        note('component id cannot be empty', line, col, col + text.length)
+        continue
       }
-      if (seenIds.has(id)) throw new Error(`duplicate component: ${id}`)
+      if (/\s/.test(id) || id.includes('->')) {
+        note(`invalid component id "${id}": ids must be one word with no spaces and no "->"`, line, idCol, idCol + id.length)
+        continue
+      }
+      if (seenIds.has(id)) {
+        note(`duplicate component: ${id}`, line, idCol, idCol + id.length)
+        continue
+      }
+
+      stale = false
       seenIds.add(id)
+      refs.push({ id, line: line - 1, col: idCol, definition: true })
       components.push({ id, purpose: '', owns: [] })
       continue
     }
 
     const current = components[components.length - 1]
-    if (!current) continue
+    if (stale || !current) continue
+
     if (text.startsWith('owns:')) {
-      const m = text.match(/^owns:\s*`([^`]+)`\s*$/)
-      if (!m) throw new Error(`malformed owns entry on line ${line}: ${text}`)
-      current.owns.push(m[1] ?? '')
+      const m = text.match(OWNS)
+      if (!m) {
+        note(`malformed owns entry on line ${line}: ${text}`, line, col, col + text.length)
+        continue
+      }
+      current.owns.push(m[2] ?? '')
     }
     else if (current.purpose.length === 0) current.purpose = text
   }
 
   const knownIds = new Set(components.map((c) => c.id))
 
+  const endpoints = (line: number, col: number, m: RegExpMatchArray, kind: string) => {
+    const from = m[2] ?? ''
+    const to = m[4] ?? ''
+    const fromCol = col + (m[1] ?? '').length
+    const toCol = fromCol + from.length + (m[3] ?? '').length
+
+    refs.push({ id: from, line: line - 1, col: fromCol, definition: false })
+    refs.push({ id: to, line: line - 1, col: toCol, definition: false })
+
+    if (!knownIds.has(from)) note(`unknown component in ${kind}: ${from}`, line, fromCol, fromCol + from.length)
+    if (!knownIds.has(to)) note(`unknown component in ${kind}: ${to}`, line, toCol, toCol + to.length)
+
+    return knownIds.has(from) && knownIds.has(to) ? { from, to } : undefined
+  }
+
   // dependencies
   const edges: Edge[] = []
-  for (const { text, line } of sectionLines(markdown, 'Dependencies')) {
-    const m = text.match(/^-\s*(\S+)\s*->\s*(\S+)$/)
-    if (!m) throw new Error(`malformed dependency on line ${line}: ${text}`)
-    const from = m[1] ?? ''
-    const to = m[2] ?? ''
-    if (!knownIds.has(from)) throw new Error(`unknown component in dependency: ${from}`)
-    if (!knownIds.has(to)) throw new Error(`unknown component in dependency: ${to}`)
-    edges.push({ from, to })
+  for (const { text, line, col } of sectionLines(markdown, 'Dependencies')) {
+    const m = text.match(EDGE)
+    if (!m) {
+      note(`malformed dependency on line ${line}: ${text}`, line, col, col + text.length)
+      continue
+    }
+    const pair = endpoints(line, col, m, 'dependency')
+    if (pair) edges.push(pair)
   }
 
   // forbidden
   const forbidden: Forbidden[] = []
-  for (const { text, line } of sectionLines(markdown, 'Forbidden')) {
-    const m = text.match(/^-\s*(\S+)\s*->\s*(\S+)\s*:\s*(.+)$/)
-    if (!m) throw new Error(`malformed forbidden entry on line ${line}: ${text}`)
-    const from = m[1] ?? ''
-    const to = m[2] ?? ''
-    const reason = m[3] ?? ''
-    if (!knownIds.has(from)) throw new Error(`unknown component in forbidden: ${from}`)
-    if (!knownIds.has(to)) throw new Error(`unknown component in forbidden: ${to}`)
-    forbidden.push({ from, to, reason: reason.trim() })
+  for (const { text, line, col } of sectionLines(markdown, 'Forbidden')) {
+    const m = text.match(FORBIDDEN)
+    if (!m) {
+      note(`malformed forbidden entry on line ${line}: ${text}`, line, col, col + text.length)
+      continue
+    }
+    const pair = endpoints(line, col, m, 'forbidden')
+    if (pair) forbidden.push({ ...pair, reason: (m[5] ?? '').trim() })
   }
 
   // packages
   const packages: string[] = []
   for (const { text } of sectionLines(markdown, 'Packages')) {
-    const m = text.match(/^-\s*(.+)$/)
+    const m = text.match(PACKAGE)
     if (m) packages.push((m[1] ?? '').trim())
   }
 
-  const layout = layoutHint(markdown, knownIds)
+  const layout = layoutHint(markdown, knownIds, refs)
 
-  return { title, summary, components, edges, forbidden, packages, ...(layout && { layout }) }
+  return {
+    architecture: { title, summary, components, edges, forbidden, packages, ...(layout && { layout }) },
+    problems,
+    refs,
+  }
+}
+
+export function parse(markdown: string): Architecture {
+  const { architecture, problems } = scan(markdown)
+  const first = problems[0]
+  if (first) throw new Error(first.message)
+  return architecture
 }
 
 export function serialize(architecture: Architecture): string {

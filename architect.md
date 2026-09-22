@@ -40,6 +40,10 @@ owns: `cli/**`
 MCP stdio server that Claude spawns. Translates tool calls into socket requests.
 owns: `mcp/**`
 
+### lsp
+Language server for `architect.md` over stdio. Turns the positioned scan into diagnostics, completion, go to definition and rename for any editor.
+owns: `lsp/**`
+
 ## Dependencies
 
 - graph -> types
@@ -53,6 +57,8 @@ owns: `mcp/**`
 - bridge -> types
 - cli -> types
 - cli -> graph
+- lsp -> types
+- lsp -> graph
 
 ## Forbidden
 
@@ -73,3 +79,5 @@ owns: `mcp/**`
 - node-pty
 - @xterm/xterm
 - @xterm/addon-fit
+- vscode-languageserver
+- vscode-languageserver-textdocument
