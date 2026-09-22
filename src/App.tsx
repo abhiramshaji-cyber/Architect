@@ -5,12 +5,18 @@ import ConnectMcpPanel from './view/ConnectMcpPanel'
 import EditList from './view/EditList'
 import PendingInbox from './view/PendingInbox'
 import ProjectList from './view/ProjectList'
-import { start } from './model/store'
+import StatusLine from './view/StatusLine'
+import { at } from './shell/pane-tree'
+import { usePanes } from './shell/usePanes'
+import { views } from './shell/views'
+import { parseErrorOf, start, useProject } from './model/store'
 
 export default function App() {
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? 'dark')
   const [showConnectMcp, setShowConnectMcp] = useState(false)
   const [bridge, setBridge] = useState<McpBridgeInfo | null>(null)
+  const project = useProject()
+  const panes = usePanes(project.currentRoot)
 
   useEffect(start, [])
 
@@ -29,15 +35,22 @@ export default function App() {
     window.architect.mcpBridgeInfo().then(setBridge)
   }, [])
 
+  const activePane = at(panes.tree, panes.focus)
+  const viewLabel = activePane?.kind === 'leaf' ? views[activePane.view].label : null
+
   return (
     <div className="app">
-      <aside className="sidebar">
-        <ProjectList theme={theme} onFlipTheme={flipTheme} onConnectMcp={openConnectMcp} />
-        <EditList />
-        <PendingInbox />
-      </aside>
+      <div className="app-body">
+        <aside className="sidebar">
+          <ProjectList theme={theme} onFlipTheme={flipTheme} onConnectMcp={openConnectMcp} />
+          <EditList />
+          <PendingInbox />
+        </aside>
 
-      <CanvasArea theme={theme} />
+        <CanvasArea theme={theme} panes={panes} />
+      </div>
+
+      <StatusLine project={project} parseError={parseErrorOf(project)} viewLabel={viewLabel} />
 
       {showConnectMcp && <ConnectMcpPanel bridge={bridge} onClose={() => setShowConnectMcp(false)} />}
     </div>

@@ -1,14 +1,13 @@
 import { useCallback } from 'react'
 import PaneTree from '../shell/PaneTree'
-import { usePanes } from '../shell/usePanes'
+import type { usePanes } from '../shell/usePanes'
 import { VIEW_IDS, views, type ViewId } from '../shell/views'
 import type { Path } from '../shell/pane-tree'
-import { parseErrorOf, useProject } from '../model/store'
 
-export default function CanvasArea({ theme }: { theme: string }) {
-  const project = useProject()
-  const parseError = parseErrorOf(project)
-  const { tree, focus, commands, focusPane, setRatio, showView } = usePanes(project.currentRoot)
+type Panes = ReturnType<typeof usePanes>
+
+export default function CanvasArea({ theme, panes }: { theme: string; panes: Panes }) {
+  const { tree, focus, commands, focusPane, setRatio, showView } = panes
 
   const renderLeaf = useCallback(
     (view: ViewId, path: Path) => {
@@ -48,12 +47,6 @@ export default function CanvasArea({ theme }: { theme: string }) {
 
   return (
     <main className="canvas-area">
-      {parseError && (
-        <div className="parse-banner" role="alert">
-          <strong>architect.md could not be loaded.</strong> {parseError}
-        </div>
-      )}
-
       <PaneTree tree={tree} focus={focus} onFocus={focusPane} onResize={setRatio} renderLeaf={renderLeaf} />
     </main>
   )
