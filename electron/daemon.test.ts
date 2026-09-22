@@ -97,6 +97,24 @@ afterEach(async () => {
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
 
+describe('open', () => {
+  it('names the missing contract for a directory that is not an Architect project', async () => {
+    daemon = createDaemon({ socketPath })
+    const plain = fs.mkdtempSync(path.join(tmpRoot, 'plain-'))
+
+    await expect(daemon.open(plain)).rejects.toThrow(/no architect\.md/)
+    expect(daemon.projects()).toEqual([])
+  })
+
+  it('opens a directory that holds a contract', async () => {
+    daemon = createDaemon({ socketPath })
+    writeArchitect(tmpRoot, fixture(component('a')))
+
+    await expect(daemon.open(tmpRoot)).resolves.toMatchObject({ title: 'Test' })
+    expect(daemon.projects().map((p) => p.root)).toEqual([tmpRoot])
+  })
+})
+
 describe('socket lifecycle', () => {
   it('creates the parent directory before binding', async () => {
     expect(fs.existsSync(path.dirname(socketPath))).toBe(false)

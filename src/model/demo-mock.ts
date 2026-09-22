@@ -395,11 +395,15 @@ export function installMock() {
     async projects() {
       return Object.entries(roots).map(([root, title]) => ({ root, title }))
     },
+    async chooseDirectory() {
+      return null
+    },
     async open(root) {
       const arch = architectures[root]
       if (!arch) throw new Error(`unknown project: ${root}`)
       return arch
     },
+    async closeProject() {},
     async pending() {
       return pendingByRoot['/Users/demo/code/architect'] ?? []
     },

@@ -18,7 +18,9 @@ function deferred<T>() {
 function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
   return {
     projects: vi.fn().mockResolvedValue([]),
+    chooseDirectory: vi.fn().mockResolvedValue(null),
     open: vi.fn().mockResolvedValue(null),
+    closeProject: vi.fn().mockResolvedValue(undefined),
     pending: vi.fn().mockResolvedValue([]),
     decide: vi.fn().mockResolvedValue(undefined),
     edits: vi.fn().mockResolvedValue([]),
@@ -212,6 +214,102 @@ describe('closeProject', () => {
 
     expect(confirmMock).toHaveBeenCalled()
     expect(getSnapshot().entries['/a']).toBeDefined()
+    expect(architect.closeProject).not.toHaveBeenCalled()
+  })
+
+  it('tells the daemon to stop watching the closed root', async () => {
+    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    const { openProject, closeProject, getSnapshot } = await import('./store')
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+
+    closeProject('/a')
+
+    expect(architect.closeProject).toHaveBeenCalledWith('/a')
+  })
+
+  it('closes a remembered root that the renderer never opened', async () => {
+    const { closeProject, getSnapshot } = await import('./store')
+
+    closeProject('/a')
+
+    expect(architect.closeProject).toHaveBeenCalledWith('/a')
+    expect(getSnapshot().entries).toEqual({})
+  })
+
+  it('reports a daemon that refuses to close', async () => {
+    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    architect.closeProject = vi.fn().mockRejectedValue(new Error('socket gone'))
+    const { openProject, closeProject, getSnapshot } = await import('./store')
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+
+    closeProject('/a')
+
+    await vi.waitFor(() => expect(getSnapshot().message).toEqual({ text: 'socket gone', error: true }))
+  })
+})
+
+describe('openFolder', () => {
+  it('opens the chosen directory', async () => {
+    architect.chooseDirectory = vi.fn().mockResolvedValue('/picked')
+    architect.open = vi.fn().mockResolvedValue(arch('Picked'))
+    const { openFolder, getSnapshot } = await import('./store')
+
+    openFolder()
+
+    await vi.waitFor(() => expect(getSnapshot().entries['/picked']?.status).toBe('ready'))
+    expect(getSnapshot().currentRoot).toBe('/picked')
+  })
+
+  it('does nothing when the picker is cancelled', async () => {
+    architect.chooseDirectory = vi.fn().mockResolvedValue(null)
+    const { openFolder, getSnapshot } = await import('./store')
+
+    openFolder()
+
+    await vi.waitFor(() => expect(architect.chooseDirectory).toHaveBeenCalled())
+    await Promise.resolve()
+    expect(architect.open).not.toHaveBeenCalled()
+    expect(getSnapshot().entries).toEqual({})
+    expect(getSnapshot().message).toBeNull()
+  })
+
+  it('surfaces a directory with no architect.md instead of opening nothing', async () => {
+    architect.chooseDirectory = vi.fn().mockResolvedValue('/plain')
+    architect.open = vi.fn().mockRejectedValue(new Error('/plain is not an Architect project: no architect.md'))
+    const { openFolder, getSnapshot } = await import('./store')
+
+    openFolder()
+
+    await vi.waitFor(() => expect(getSnapshot().entries['/plain']?.status).toBe('error'))
+    const { loadErrorOf } = await import('./store')
+    expect(loadErrorOf(getSnapshot())).toContain('no architect.md')
+  })
+
+  it('focuses an already open project instead of adding a second entry', async () => {
+    architect.chooseDirectory = vi.fn().mockResolvedValue('/a')
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    const { openProject, openFolder, getSnapshot } = await import('./store')
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+    openProject('/b')
+    await vi.waitFor(() => expect(getSnapshot().currentRoot).toBe('/b'))
+
+    openFolder()
+
+    await vi.waitFor(() => expect(getSnapshot().currentRoot).toBe('/a'))
+    expect(Object.keys(getSnapshot().entries)).toEqual(['/a', '/b'])
+    expect(architect.edits).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a picker that fails', async () => {
+    architect.chooseDirectory = vi.fn().mockRejectedValue(new Error('no window'))
+    const { openFolder, getSnapshot } = await import('./store')
+
+    openFolder()
+
+    await vi.waitFor(() => expect(getSnapshot().message).toEqual({ text: 'no window', error: true }))
   })
 })
 
