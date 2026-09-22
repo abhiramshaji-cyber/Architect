@@ -1,5 +1,5 @@
 import { folderName } from '../model/layout'
-import { openProject, useProject } from '../model/store'
+import { closeProject, openProject, useProject } from '../model/store'
 
 type Props = {
   theme: string
@@ -8,7 +8,7 @@ type Props = {
 }
 
 export default function ProjectList({ theme, onFlipTheme, onConnectMcp }: Props) {
-  const { projects, currentRoot, busy } = useProject()
+  const { projects, currentRoot, entries } = useProject()
   const label = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'
 
   return (
@@ -34,16 +34,30 @@ export default function ProjectList({ theme, onFlipTheme, onConnectMcp }: Props)
       <ul className="project-list">
         {projects.map((p) => {
           const folder = folderName(p.root)
+          const entry = entries[p.root]
           return (
             <li key={p.root}>
               <button
                 className={p.root === currentRoot ? 'project active' : 'project'}
                 onClick={() => openProject(p.root)}
-                disabled={busy}
+                title={entry?.status === 'error' ? entry.error ?? undefined : undefined}
               >
                 <span className="project-folder">{folder}</span>
                 {p.title !== folder && <span className="project-title">{p.title}</span>}
+                {entry?.status === 'error' && <span className="project-unavailable">unavailable</span>}
               </button>
+              {entry && (
+                <button
+                  className="project-close"
+                  aria-label={`Close ${folder}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeProject(p.root)
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </li>
           )
         })}

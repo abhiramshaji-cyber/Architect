@@ -3,7 +3,7 @@ import type { Architecture } from '../../shared/types'
 import Canvas from './Canvas'
 import EditBar from './EditBar'
 import { addComponent, type OpResult } from '../model/edit-ops'
-import { applyEdit, parseErrorOf, pendingHere, useProject } from '../model/store'
+import { applyEdit, loadErrorOf, parseErrorOf, pendingHere, useProject } from '../model/store'
 import type { ViewProps } from '../shell/views'
 
 function placeholderId(a: Architecture): string {
@@ -48,7 +48,8 @@ export default function ContractView({ theme }: ViewProps) {
   if (!shown) {
     return (
       <div className="empty-state">
-        {parseErrorOf(project) ? 'Fix architect.md to see this architecture.' : 'Select a project to open its architecture'}
+        {loadErrorOf(project) ??
+          (parseErrorOf(project) ? 'Fix architect.md to see this architecture.' : 'Select a project to open its architecture')}
       </div>
     )
   }
