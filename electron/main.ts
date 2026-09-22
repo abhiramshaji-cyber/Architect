@@ -4,7 +4,7 @@ import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
-import { type Architecture, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
+import { type Architecture, type CodeMap, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
 import { createDaemon } from './daemon'
 import { createPtyHost } from './pty/pty'
 
@@ -112,6 +112,9 @@ app.whenReady().then(async () => {
   })
   daemon.onProjects((projects: ProjectSummary[]) => {
     mainWindow?.webContents.send('architect:projects-update', projects)
+  })
+  daemon.onCodeMap((root: string, map: CodeMap) => {
+    mainWindow?.webContents.send('architect:code-map-update', root, map)
   })
 
   try {
