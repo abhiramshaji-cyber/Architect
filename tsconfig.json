@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["shared", "electron", "mcp", "src"]
+  "include": ["shared", "electron", "mcp", "cli", "src"]
 }
