@@ -1,4 +1,4 @@
-import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, Ownership, Pending, Proposal } from '../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, Ownership, Pending, Proposal } from '../../shared/types'
 
 declare global {
   interface Window {

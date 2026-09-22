@@ -1,4 +1,4 @@
-import type { Architecture, Component } from '../shared/types'
+import type { Architecture, Component } from '../../shared/types'
 
 export type OpResult = { ok: true; architecture: Architecture } | { ok: false; error: string }
 

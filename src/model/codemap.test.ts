@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../shared/types'
+import type { CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../../shared/types'
 import {
   baseName,
   callPositions,

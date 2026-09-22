@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { McpBridgeInfo } from '../shared/types'
+import type { McpBridgeInfo } from '../../shared/types'
 
 type Block = { label: string; where: string; snippet: string }
 

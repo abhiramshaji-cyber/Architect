@@ -10,7 +10,7 @@ owns: `shared/**`
 
 ### graph
 Parses, serializes and queries `architect.md`. Fully deterministic, no model calls.
-owns: `electron/graph.ts`
+owns: `electron/contract/graph.ts`
 
 ### daemon
 Socket server, project resolution by cwd, file watching and the pending proposal queue.

@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre'
-import { isPt, type Architecture, type Edge, type Layout, type Pending, type Proposal, type Pt } from '../shared/types'
+import { isPt, type Architecture, type Edge, type Layout, type Pending, type Proposal, type Pt } from '../../shared/types'
 
 export type Role = 'entry' | 'foundation' | 'middle'
 

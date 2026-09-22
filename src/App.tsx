@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Architecture, CodeMap, Edit, EditSummary, McpBridgeInfo, Ownership, Pending, ProjectSummary } from '../shared/types'
-import Canvas from './Canvas'
-import CodeCanvas from './CodeCanvas'
-import { crumbs, parentOf, worldPath } from './codemap'
-import ConnectMcpPanel from './ConnectMcpPanel'
-import { addComponent, type OpResult } from './edit-ops'
-import { folderName, hasCycle } from './layout'
+import Canvas from './view/Canvas'
+import CodeCanvas from './view/CodeCanvas'
+import { crumbs, parentOf, worldPath } from './model/codemap'
+import ConnectMcpPanel from './view/ConnectMcpPanel'
+import { addComponent, type OpResult } from './model/edit-ops'
+import { folderName, hasCycle } from './model/layout'
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)

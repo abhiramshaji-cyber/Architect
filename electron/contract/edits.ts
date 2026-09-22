@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Architecture, Edit, EditStatus, EditSummary } from '../shared/types'
+import type { Architecture, Edit, EditStatus, EditSummary } from '../../shared/types'
 import { parse, serialize } from './graph'
 
 const ID = /^[0-9a-z]+-[0-9a-f]{8}$/

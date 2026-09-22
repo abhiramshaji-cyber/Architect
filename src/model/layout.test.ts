@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Architecture } from '../shared/types'
+import type { Architecture } from '../../shared/types'
 import {
   build,
   clampInspectorWidth,
