@@ -21,7 +21,7 @@ Electron lifecycle, window, tray and the preload bridge to the renderer.
 owns: `electron/main.ts`
 
 ### canvas
-React Flow diagram, project sidebar, approval inbox and the ghost proposal preview.
+React Flow diagram, project sidebar, approval inbox and the ghost proposal preview. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it.
 owns: `src/**`
 
 ### bridge
