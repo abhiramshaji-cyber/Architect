@@ -300,6 +300,41 @@ describe('apply', () => {
     apply(arch, { kind: 'file' as const, path: 'src/api/new.ts', component: 'api' })
     expect(arch).toEqual(before)
   })
+
+  it('removes a component along with every edge and forbidden rule touching it', () => {
+    const proposal = { kind: 'remove_component' as const, id: 'api' }
+    const result = apply(arch, proposal)
+    expect(result.components.map((c) => c.id)).toEqual(['db', 'ui'])
+    expect(result.edges).toEqual([])
+    expect(result.forbidden).toEqual([{ from: 'ui', to: 'db', reason: 'bypasses the api layer' }])
+  })
+
+  it('leaves edges and forbidden rules untouched between components that were not removed', () => {
+    const proposal = { kind: 'remove_component' as const, id: 'db' }
+    const result = apply(arch, proposal)
+    expect(result.edges).toEqual([{ from: 'ui', to: 'api' }])
+    expect(result.forbidden).toEqual([])
+  })
+
+  it('throws when removing a component that does not exist', () => {
+    const proposal = { kind: 'remove_component' as const, id: 'ghost' }
+    expect(() => apply(arch, proposal)).toThrow(/ghost/)
+  })
+
+  it('does not mutate the input architecture when removing a component', () => {
+    const before = JSON.parse(JSON.stringify(arch))
+    apply(arch, { kind: 'remove_component' as const, id: 'api' })
+    expect(arch).toEqual(before)
+  })
+
+  it('removes the last component leaving an empty architecture', () => {
+    let solo = apply(arch, { kind: 'remove_component' as const, id: 'api' })
+    solo = apply(solo, { kind: 'remove_component' as const, id: 'db' })
+    solo = apply(solo, { kind: 'remove_component' as const, id: 'ui' })
+    expect(solo.components).toEqual([])
+    expect(solo.edges).toEqual([])
+    expect(solo.forbidden).toEqual([])
+  })
 })
 
 describe('layout', () => {

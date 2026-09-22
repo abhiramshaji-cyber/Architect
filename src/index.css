@@ -211,6 +211,15 @@ body {
   background: var(--sunken);
 }
 
+.pending-item.pending-removal {
+  border-color: var(--danger, #c0392b);
+}
+
+.pending-item.pending-removal .pending-summary {
+  color: var(--danger, #c0392b);
+  text-decoration: line-through;
+}
+
 .pending-summary {
   font-size: 13px;
   font-weight: 500;

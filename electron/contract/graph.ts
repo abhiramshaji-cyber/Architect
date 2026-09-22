@@ -177,6 +177,16 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
     return next
   }
 
+  if (proposal.kind === 'remove_component') {
+    if (!next.components.some((c) => c.id === proposal.id)) {
+      throw new Error(`unknown component in remove proposal: ${proposal.id}`)
+    }
+    next.components = next.components.filter((c) => c.id !== proposal.id)
+    next.edges = next.edges.filter((e) => e.from !== proposal.id && e.to !== proposal.id)
+    next.forbidden = next.forbidden.filter((f) => f.from !== proposal.id && f.to !== proposal.id)
+    return next
+  }
+
   if (proposal.kind === 'edge') {
     if (next.edges.some((e) => e.from === proposal.from && e.to === proposal.to)) return next
     next.edges.push({ from: proposal.from, to: proposal.to })
@@ -232,7 +242,7 @@ function hits(pattern: string, paths: string[]): string[] {
   if (pattern === '') return []
   try {
     const isMatch = picomatch(pattern, { dot: true, nocase: false })
-    // picomatch's second argument is returnObject, so never hand it filter's index
+    // picomatch-returnobject-arg2
     return paths.filter((path) => isMatch(path))
   } catch {
     return []
