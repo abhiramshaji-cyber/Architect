@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { KeyBinding } from './chords'
 import {
   at,
   clampPath,
@@ -21,14 +22,24 @@ type Layout = { root: string | null; tree: Pane; focus: Path }
 
 const STORE_PREFIX = 'panes:'
 
-const KEYS: Record<string, string> = {
-  KeyV: 'pane.split.right',
-  KeyS: 'pane.split.down',
-  KeyQ: 'pane.close',
-  KeyH: 'pane.focus.left',
-  KeyJ: 'pane.focus.down',
-  KeyK: 'pane.focus.up',
-  KeyL: 'pane.focus.right',
+export const PANE_BINDINGS: KeyBinding[] = [
+  { command: 'pane.split.right', keys: ['KeyP', 'KeyV'] },
+  { command: 'pane.split.down', keys: ['KeyP', 'KeyS'] },
+  { command: 'pane.close', keys: ['KeyP', 'KeyQ'] },
+  { command: 'pane.focus.left', keys: ['KeyP', 'KeyH'] },
+  { command: 'pane.focus.down', keys: ['KeyP', 'KeyJ'] },
+  { command: 'pane.focus.up', keys: ['KeyP', 'KeyK'] },
+  { command: 'pane.focus.right', keys: ['KeyP', 'KeyL'] },
+]
+
+export const PANE_COMMAND_LABELS: Record<string, string> = {
+  'pane.split.right': 'Split right',
+  'pane.split.down': 'Split down',
+  'pane.close': 'Close pane',
+  'pane.focus.left': 'Focus left',
+  'pane.focus.down': 'Focus down',
+  'pane.focus.up': 'Focus up',
+  'pane.focus.right': 'Focus right',
 }
 
 function load(root: string | null): Layout {
@@ -51,14 +62,9 @@ function save(layout: Layout): void {
   } catch {}
 }
 
-function viewAt(tree: Pane, path: Path): ViewId {
+export function viewAt(tree: Pane, path: Path): ViewId {
   const pane = at(tree, path)
   return pane && pane.kind === 'leaf' ? pane.view : DEFAULT_VIEW
-}
-
-function typing(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
 export function usePanes(root: string | null) {
@@ -94,20 +100,6 @@ export function usePanes(root: string | null) {
       'pane.focus.right': () => move('right'),
     } as Record<string, () => void>
   }, [])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.altKey || e.ctrlKey || e.metaKey || typing(e.target)) return
-      const name = KEYS[e.code]
-      const run = name ? commands[name] : undefined
-      if (!run) return
-      e.preventDefault()
-      run()
-    }
-
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [commands])
 
   const panes = useMemo(
     () => ({
