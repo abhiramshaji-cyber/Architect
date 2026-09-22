@@ -1,3 +1,4 @@
+import { findCycle } from '../../electron/contract/graph'
 import type { Architecture, Component } from '../../shared/types'
 
 export type OpResult = { ok: true; architecture: Architecture } | { ok: false; error: string }
@@ -110,6 +111,9 @@ export function addEdge(a: Architecture, from: string, to: string): OpResult {
 
   const blocked = a.forbidden.find((f) => f.from === source && f.to === target)
   if (blocked) return fail(`edge "${source} -> ${target}" is forbidden: ${blocked.reason}`)
+
+  const cycle = findCycle(a.edges, source, target)
+  if (cycle) return fail(`edge "${source} -> ${target}" would introduce a cycle: ${cycle.join(' -> ')}`)
 
   return { ok: true, architecture: { ...a, edges: [...a.edges, { from: source, to: target }] } }
 }

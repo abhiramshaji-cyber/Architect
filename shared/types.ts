@@ -76,6 +76,7 @@ export type Verdict =
   | { status: 'allowed' }
   | { status: 'forbidden'; reason: string }
   | { status: 'unknown-component'; ids: string[] }
+  | { status: 'cycle'; path: string[] }
   | { status: 'undrawn-edge' }
   | { status: 'unknown'; reason?: string }
 
