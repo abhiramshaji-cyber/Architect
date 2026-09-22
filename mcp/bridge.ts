@@ -29,7 +29,13 @@ function onData(chunk: Buffer) {
 }
 
 function dispatch(line: string) {
-  const res = JSON.parse(line) as { id: string; ok: boolean; result?: unknown; error?: string }
+  let res: { id: string; ok: boolean; result?: unknown; error?: string }
+  try {
+    res = JSON.parse(line) as typeof res
+  } catch {
+    console.error(`Architect ignored a malformed daemon response: ${line}`)
+    return
+  }
   const waiter = pending.get(res.id)
   if (!waiter) return
   pending.delete(res.id)
