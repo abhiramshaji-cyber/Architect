@@ -4,11 +4,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { SOCKET_PATH } from '../shared/socket.js'
-import { type Request, type Proposal } from '../shared/types.js'
+import { type Request, type Proposal, PROPOSAL_TIMEOUT_MS } from '../shared/types.js'
 
 type RequestInput = { [K in Request['op']]: Omit<Extract<Request, { op: K }>, 'id' | 'cwd'> }[Request['op']]
 
-type Waiter = { resolve: (result: unknown) => void; reject: (error: Error) => void }
+type Waiter = { resolve: (result: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
 
 const NOT_RUNNING = 'Architect app is not running. Open the Architect app and try again.'
 
@@ -32,6 +32,7 @@ function dispatch(line: string) {
   const res = JSON.parse(line) as { id: string; ok: boolean; result?: unknown; error?: string }
   const waiter = pending.get(res.id)
   if (!waiter) return
+  clearTimeout(waiter.timer)
   pending.delete(res.id)
 
   if (res.ok) waiter.resolve(res.result)
@@ -39,13 +40,11 @@ function dispatch(line: string) {
 }
 
 function failAll(error: Error) {
-  for (const waiter of pending.values()) waiter.reject(error)
+  for (const waiter of pending.values()) {
+    clearTimeout(waiter.timer)
+    waiter.reject(error)
+  }
   pending.clear()
-}
-
-function onClose() {
-  socket = null
-  failAll(new Error('Architect connection closed unexpectedly.'))
 }
 
 function connect(path: string): Promise<Socket> {
@@ -53,6 +52,12 @@ function connect(path: string): Promise<Socket> {
     const s = createConnection(path)
 
     const onConnectError = () => reject(new Error(NOT_RUNNING))
+
+    const onClose = () => {
+      if (socket !== s) return
+      socket = null
+      failAll(new Error('Architect connection closed unexpectedly.'))
+    }
 
     s.once('connect', () => {
       s.off('error', onConnectError)
@@ -74,12 +79,19 @@ async function getSocket(path: string): Promise<Socket> {
   return connecting
 }
 
-export async function send(req: RequestInput, socketPath = SOCKET_PATH): Promise<unknown> {
+export async function send(req: RequestInput, socketPath = SOCKET_PATH, timeoutMs?: number): Promise<unknown> {
   const full = { ...req, id: randomUUID(), cwd: process.cwd() } as Request
   const s = await getSocket(socketPath)
+  const deadline =
+    timeoutMs ??
+    (req.op === 'propose_change' || req.op === 'await_proposal' ? PROPOSAL_TIMEOUT_MS + 30_000 : 30_000)
 
   return new Promise((resolve, reject) => {
-    pending.set(full.id, { resolve, reject })
+    const timer = setTimeout(() => {
+      pending.delete(full.id)
+      reject(new Error(`Architect did not respond in ${Math.round(deadline / 1000)}s; is the app still running?`))
+    }, deadline)
+    pending.set(full.id, { resolve, reject, timer })
     s.write(JSON.stringify(full) + '\n')
   })
 }
