@@ -458,10 +458,13 @@ export function installMock() {
     async getCodeMap(root) {
       return codeMaps[root] ?? null
     },
-    async readSource(root, file, from, to) {
+    async readSource(root, file, from, length) {
       const lines = mockFileText(root, file).split('\n')
-      if (from < 1 || to < from) return ''
-      return lines.slice(from - 1, Math.min(to, from + 399)).join('\n')
+      if (lines.at(-1) === '') lines.pop()
+      const start = Math.max(1, from)
+      const span = Math.min(400, Math.max(0, length))
+
+      return { from: start, lines: lines.slice(start - 1, start - 1 + span), total: lines.length, error: null }
     },
     async ownership(root) {
       return ownerships[root] ?? null

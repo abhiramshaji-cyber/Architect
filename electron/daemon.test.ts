@@ -890,19 +890,30 @@ describe('readSource', () => {
     fs.writeFileSync(inParent, 'secret\n')
 
     try {
-      expect(await daemon.readSource(parent, path.basename(inParent), 1, 1)).toBe('')
-      expect(await daemon.readSource(parent, `${path.basename(tmpRoot)}/a.ts`, 1, 1)).toBe('')
-      expect(await daemon.readSource(path.parse(tmpRoot).root, path.relative(path.parse(tmpRoot).root, inParent), 1, 1)).toBe('')
-      expect(await daemon.readSource(path.join(tmpRoot, 'sub'), 'a.ts', 1, 1)).toBe('')
+      expect(await daemon.readSource(parent, path.basename(inParent), 1, 1)).toMatchObject({
+        lines: [],
+        total: 0,
+        error: 'closed'
+      })
+      expect(await daemon.readSource(parent, `${path.basename(tmpRoot)}/a.ts`, 1, 1)).toMatchObject({ error: 'closed' })
+      expect(
+        await daemon.readSource(path.parse(tmpRoot).root, path.relative(path.parse(tmpRoot).root, inParent), 1, 1)
+      ).toMatchObject({ error: 'closed' })
+      expect(await daemon.readSource(path.join(tmpRoot, 'sub'), 'a.ts', 1, 1)).toMatchObject({ error: 'closed' })
     } finally {
       fs.rmSync(inParent, { force: true })
     }
   })
 
-  it('returns the requested inclusive line range', async () => {
+  it('returns the requested window and the true total', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\ntwo\nthree\nfour\n')
 
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 3)).toBe('two\nthree')
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 2)).toEqual({
+      from: 2,
+      lines: ['two', 'three'],
+      total: 4,
+      error: null
+    })
   })
 
   it('refuses a path that escapes the root', async () => {
@@ -910,8 +921,11 @@ describe('readSource', () => {
     fs.writeFileSync(outside, 'secret\n')
 
     try {
-      expect(await daemon.readSource(tmpRoot, `../${path.basename(outside)}`, 1, 1)).toBe('')
-      expect(await daemon.readSource(tmpRoot, outside, 1, 1)).toBe('')
+      expect(await daemon.readSource(tmpRoot, `../${path.basename(outside)}`, 1, 1)).toMatchObject({
+        lines: [],
+        error: 'outside'
+      })
+      expect(await daemon.readSource(tmpRoot, outside, 1, 1)).toMatchObject({ lines: [], error: 'outside' })
     } finally {
       fs.rmSync(outside, { force: true })
     }
@@ -923,33 +937,101 @@ describe('readSource', () => {
     fs.symlinkSync(outside, path.join(tmpRoot, 'link.ts'))
 
     try {
-      expect(await daemon.readSource(tmpRoot, 'link.ts', 1, 1)).toBe('')
+      expect(await daemon.readSource(tmpRoot, 'link.ts', 1, 1)).toMatchObject({ lines: [], error: 'outside' })
     } finally {
       fs.rmSync(outside, { force: true })
     }
   })
 
-  it('returns empty for a missing file', async () => {
-    expect(await daemon.readSource(tmpRoot, 'nope.ts', 1, 5)).toBe('')
+  it('refuses a missing file', async () => {
+    expect(await daemon.readSource(tmpRoot, 'nope.ts', 1, 5)).toMatchObject({ lines: [], error: 'unreadable' })
   })
 
-  it('clamps a range that runs past the end of the file', async () => {
+  it('refuses a file that is not readable text', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'bin.ts'), Buffer.from([0x68, 0x69, 0x00, 0x68, 0x69]))
+    fs.writeFileSync(path.join(tmpRoot, 'bad.ts'), Buffer.from([0x68, 0x69, 0xff, 0xfe]))
+
+    expect(await daemon.readSource(tmpRoot, 'bin.ts', 1, 5)).toMatchObject({ lines: [], error: 'binary' })
+    expect(await daemon.readSource(tmpRoot, 'bad.ts', 1, 5)).toMatchObject({ lines: [], error: 'binary' })
+  })
+
+  it('reports an empty file as zero lines', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'empty.ts'), '')
+
+    expect(await daemon.readSource(tmpRoot, 'empty.ts', 1, 10)).toEqual({
+      from: 1,
+      lines: [],
+      total: 0,
+      error: null
+    })
+  })
+
+  it('returns an empty window when the file is shorter than the request', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\ntwo\n')
 
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 900)).toBe('two\n')
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 0, 1)).toBe('one')
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 40, 90)).toBe('')
-    expect(await daemon.readSource(tmpRoot, 'a.ts', Number.NaN, 2)).toBe('')
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 900)).toEqual({
+      from: 2,
+      lines: ['two'],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 0, 1)).toEqual({
+      from: 1,
+      lines: ['one'],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 40, 90)).toEqual({
+      from: 40,
+      lines: [],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 1, 0)).toEqual({
+      from: 1,
+      lines: [],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', Number.NaN, 2)).toMatchObject({ lines: [], error: 'range' })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 1, Number.POSITIVE_INFINITY)).toMatchObject({ error: 'range' })
   })
 
-  it('caps the returned span', async () => {
+  it('caps the window but still reports the whole file', async () => {
     const lines = Array.from({ length: 900 }, (_, n) => `line${n + 1}`)
     fs.writeFileSync(path.join(tmpRoot, 'big.ts'), lines.join('\n'))
 
-    const span = await daemon.readSource(tmpRoot, 'big.ts', 1, 900)
+    const window = await daemon.readSource(tmpRoot, 'big.ts', 1, 900)
 
-    expect(span.split('\n')).toHaveLength(400)
-    expect(span.split('\n').at(-1)).toBe('line400')
+    expect(window.lines).toHaveLength(400)
+    expect(window.lines.at(-1)).toBe('line400')
+    expect(window.total).toBe(900)
+  })
+
+  it('windows across the old 400 line limit', async () => {
+    const lines = Array.from({ length: 402 }, (_, n) => `line${n + 1}`)
+    fs.writeFileSync(path.join(tmpRoot, 'edge.ts'), `${lines.join('\n')}\n`)
+
+    expect(await daemon.readSource(tmpRoot, 'edge.ts', 399, 1)).toMatchObject({ lines: ['line399'], total: 402 })
+    expect(await daemon.readSource(tmpRoot, 'edge.ts', 400, 1)).toMatchObject({ lines: ['line400'], total: 402 })
+    expect(await daemon.readSource(tmpRoot, 'edge.ts', 401, 2)).toMatchObject({
+      lines: ['line401', 'line402'],
+      total: 402
+    })
+  })
+
+  it('sees a file that grew between calls', async () => {
+    const file = path.join(tmpRoot, 'grow.ts')
+    fs.writeFileSync(file, 'one\n')
+
+    expect(await daemon.readSource(tmpRoot, 'grow.ts', 1, 10)).toMatchObject({ lines: ['one'], total: 1 })
+
+    fs.appendFileSync(file, 'two\nthree\n')
+
+    expect(await daemon.readSource(tmpRoot, 'grow.ts', 1, 10)).toMatchObject({
+      lines: ['one', 'two', 'three'],
+      total: 3
+    })
   })
 })
 
