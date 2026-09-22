@@ -383,6 +383,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       }
     }
 
+    if (!fs.existsSync(filePath)) throw new Error(`${root} is not an Architect project: no architect.md`)
     absorb(fs.readFileSync(filePath, 'utf8'))
 
     function reread(): boolean {

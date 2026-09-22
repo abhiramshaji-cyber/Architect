@@ -216,14 +216,25 @@ export function openProject(root: string): void {
     })
 }
 
+export function openFolder(): void {
+  void window.architect
+    .chooseDirectory()
+    .then((root) => {
+      if (root) openProject(root)
+    })
+    .catch(fail)
+}
+
 export function closeProject(root: string): void {
   const entry = state.entries[root]
-  if (!entry || !discardOk(entry)) return
+  if (entry && !discardOk(entry)) return
 
   const entries = { ...state.entries }
   delete entries[root]
   const currentRoot = state.currentRoot === root ? Object.keys(entries)[0] ?? null : state.currentRoot
   set({ entries, currentRoot })
+
+  void window.architect.closeProject(root).catch(fail)
 }
 
 function loadEdits(root: string): void {

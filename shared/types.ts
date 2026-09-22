@@ -181,7 +181,9 @@ export type PtyEvent =
 
 export type ArchitectApi = {
   projects(): Promise<ProjectSummary[]>
+  chooseDirectory(): Promise<string | null>
   open(root: string): Promise<Architecture | null>
+  closeProject(root: string): Promise<void>
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
   edits(root: string): Promise<EditSummary[]>

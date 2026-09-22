@@ -3,7 +3,9 @@ import type { Architecture, ArchitectApi, CodeMap, Pending, ProjectSummary, PtyE
 
 const architect: ArchitectApi = {
   projects: () => ipcRenderer.invoke('architect:projects'),
+  chooseDirectory: () => ipcRenderer.invoke('architect:choose-directory'),
   open: (root) => ipcRenderer.invoke('architect:open', root),
+  closeProject: (root) => ipcRenderer.invoke('architect:close-project', root),
   pending: () => ipcRenderer.invoke('architect:pending'),
   decide: (id, approved, reason, component) => ipcRenderer.invoke('architect:decide', id, approved, reason, component),
   edits: (root) => ipcRenderer.invoke('architect:edits', root),

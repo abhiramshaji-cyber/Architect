@@ -60,7 +60,12 @@ function createTray() {
 
 function wireIpc() {
   ipcMain.handle('architect:projects', () => daemon.projects())
+  ipcMain.handle('architect:choose-directory', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return canceled ? null : filePaths[0] ?? null
+  })
   ipcMain.handle('architect:open', (_event, root: string) => daemon.open(root))
+  ipcMain.handle('architect:close-project', (_event, root: string) => daemon.closeProject(root))
   ipcMain.handle('architect:pending', () => daemon.pending())
   ipcMain.handle('architect:decide', (_event, id: string, approved: boolean, reason?: string, component?: string) =>
     daemon.decide(id, approved, reason, component),

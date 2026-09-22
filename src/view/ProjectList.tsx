@@ -1,5 +1,5 @@
 import { folderName } from '../model/layout'
-import { closeProject, openProject, useProject } from '../model/store'
+import { closeProject, openFolder, openProject, useProject } from '../model/store'
 
 type Props = {
   theme: string
@@ -34,6 +34,7 @@ export default function ProjectList({ theme, onFlipTheme }: Props) {
         {projects.map((p) => {
           const folder = folderName(p.root)
           const entry = entries[p.root]
+          const close = `Close ${folder}`
           return (
             <li key={p.root}>
               <button
@@ -45,23 +46,19 @@ export default function ProjectList({ theme, onFlipTheme }: Props) {
                 {p.title !== folder && <span className="project-title">{p.title}</span>}
                 {entry?.status === 'error' && <span className="project-unavailable">unavailable</span>}
               </button>
-              {entry && (
-                <button
-                  className="project-close"
-                  aria-label={`Close ${folder}`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeProject(p.root)
-                  }}
-                >
-                  ×
-                </button>
-              )}
+              <button className="project-close" aria-label={close} title={close} onClick={() => closeProject(p.root)}>
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+                </svg>
+              </button>
             </li>
           )
         })}
         {projects.length === 0 && <li className="empty">No projects yet</li>}
       </ul>
+      <button className="sidebar-action" onClick={openFolder}>
+        Open project
+      </button>
     </div>
   )
 }
