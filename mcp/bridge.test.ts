@@ -124,6 +124,14 @@ describe('bridge', () => {
     await expect(send({ op: 'get_architecture' }, path)).rejects.toThrow(/architect/i)
   })
 
+  it('rejects when the daemon never answers', async () => {
+    const { server, path } = startServer(() => {})
+
+    await expect(send({ op: 'get_architecture' }, path, 50)).rejects.toThrow(/did not respond/i)
+
+    stopServer(server, path)
+  })
+
   it('rejects an in-flight call when the socket drops', async () => {
     const { server, path } = startServer((socket) => {
       readRequests(socket, () => {
