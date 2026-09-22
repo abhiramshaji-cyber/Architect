@@ -32,6 +32,10 @@ owns: `electron/pty/**`
 React Flow diagram, project sidebar, approval inbox and the ghost proposal preview. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
 owns: `src/**`
 
+### cli
+Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing is violated.
+owns: `cli/**`
+
 ### bridge
 MCP stdio server that Claude spawns. Translates tool calls into socket requests.
 owns: `mcp/**`
@@ -47,6 +51,8 @@ owns: `mcp/**`
 - pty -> types
 - canvas -> types
 - bridge -> types
+- cli -> types
+- cli -> graph
 
 ## Forbidden
 
