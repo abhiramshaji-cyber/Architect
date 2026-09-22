@@ -12,6 +12,10 @@ owns: `shared/**`
 Parses, serializes and queries `architect.md`. Fully deterministic, no model calls.
 owns: `electron/contract/graph.ts`
 
+### git
+Shells out to the git binary and returns typed results for branch, dirty state, worktrees, the remote default branch and a file at a ref. No git library, no domain logic.
+owns: `electron/git/**`
+
 ### daemon
 Socket server, project resolution by cwd, file watching and the pending proposal queue.
 owns: `electron/daemon.ts`
