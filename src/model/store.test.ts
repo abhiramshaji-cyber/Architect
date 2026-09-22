@@ -35,6 +35,12 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     onChange: vi.fn(),
     onPending: vi.fn(),
     onProjects: vi.fn(),
+    onCodeMap: vi.fn(),
+    ptySpawn: vi.fn(),
+    ptyWrite: vi.fn(),
+    ptyResize: vi.fn(),
+    ptyKill: vi.fn(),
+    onPtyEvent: vi.fn().mockReturnValue(() => {}),
     ...overrides,
   }
 }
