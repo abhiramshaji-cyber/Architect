@@ -140,6 +140,7 @@ export type ArchitectApi = {
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: ProjectSummary[]) => void): void
+  onCodeMap(fn: (root: string, map: CodeMap) => void): void
   ptySpawn(spec: PtySpec): Promise<PtySession>
   ptyWrite(id: string, data: string): Promise<boolean>
   ptyResize(id: string, cols: number, rows: number): Promise<boolean>

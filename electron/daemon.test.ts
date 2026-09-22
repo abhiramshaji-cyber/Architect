@@ -1329,3 +1329,137 @@ ${h2} Packages
     c.close()
   })
 })
+
+describe('source watcher', () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY
+
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  function pushes() {
+    const seen: { root: string; files: string[] }[] = []
+    daemon.onCodeMap((root, map) => {
+      seen.push({ root, files: map.folders.flatMap((folder) => folder.files.map((file) => file.path)) })
+    })
+    return seen
+  }
+
+  async function watching(root: string, rescanDebounceMs = 60) {
+    writeArchitect(root, fixture(component('api')))
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000, rescanDebounceMs })
+    await daemon.listen()
+    await daemon.open(root)
+    await pause(200)
+  }
+
+  beforeEach(() => {
+    delete process.env.ANTHROPIC_API_KEY
+  })
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY
+    else process.env.ANTHROPIC_API_KEY = originalKey
+  })
+
+  it('pushes a code map holding a source file written after the project opened', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    await pause(900)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.root).toBe(tmpRoot)
+    expect(seen[0]?.files).toContain('a.ts')
+  })
+
+  it('collapses a burst of writes into a single rescan', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    for (let at = 0; at < 40; at += 1) {
+      fs.writeFileSync(path.join(tmpRoot, `f${at}.ts`), `export function f${at}() {}\n`)
+    }
+    await pause(1200)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.files).toContain('f39.ts')
+  })
+
+  it('does not rescan for writes inside ignored directories', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    for (const dir of ['node_modules', '.git', 'dist', 'out']) {
+      fs.mkdirSync(path.join(tmpRoot, dir, 'deep'), { recursive: true })
+      fs.writeFileSync(path.join(tmpRoot, dir, 'deep', 'noise.ts'), 'export function noise() {}\n')
+    }
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('does not rescan for the map it writes into .architect', async () => {
+    await watching(tmpRoot)
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    await pause(900)
+
+    const seen = pushes()
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('still produces a map when a changed file is deleted before the rescan reads it', async () => {
+    await watching(tmpRoot, 400)
+    const seen = pushes()
+
+    fs.writeFileSync(path.join(tmpRoot, 'keep.ts'), 'export function keep() {}\n')
+    const gone = path.join(tmpRoot, 'gone.ts')
+    fs.writeFileSync(gone, 'export function gone() {}\n')
+    await pause(150)
+    fs.rmSync(gone)
+    await pause(1500)
+
+    expect(seen.at(-1)?.files).toContain('keep.ts')
+    expect(seen.at(-1)?.files).not.toContain('gone.ts')
+  })
+
+  it('stops watching a project that is closed', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    daemon.closeProject(tmpRoot)
+    expect(daemon.projects()).toEqual([])
+
+    fs.writeFileSync(path.join(tmpRoot, 'after.ts'), 'export function after() {}\n')
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('drops a pending debounced rescan when the project closes inside the window', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    fs.writeFileSync(path.join(tmpRoot, 'racing.ts'), 'export function racing() {}\n')
+    await pause(30)
+    daemon.closeProject(tmpRoot)
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('watches a project again after it is closed and reopened', async () => {
+    await watching(tmpRoot)
+    daemon.closeProject(tmpRoot)
+    await daemon.open(tmpRoot)
+    await pause(200)
+
+    const seen = pushes()
+    fs.writeFileSync(path.join(tmpRoot, 'again.ts'), 'export function again() {}\n')
+    await pause(900)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.files).toContain('again.ts')
+  })
+})

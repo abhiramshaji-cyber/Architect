@@ -483,6 +483,7 @@ export function installMock() {
     onProjects(fn) {
       fn(Object.entries(roots).map(([root, title]) => ({ root, title })))
     },
+    onCodeMap() {},
     async ptySpawn() {
       throw new Error('no terminal in the demo')
     },

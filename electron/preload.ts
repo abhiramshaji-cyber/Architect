@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Architecture, ArchitectApi, Pending, ProjectSummary, PtyEvent } from '../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, Pending, ProjectSummary, PtyEvent } from '../shared/types'
 
 const architect: ArchitectApi = {
   projects: () => ipcRenderer.invoke('architect:projects'),
@@ -26,6 +26,9 @@ const architect: ArchitectApi = {
   },
   onProjects: (fn: (p: ProjectSummary[]) => void) => {
     ipcRenderer.on('architect:projects-update', (_event, projects: ProjectSummary[]) => fn(projects))
+  },
+  onCodeMap: (fn: (root: string, map: CodeMap) => void) => {
+    ipcRenderer.on('architect:code-map-update', (_event, root: string, map: CodeMap) => fn(root, map))
   },
   ptySpawn: (spec) => ipcRenderer.invoke('architect:pty-spawn', spec),
   ptyWrite: (id, data) => ipcRenderer.invoke('architect:pty-write', id, data),

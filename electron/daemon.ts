@@ -25,7 +25,7 @@ import {
 import { describe, type DescriptionCache } from './scan/describe'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
-import { scan } from './scan/scan'
+import { IGNORED_DIRS, scan } from './scan/scan'
 
 const MAP_VERSION = 3
 
@@ -96,6 +96,22 @@ function writeStoredMap(root: string, stored: { map: CodeMap; cache: Description
 
 const MAX_SOURCE_LINES = 400
 
+const RESCAN_DEBOUNCE_MS = 300
+
+function isIgnoredSource(root: string, target: string, stats?: fs.Stats): boolean {
+  const relative = path.relative(root, target)
+  if (relative === '') return false
+  if (relative.startsWith('..')) return true
+  if (stats !== undefined && !stats.isFile() && !stats.isDirectory()) return true
+
+  const segments = relative.split(path.sep)
+  return segments.some((segment, at) => {
+    if (IGNORED_DIRS.has(segment)) return true
+    if (segment.startsWith('.')) return at < segments.length - 1 || stats?.isDirectory() === true
+    return false
+  })
+}
+
 type Waiter = { resolve: (decision: Decision) => void; timer: ReturnType<typeof setTimeout> }
 
 type PendingEntry = { pending: Pending; waiters: Set<Waiter> }
@@ -105,10 +121,14 @@ type ProjectState = {
   architecture: Architecture | null
   parseError: string | null
   watcher: FSWatcher
+  sources: FSWatcher
+  rescanTimer: ReturnType<typeof setTimeout> | null
+  rescanning: boolean
+  rescanAgain: boolean
   lastWrittenContent: string | null
 }
 
-type DaemonOptions = { socketPath?: string; proposalTimeoutMs?: number }
+type DaemonOptions = { socketPath?: string; proposalTimeoutMs?: number; rescanDebounceMs?: number }
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -123,6 +143,7 @@ function recoverId(value: unknown): string | null {
 export function createDaemon(options: DaemonOptions = {}) {
   const socketPath = options.socketPath ?? process.env.ARCHITECT_SOCKET ?? SOCKET_PATH
   const proposalTimeoutMs = options.proposalTimeoutMs ?? PROPOSAL_TIMEOUT_MS
+  const rescanDebounceMs = options.rescanDebounceMs ?? RESCAN_DEBOUNCE_MS
 
   const projects = new Map<string, ProjectState>()
   const pending = new Map<string, PendingEntry>()
@@ -130,6 +151,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   let changeListener: ((a: Architecture) => void) | null = null
   let pendingListener: ((p: Pending[]) => void) | null = null
   let projectsListener: ((p: { root: string; title: string }[]) => void) | null = null
+  let codeMapListener: ((root: string, map: CodeMap) => void) | null = null
   let server: net.Server | null = null
 
   async function readSource(
@@ -273,6 +295,68 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
+  async function rescanProject(root: string): Promise<CodeMap> {
+    const stored = readStoredMap(root)
+    const described = await describe(await scan(root), root, stored?.cache)
+
+    try {
+      writeStoredMap(root, described)
+    } catch (err) {
+      console.error('could not persist code map:', errorText(err))
+    }
+
+    return described.map
+  }
+
+  function scheduleRescan(state: ProjectState) {
+    if (state.rescanTimer) clearTimeout(state.rescanTimer)
+    state.rescanTimer = setTimeout(() => {
+      state.rescanTimer = null
+      void runRescan(state)
+    }, rescanDebounceMs)
+  }
+
+  async function runRescan(state: ProjectState) {
+    if (state.rescanning) {
+      state.rescanAgain = true
+      return
+    }
+
+    state.rescanning = true
+    try {
+      const map = await rescanProject(state.root)
+      if (projects.get(state.root) === state) codeMapListener?.(state.root, map)
+    } catch (err) {
+      console.error(`could not rescan ${state.root}:`, errorText(err))
+    }
+    state.rescanning = false
+
+    if (state.rescanAgain && projects.get(state.root) === state) {
+      state.rescanAgain = false
+      scheduleRescan(state)
+    }
+  }
+
+  function teardown(state: ProjectState) {
+    if (state.rescanTimer) clearTimeout(state.rescanTimer)
+    state.rescanTimer = null
+    void state.watcher.close()
+    void state.sources.close()
+  }
+
+  function closeProject(root: string) {
+    const state = projects.get(root)
+    if (!state) return
+
+    teardown(state)
+    projects.delete(root)
+    remembered.delete(root)
+    saveProjects()
+
+    if (activeRoot === root) activeRoot = null
+    notifyProjects()
+  }
+
   function loadProject(root: string): ProjectState {
     const existing = projects.get(root)
     if (existing) return existing
@@ -284,6 +368,10 @@ export function createDaemon(options: DaemonOptions = {}) {
       parseError: null,
       lastWrittenContent: null,
       watcher: null as unknown as FSWatcher,
+      sources: null as unknown as FSWatcher,
+      rescanTimer: null,
+      rescanning: false,
+      rescanAgain: false,
     }
 
     function absorb(content: string) {
@@ -331,6 +419,15 @@ export function createDaemon(options: DaemonOptions = {}) {
       }
     })
     state.watcher = watcher
+
+    const sources = chokidar.watch(root, {
+      ignoreInitial: true,
+      followSymlinks: false,
+      ignored: (target: string, stats?: fs.Stats) => isIgnoredSource(root, target, stats),
+    })
+    sources.on('all', () => scheduleRescan(state))
+    sources.on('error', (err) => console.error(`source watcher for ${root}:`, errorText(err)))
+    state.sources = sources
 
     projects.set(root, state)
     remembered.add(root)
@@ -603,7 +700,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   }
 
   function close(): Promise<void> {
-    for (const project of projects.values()) void project.watcher.close()
+    for (const project of projects.values()) teardown(project)
     return new Promise((resolve) => {
       if (!server) return resolve()
       server.close(() => resolve())
@@ -613,6 +710,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   return {
     listen,
     close,
+    closeProject,
     projects: listProjects,
     open,
     pending: listPending,
@@ -650,18 +748,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       return ownership(files, architecture.components)
     },
     readSource,
-    rescan: async (root: string): Promise<CodeMap> => {
-      const stored = readStoredMap(root)
-      const described = await describe(await scan(root), root, stored?.cache)
-
-      try {
-        writeStoredMap(root, described)
-      } catch (err) {
-        console.error('could not persist code map:', err instanceof Error ? err.message : err)
-      }
-
-      return described.map
-    },
+    rescan: rescanProject,
     onChange: (fn: (a: Architecture) => void) => {
       changeListener = fn
     },
@@ -670,6 +757,9 @@ export function createDaemon(options: DaemonOptions = {}) {
     },
     onProjects: (fn: (p: { root: string; title: string }[]) => void) => {
       projectsListener = fn
+    },
+    onCodeMap: (fn: (root: string, map: CodeMap) => void) => {
+      codeMapListener = fn
     },
   }
 }

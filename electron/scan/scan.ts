@@ -3,7 +3,7 @@ import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../../shared/types'
 
-const IGNORED_DIRS = new Set([
+export const IGNORED_DIRS = new Set([
   'node_modules',
   '.git',
   'dist',
