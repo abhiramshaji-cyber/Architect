@@ -1,4 +1,4 @@
-import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, Ownership, Pending, Proposal } from '../../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, GitFailure, Ownership, Pending, Proposal } from '../../shared/types'
 
 declare global {
   interface Window {
@@ -387,6 +387,10 @@ export function installMock() {
     changeListeners.forEach((fn) => fn(arch))
   }
 
+  function demoGit(root: string): { ok: false; error: GitFailure } {
+    return { ok: false, error: { kind: 'not-a-repo', root } }
+  }
+
   window.architect = {
     async projects() {
       return Object.entries(roots).map(([root, title]) => ({ root, title }))
@@ -495,6 +499,33 @@ export function installMock() {
     },
     onPtyEvent() {
       return () => {}
+    },
+    async gitStatus(root) {
+      return demoGit(root)
+    },
+    async gitDefaultBranch(root) {
+      return demoGit(root)
+    },
+    async gitLocalBranches(root) {
+      return demoGit(root)
+    },
+    async gitRemoteBranches(root) {
+      return demoGit(root)
+    },
+    async gitWorktrees(root) {
+      return demoGit(root)
+    },
+    async gitFetch(root) {
+      return demoGit(root)
+    },
+    async gitCreateWorktree(root) {
+      return demoGit(root)
+    },
+    async gitRemoveWorktree(root) {
+      return demoGit(root)
+    },
+    async gitPruneWorktrees(root) {
+      return demoGit(root)
     }
   }
 }

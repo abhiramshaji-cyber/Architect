@@ -3,7 +3,23 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { createBranch, createWorktree, defaultBranch, fileAtRef, head, parseStatus, parseWorktrees, status, unquotePath, worktrees } from './git'
+import {
+  createBranch,
+  createWorktree,
+  defaultBranch,
+  fetch,
+  fileAtRef,
+  head,
+  localBranches,
+  parseStatus,
+  parseWorktrees,
+  pruneWorktrees,
+  remoteBranches,
+  removeWorktree,
+  status,
+  unquotePath,
+  worktrees,
+} from './git'
 
 const roots: string[] = []
 
@@ -296,6 +312,263 @@ describe('createWorktree', () => {
     const target = path.join(tmp('wt'), 'feature')
 
     expect(await createWorktree(root, target, 'feature')).toEqual({ ok: false, error: { kind: 'no-remote', root } })
+  })
+})
+
+describe('createWorktree base', () => {
+  it('branches from an explicit local base instead of the default branch', async () => {
+    const clone = cloned()
+    sh(clone, 'checkout', '-b', 'release')
+    fs.writeFileSync(path.join(clone, 'a.txt'), 'release\n')
+    sh(clone, 'commit', '-am', 'release work')
+    sh(clone, 'checkout', 'main')
+    const target = path.join(tmp('wt'), 'feature')
+
+    const out = await createWorktree(clone, target, 'feature', 'release')
+
+    expect(out).toEqual({ ok: true, value: { path: target, branch: 'feature', base: 'release' } })
+    expect(fs.readFileSync(path.join(target, 'a.txt'), 'utf8')).toBe('release\n')
+  })
+
+  it('fetches when the base ref is only on the remote', async () => {
+    const origin = tmp('origin')
+    sh(origin, 'init', '--bare', '-b', 'main')
+    const source = committed()
+    sh(source, 'remote', 'add', 'origin', origin)
+    sh(source, 'push', '-u', 'origin', 'main')
+    const clone = path.join(tmp('clone'), 'work')
+    sh(path.dirname(clone), 'clone', origin, 'work')
+    sh(source, 'checkout', '-b', 'later')
+    fs.writeFileSync(path.join(source, 'a.txt'), 'later\n')
+    sh(source, 'commit', '-am', 'later work')
+    sh(source, 'push', 'origin', 'later')
+    const target = path.join(tmp('wt'), 'feature')
+
+    const out = await createWorktree(clone, target, 'feature', 'origin/later')
+
+    expect(out).toEqual({ ok: true, value: { path: target, branch: 'feature', base: 'origin/later' } })
+    expect(fs.readFileSync(path.join(target, 'a.txt'), 'utf8')).toBe('later\n')
+  })
+
+  it('rejects a base ref that no fetch can produce', async () => {
+    const clone = cloned()
+    const target = path.join(tmp('wt'), 'feature')
+
+    expect(await createWorktree(clone, target, 'feature', 'origin/nope')).toEqual({
+      ok: false,
+      error: { kind: 'bad-ref', ref: 'origin/nope' },
+    })
+  })
+
+  it('rejects a base that would read as an option', async () => {
+    const clone = cloned()
+    const target = path.join(tmp('wt'), 'feature')
+
+    expect(await createWorktree(clone, target, 'feature', '--exec=touch')).toEqual({
+      ok: false,
+      error: { kind: 'bad-argument', value: '--exec=touch' },
+    })
+  })
+
+  it('names the worktree already holding the branch instead of failing blind', async () => {
+    const clone = cloned()
+    const held = path.join(tmp('wt'), 'held')
+    sh(clone, 'worktree', 'add', '-b', 'feature', held)
+    const target = path.join(tmp('wt'), 'again')
+
+    expect(await createWorktree(clone, target, 'feature')).toEqual({
+      ok: false,
+      error: { kind: 'branch-checked-out', name: 'feature', path: held },
+    })
+  })
+
+  it('names the main worktree when its own branch is asked for again', async () => {
+    const clone = cloned()
+    const target = path.join(tmp('wt'), 'again')
+
+    expect(await createWorktree(clone, target, 'main')).toEqual({
+      ok: false,
+      error: { kind: 'branch-checked-out', name: 'main', path: clone },
+    })
+  })
+
+  it('refuses a base ref on a repo with no commits', async () => {
+    const root = repo()
+    const target = path.join(tmp('wt'), 'feature')
+
+    expect(await createWorktree(root, target, 'feature', 'main')).toEqual({ ok: false, error: { kind: 'bad-ref', ref: 'main' } })
+  })
+})
+
+describe('removeWorktree', () => {
+  it('removes a worktree and forgets its entry', async () => {
+    const clone = cloned()
+    const extra = path.join(tmp('wt'), 'side')
+    sh(clone, 'worktree', 'add', '-b', 'side', extra)
+
+    expect(await removeWorktree(clone, extra)).toEqual({ ok: true, value: { path: extra } })
+    expect(fs.existsSync(extra)).toBe(false)
+
+    const listed = await worktrees(clone)
+    expect(listed.ok && listed.value.map((w) => w.path)).toEqual([clone])
+  })
+
+  it('prunes an entry whose directory is already gone', async () => {
+    const clone = cloned()
+    const extra = path.join(tmp('wt'), 'side')
+    sh(clone, 'worktree', 'add', '-b', 'side', extra)
+    fs.rmSync(extra, { recursive: true, force: true })
+
+    expect(await removeWorktree(clone, extra)).toEqual({ ok: true, value: { path: extra } })
+
+    const listed = await worktrees(clone)
+    expect(listed.ok && listed.value.map((w) => w.path)).toEqual([clone])
+  })
+
+  it('refuses a worktree with uncommitted work', async () => {
+    const clone = cloned()
+    const extra = path.join(tmp('wt'), 'side')
+    sh(clone, 'worktree', 'add', '-b', 'side', extra)
+    fs.writeFileSync(path.join(extra, 'a.txt'), 'changed\n')
+
+    expect(await removeWorktree(clone, extra)).toEqual({ ok: false, error: { kind: 'dirty', root: extra } })
+    expect(fs.existsSync(extra)).toBe(true)
+  })
+
+  it('refuses the main worktree', async () => {
+    const clone = cloned()
+
+    expect(await removeWorktree(clone, clone)).toEqual({ ok: false, error: { kind: 'main-worktree', path: clone } })
+  })
+
+  it('refuses a locked worktree instead of silently leaving it behind', async () => {
+    const clone = cloned()
+    const extra = path.join(tmp('wt'), 'side')
+    sh(clone, 'worktree', 'add', '-b', 'side', extra)
+    sh(clone, 'worktree', 'lock', extra)
+
+    expect(await removeWorktree(clone, extra)).toEqual({ ok: false, error: { kind: 'locked-worktree', path: extra } })
+
+    const listed = await worktrees(clone)
+    expect(listed.ok && listed.value.map((w) => w.path)).toEqual([clone, extra])
+  })
+
+  it('reports a path this repo does not own', async () => {
+    const clone = cloned()
+    const stranger = tmp('stranger')
+
+    expect(await removeWorktree(clone, stranger)).toEqual({ ok: false, error: { kind: 'no-worktree', path: stranger } })
+  })
+
+  it('rejects a path that would read as an option', async () => {
+    expect(await removeWorktree(cloned(), '--force')).toEqual({ ok: false, error: { kind: 'bad-argument', value: '--force' } })
+  })
+})
+
+describe('pruneWorktrees', () => {
+  it('drops stale entries and returns what survived', async () => {
+    const clone = cloned()
+    const extra = path.join(tmp('wt'), 'side')
+    sh(clone, 'worktree', 'add', '-b', 'side', extra)
+    fs.rmSync(extra, { recursive: true, force: true })
+
+    const out = await pruneWorktrees(clone)
+
+    expect(out.ok && out.value.map((w) => w.path)).toEqual([clone])
+  })
+})
+
+describe('branch listings', () => {
+  it('lists local branches with their upstream and the current one, offline', async () => {
+    const clone = cloned()
+    sh(clone, 'branch', 'side')
+    const unreachable = path.join(tmp('gone'), 'origin')
+    sh(clone, 'remote', 'set-url', 'origin', unreachable)
+
+    const out = await localBranches(clone)
+    if (!out.ok) throw new Error(out.error.kind)
+
+    expect(out.value).toEqual([
+      { name: 'main', commit: expect.stringMatching(/^[0-9a-f]{40}$/), upstream: 'origin/main', current: true },
+      { name: 'side', commit: expect.stringMatching(/^[0-9a-f]{40}$/), upstream: null, current: false },
+    ])
+  })
+
+  it('lists remote branches without the symbolic origin head, offline', async () => {
+    const origin = tmp('origin')
+    sh(origin, 'init', '--bare', '-b', 'main')
+    const source = committed()
+    sh(source, 'remote', 'add', 'origin', origin)
+    sh(source, 'push', '-u', 'origin', 'main')
+    sh(source, 'checkout', '-b', 'side')
+    sh(source, 'push', '-u', 'origin', 'side')
+    const clone = path.join(tmp('clone'), 'work')
+    sh(path.dirname(clone), 'clone', origin, 'work')
+    fs.rmSync(origin, { recursive: true, force: true })
+
+    const out = await remoteBranches(clone)
+    if (!out.ok) throw new Error(out.error.kind)
+
+    expect(out.value.map((b) => b.name)).toEqual(['origin/main', 'origin/side'])
+    expect(out.value[0]?.commit).toMatch(/^[0-9a-f]{40}$/)
+  })
+
+  it('returns no branches for a repo with no commits', async () => {
+    expect(await localBranches(repo())).toEqual({ ok: true, value: [] })
+  })
+
+  it('reports a directory that is not a repo', async () => {
+    const root = tmp('plain')
+
+    expect(await localBranches(root)).toEqual({ ok: false, error: { kind: 'not-a-repo', root } })
+  })
+
+  it('reports a repo with no remote', async () => {
+    const root = committed()
+
+    expect(await remoteBranches(root)).toEqual({ ok: false, error: { kind: 'no-remote', root } })
+  })
+})
+
+describe('fetch', () => {
+  it('updates the remote tracking refs of a clone', async () => {
+    const origin = tmp('origin')
+    sh(origin, 'init', '--bare', '-b', 'main')
+    const source = committed()
+    sh(source, 'remote', 'add', 'origin', origin)
+    sh(source, 'push', '-u', 'origin', 'main')
+    const clone = path.join(tmp('clone'), 'work')
+    sh(path.dirname(clone), 'clone', origin, 'work')
+    sh(source, 'checkout', '-b', 'fresh')
+    sh(source, 'push', 'origin', 'fresh')
+
+    expect(await fetch(clone)).toEqual({ ok: true, value: { remote: 'origin' } })
+
+    const out = await remoteBranches(clone)
+    expect(out.ok && out.value.map((b) => b.name)).toContain('origin/fresh')
+  })
+
+  it('prunes a remote branch that is gone', async () => {
+    const origin = tmp('origin')
+    sh(origin, 'init', '--bare', '-b', 'main')
+    const source = committed()
+    sh(source, 'remote', 'add', 'origin', origin)
+    sh(source, 'push', '-u', 'origin', 'main')
+    sh(source, 'push', 'origin', 'main:doomed')
+    const clone = path.join(tmp('clone'), 'work')
+    sh(path.dirname(clone), 'clone', origin, 'work')
+    sh(source, 'push', 'origin', '--delete', 'doomed')
+
+    expect(await fetch(clone)).toEqual({ ok: true, value: { remote: 'origin' } })
+
+    const out = await remoteBranches(clone)
+    expect(out.ok && out.value.map((b) => b.name)).not.toContain('origin/doomed')
+  })
+
+  it('reports a repo with no remote', async () => {
+    const root = committed()
+
+    expect(await fetch(root)).toEqual({ ok: false, error: { kind: 'no-remote', root } })
   })
 })
 

@@ -38,6 +38,16 @@ const architect: ArchitectApi = {
     ipcRenderer.on('architect:pty-event', listener)
     return () => ipcRenderer.off('architect:pty-event', listener)
   },
+  gitStatus: (root) => ipcRenderer.invoke('architect:git-status', root),
+  gitDefaultBranch: (root) => ipcRenderer.invoke('architect:git-default-branch', root),
+  gitLocalBranches: (root) => ipcRenderer.invoke('architect:git-local-branches', root),
+  gitRemoteBranches: (root) => ipcRenderer.invoke('architect:git-remote-branches', root),
+  gitWorktrees: (root) => ipcRenderer.invoke('architect:git-worktrees', root),
+  gitFetch: (root) => ipcRenderer.invoke('architect:git-fetch', root),
+  gitCreateWorktree: (root, path, name, base) =>
+    ipcRenderer.invoke('architect:git-create-worktree', root, path, name, base),
+  gitRemoveWorktree: (root, path) => ipcRenderer.invoke('architect:git-remove-worktree', root, path),
+  gitPruneWorktrees: (root) => ipcRenderer.invoke('architect:git-prune-worktrees', root),
 }
 
 contextBridge.exposeInMainWorld('architect', architect)
