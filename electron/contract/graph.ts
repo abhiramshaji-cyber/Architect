@@ -157,7 +157,12 @@ export function check(architecture: Architecture, from: string, to: string): Ver
   const allowed = architecture.edges.some((e) => e.from === from && e.to === to)
   if (allowed) return { status: 'allowed' }
 
-  return { status: 'unknown' }
+  // missing
+  const knownIds = new Set(architecture.components.map((c) => c.id))
+  const missing = [...new Set([from, to].filter((id) => !knownIds.has(id)))]
+  if (missing.length > 0) return { status: 'unknown-component', ids: missing }
+
+  return { status: 'undrawn-edge' }
 }
 
 export function apply(architecture: Architecture, proposal: Proposal): Architecture {

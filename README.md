@@ -55,9 +55,15 @@ claude: check_change({ from: 'ui', to: 'db' })
         -> FORBIDDEN          "the ui goes through api, it never touches the database directly"
 
 claude: check_change({ from: 'api', to: 'search' })
-        -> UNKNOWN            no such component, it has to ask you
+        -> UNKNOWN-COMPONENT  'search' is not on the canvas, it proposes the component
 
 claude: propose_change({ kind: 'component', id: 'search', ... })
+        -> blocks
+
+claude: check_change({ from: 'ui', to: 'billing' })
+        -> UNDRAWN-EDGE       both components exist, no edge between them, it proposes the edge
+
+claude: propose_change({ kind: 'edge', from: 'ui', to: 'billing', ... })
         -> blocks
 ```
 

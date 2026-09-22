@@ -75,6 +75,8 @@ export type EditSummary = { id: string; status: EditStatus; title: string; error
 export type Verdict =
   | { status: 'allowed' }
   | { status: 'forbidden'; reason: string }
+  | { status: 'unknown-component'; ids: string[] }
+  | { status: 'undrawn-edge' }
   | { status: 'unknown'; reason?: string }
 
 export type Decision =

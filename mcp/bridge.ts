@@ -139,7 +139,8 @@ function main() {
   server.registerTool(
     'check_change',
     {
-      description: 'Check whether a dependency between two components is allowed',
+      description:
+        'Check whether a dependency between two components is allowed. The verdict is allowed, forbidden with a reason, unknown-component naming the id(s) not on the canvas (propose a component), or undrawn-edge when both components exist but the edge is not drawn (propose an edge).',
       inputSchema: { from: z.string(), to: z.string() },
     },
     ({ from, to }) => checkChange(from, to),

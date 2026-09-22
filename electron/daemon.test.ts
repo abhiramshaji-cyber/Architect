@@ -249,7 +249,7 @@ describe('correctness requirements', () => {
 
     const checkRes = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'api', to: 'db' })
     expect(checkRes.ok).toBe(true)
-    if (checkRes.ok) expect(checkRes.result).toEqual({ status: 'unknown' })
+    if (checkRes.ok) expect(checkRes.result).toEqual({ status: 'undrawn-edge' })
 
     const pending = daemon.pending()
     expect(pending).toHaveLength(1)
