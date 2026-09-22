@@ -228,6 +228,35 @@ export function serialize(architecture: Architecture): string {
   return lines.join('\n')
 }
 
+// bfs-back
+export function findCycle(edges: Edge[], from: string, to: string): string[] | null {
+  if (from === to) return [from, from]
+
+  const parent = new Map<string, string>([[to, to]])
+  const queue = [to]
+
+  while (queue.length > 0) {
+    const current = queue.shift() as string
+    if (current === from) {
+      const backward = [from]
+      let node = from
+      while (node !== to) {
+        node = parent.get(node) as string
+        backward.push(node)
+      }
+      const forward = backward.reverse()
+      return [from, to, ...forward.slice(1, -1), from]
+    }
+    for (const e of edges) {
+      if (e.from === current && !parent.has(e.to)) {
+        parent.set(e.to, current)
+        queue.push(e.to)
+      }
+    }
+  }
+  return null
+}
+
 export function check(architecture: Architecture, from: string, to: string): Verdict {
   const forbidden = architecture.forbidden.find((f) => f.from === from && f.to === to)
   if (forbidden) return { status: 'forbidden', reason: forbidden.reason }
@@ -239,6 +268,9 @@ export function check(architecture: Architecture, from: string, to: string): Ver
   const knownIds = new Set(architecture.components.map((c) => c.id))
   const missing = [...new Set([from, to].filter((id) => !knownIds.has(id)))]
   if (missing.length > 0) return { status: 'unknown-component', ids: missing }
+
+  const cycle = findCycle(architecture.edges, from, to)
+  if (cycle) return { status: 'cycle', path: cycle }
 
   return { status: 'undrawn-edge' }
 }
@@ -272,6 +304,8 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
 
   if (proposal.kind === 'edge') {
     if (next.edges.some((e) => e.from === proposal.from && e.to === proposal.to)) return next
+    const cycle = findCycle(next.edges, proposal.from, proposal.to)
+    if (cycle) throw new Error(`edge ${proposal.from} -> ${proposal.to} would introduce a cycle: ${cycle.join(' -> ')}`)
     next.edges.push({ from: proposal.from, to: proposal.to })
     return next
   }

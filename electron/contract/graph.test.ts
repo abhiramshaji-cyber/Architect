@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { apply, check, ownership, parse, serialize } from './graph'
+import { apply, check, findCycle, ownership, parse, serialize } from './graph'
+import type { Architecture } from '../../shared/types'
 
 const h1 = '#'
 const h2 = '##'
@@ -218,7 +219,8 @@ describe('check', () => {
   })
 
   it('returns undrawn-edge when both components exist but no edge is drawn', () => {
-    expect(check(arch, 'api', 'ui')).toEqual({ status: 'undrawn-edge' })
+    const withCache = parse(fixture.replace('### ui', '### cache\nCaches responses.\n\n### ui'))
+    expect(check(withCache, 'cache', 'ui')).toEqual({ status: 'undrawn-edge' })
   })
 
   it('checks forbidden before allowed', () => {
@@ -243,18 +245,99 @@ describe('check', () => {
   })
 })
 
+function chain(edges: { from: string; to: string }[]): Architecture {
+  const ids = [...new Set(edges.flatMap((e) => [e.from, e.to]))]
+  return {
+    title: 'Chain',
+    summary: '',
+    components: ids.map((id) => ({ id, purpose: '', owns: [] })),
+    edges,
+    forbidden: [],
+    packages: [],
+  }
+}
+
+describe('cycle enforcement', () => {
+  it('check flags a self edge as a cycle', () => {
+    const arch = chain([{ from: 'a', to: 'b' }])
+    expect(check(arch, 'a', 'a')).toEqual({ status: 'cycle', path: ['a', 'a'] })
+  })
+
+  it('check flags a two node cycle', () => {
+    const arch = chain([{ from: 'a', to: 'b' }])
+    expect(check(arch, 'b', 'a')).toEqual({ status: 'cycle', path: ['b', 'a', 'b'] })
+  })
+
+  it('check flags a longer cycle', () => {
+    const arch = chain([{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }])
+    expect(check(arch, 'd', 'a')).toEqual({ status: 'cycle', path: ['d', 'a', 'b', 'c', 'd'] })
+  })
+
+  it('check does not flag an unrelated edge when a disjoint cycle already exists', () => {
+    const arch = chain([{ from: 'x', to: 'x' }, { from: 'a', to: 'b' }])
+    expect(check(arch, 'b', 'x')).toEqual({ status: 'undrawn-edge' })
+  })
+
+  it('check does not flag a new edge shortcutting an existing forward chain', () => {
+    const arch = chain([{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }])
+    expect(check(arch, 'a', 'c')).toEqual({ status: 'undrawn-edge' })
+  })
+
+  it('apply throws on a self edge proposal', () => {
+    const arch = chain([{ from: 'a', to: 'b' }])
+    expect(() => apply(arch, { kind: 'edge', from: 'a', to: 'a' })).toThrow(/cycle/)
+  })
+
+  it('apply throws on a two node cycle proposal', () => {
+    const arch = chain([{ from: 'a', to: 'b' }])
+    expect(() => apply(arch, { kind: 'edge', from: 'b', to: 'a' })).toThrow(/cycle/)
+  })
+
+  it('apply throws on a longer cycle proposal', () => {
+    const arch = chain([{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }])
+    expect(() => apply(arch, { kind: 'edge', from: 'd', to: 'a' })).toThrow(/d -> a -> b -> c -> d/)
+  })
+
+  it('apply allows an edge disjoint from several existing cycles', () => {
+    const arch = chain([
+      { from: 'x', to: 'x' },
+      { from: 'a', to: 'b' },
+      { from: 'b', to: 'a' },
+      { from: 'p', to: 'q' },
+    ])
+    const result = apply(arch, { kind: 'edge', from: 'q', to: 'x' })
+    expect(result.edges).toContainEqual({ from: 'q', to: 'x' })
+  })
+
+  it('a proposal reintroducing an edge already present in a stored cycle is a no op, not a throw', () => {
+    const arch = chain([{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }])
+    const result = apply(arch, { kind: 'edge', from: 'a', to: 'b' })
+    expect(result.edges).toEqual(arch.edges)
+  })
+
+  it('loading an architecture that already contains a cycle does not throw', () => {
+    expect(() => chain([{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }])).not.toThrow()
+    const arch = chain([{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }])
+    expect(() => check(arch, 'a', 'b')).not.toThrow()
+  })
+
+  it('findCycle returns null when no cycle would form', () => {
+    expect(findCycle([{ from: 'a', to: 'b' }], 'b', 'c')).toBeNull()
+  })
+})
+
 describe('apply', () => {
   const arch = parse(fixture)
 
   it('is pure and returns a new object', () => {
-    const proposal = { kind: 'edge' as const, from: 'db', to: 'ui' }
+    const proposal = { kind: 'edge' as const, from: 'ui', to: 'db' }
     const result = apply(arch, proposal)
     expect(result).not.toBe(arch)
     expect(arch.edges).toEqual([
       { from: 'ui', to: 'api' },
       { from: 'api', to: 'db' },
     ])
-    expect(result.edges).toContainEqual({ from: 'db', to: 'ui' })
+    expect(result.edges).toContainEqual({ from: 'ui', to: 'db' })
   })
 
   it('adds a new component', () => {

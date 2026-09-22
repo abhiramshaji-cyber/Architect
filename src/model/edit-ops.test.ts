@@ -164,7 +164,8 @@ describe('setOwns', () => {
 
 describe('addEdge', () => {
   it('appends the edge', () => {
-    expect(ok(addEdge(base(), 'db', 'ui')).edges.at(-1)).toEqual({ from: 'db', to: 'ui' })
+    const withCache = ok(addComponent(base(), 'cache'))
+    expect(ok(addEdge(withCache, 'db', 'cache')).edges.at(-1)).toEqual({ from: 'db', to: 'cache' })
   })
 
   it('rejects an unknown from and an unknown to', () => {
@@ -184,9 +185,22 @@ describe('addEdge', () => {
     expect(error(addEdge(base(), 'ui', 'db'))).toBe('edge "ui -> db" is forbidden: no direct database access')
   })
 
-  it('allows an edge that creates a cycle', () => {
-    const next = ok(addEdge(base(), 'db', 'ui'))
-    expect(next.edges).toContainEqual({ from: 'db', to: 'ui' })
+  it('rejects a two node cycle', () => {
+    expect(error(addEdge(base(), 'db', 'ui'))).toBe('edge "db -> ui" would introduce a cycle: db -> ui -> api -> db')
+  })
+
+  it('rejects a longer cycle', () => {
+    const withCache = ok(addEdge(ok(addComponent(base(), 'cache')), 'db', 'cache'))
+    expect(error(addEdge(withCache, 'cache', 'ui'))).toBe(
+      'edge "cache -> ui" would introduce a cycle: cache -> ui -> api -> db -> cache',
+    )
+  })
+
+  it('does not block an unrelated edge when a disjoint cycle already exists', () => {
+    const withLoop = ok(addComponent(base(), 'x'))
+    withLoop.edges.push({ from: 'x', to: 'x' })
+    const withCache = ok(addComponent(withLoop, 'cache'))
+    expect(ok(addEdge(withCache, 'db', 'cache')).edges).toContainEqual({ from: 'db', to: 'cache' })
   })
 
   it('trims both ids', () => {
