@@ -5,7 +5,6 @@ const architect: ArchitectApi = {
   projects: () => ipcRenderer.invoke('architect:projects'),
   open: (root) => ipcRenderer.invoke('architect:open', root),
   pending: () => ipcRenderer.invoke('architect:pending'),
-  mcpBridgeInfo: () => ipcRenderer.invoke('architect:mcp-bridge-info'),
   decide: (id, approved, reason, component) => ipcRenderer.invoke('architect:decide', id, approved, reason, component),
   edits: (root) => ipcRenderer.invoke('architect:edits', root),
   edit: (root, id) => ipcRenderer.invoke('architect:edit', root, id),

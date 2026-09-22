@@ -4,10 +4,9 @@ import { closeProject, openProject, useProject } from '../model/store'
 type Props = {
   theme: string
   onFlipTheme: () => void
-  onConnectMcp: () => void
 }
 
-export default function ProjectList({ theme, onFlipTheme, onConnectMcp }: Props) {
+export default function ProjectList({ theme, onFlipTheme }: Props) {
   const { projects, currentRoot, entries } = useProject()
   const label = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'
 
@@ -63,9 +62,6 @@ export default function ProjectList({ theme, onFlipTheme, onConnectMcp }: Props)
         })}
         {projects.length === 0 && <li className="empty">No projects yet</li>}
       </ul>
-      <button className="sidebar-action" onClick={onConnectMcp}>
-        Connect MCP
-      </button>
     </div>
   )
 }

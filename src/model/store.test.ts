@@ -21,7 +21,6 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     open: vi.fn().mockResolvedValue(null),
     pending: vi.fn().mockResolvedValue([]),
     decide: vi.fn().mockResolvedValue(undefined),
-    mcpBridgeInfo: vi.fn().mockResolvedValue({ path: '', exists: false }),
     edits: vi.fn().mockResolvedValue([]),
     edit: vi.fn(),
     createEdit: vi.fn(),

@@ -1,5 +1,3 @@
-import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { spawn as spawnPty } from 'node-pty'
@@ -7,8 +5,6 @@ import { SOCKET_PATH } from '../shared/socket'
 import { type Architecture, type CodeMap, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
 import { createDaemon } from './daemon'
 import { createPtyHost } from './pty/pty'
-
-const MCP_BRIDGE_PATH = path.join(os.homedir(), '.architect', 'bin', 'architect-mcp.mjs')
 
 const TRAY_ICON = nativeImage.createFromPath(
   path.join(import.meta.dirname, '../../assets/trayTemplate.png'),
@@ -64,10 +60,6 @@ function createTray() {
 function wireIpc() {
   ipcMain.handle('architect:projects', () => daemon.projects())
   ipcMain.handle('architect:open', (_event, root: string) => daemon.open(root))
-  ipcMain.handle('architect:mcp-bridge-info', () => ({
-    path: MCP_BRIDGE_PATH,
-    exists: fs.existsSync(MCP_BRIDGE_PATH),
-  }))
   ipcMain.handle('architect:pending', () => daemon.pending())
   ipcMain.handle('architect:decide', (_event, id: string, approved: boolean, reason?: string, component?: string) =>
     daemon.decide(id, approved, reason, component),
