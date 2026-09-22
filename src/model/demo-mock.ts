@@ -482,6 +482,21 @@ export function installMock() {
     },
     onProjects(fn) {
       fn(Object.entries(roots).map(([root, title]) => ({ root, title })))
+    },
+    async ptySpawn() {
+      throw new Error('no terminal in the demo')
+    },
+    async ptyWrite() {
+      return false
+    },
+    async ptyResize() {
+      return false
+    },
+    async ptyKill() {
+      return false
+    },
+    onPtyEvent() {
+      return () => {}
     }
   }
 }

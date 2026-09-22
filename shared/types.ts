@@ -113,6 +113,14 @@ export type CodeMap = { root: string; scannedAt: number; folders: FolderEntry[] 
 
 export type ProjectSummary = { root: string; title: string; parseError?: string }
 
+export type PtySpec = { cwd?: string; shell?: string; args?: string[]; cols: number; rows: number }
+
+export type PtySession = { id: string; pid: number }
+
+export type PtyEvent =
+  | { type: 'data'; id: string; chunk: string }
+  | { type: 'exit'; id: string; exitCode: number; signal?: number }
+
 export type ArchitectApi = {
   projects(): Promise<ProjectSummary[]>
   open(root: string): Promise<Architecture | null>
@@ -132,6 +140,11 @@ export type ArchitectApi = {
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: ProjectSummary[]) => void): void
+  ptySpawn(spec: PtySpec): Promise<PtySession>
+  ptyWrite(id: string, data: string): Promise<boolean>
+  ptyResize(id: string, cols: number, rows: number): Promise<boolean>
+  ptyKill(id: string): Promise<boolean>
+  onPtyEvent(fn: (event: PtyEvent) => void): () => void
 }
 
 export type McpBridgeInfo = { path: string; exists: boolean }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Architecture, ArchitectApi, Pending, ProjectSummary } from '../shared/types'
+import type { Architecture, ArchitectApi, Pending, ProjectSummary, PtyEvent } from '../shared/types'
 
 const architect: ArchitectApi = {
   projects: () => ipcRenderer.invoke('architect:projects'),
@@ -26,6 +26,15 @@ const architect: ArchitectApi = {
   },
   onProjects: (fn: (p: ProjectSummary[]) => void) => {
     ipcRenderer.on('architect:projects-update', (_event, projects: ProjectSummary[]) => fn(projects))
+  },
+  ptySpawn: (spec) => ipcRenderer.invoke('architect:pty-spawn', spec),
+  ptyWrite: (id, data) => ipcRenderer.invoke('architect:pty-write', id, data),
+  ptyResize: (id, cols, rows) => ipcRenderer.invoke('architect:pty-resize', id, cols, rows),
+  ptyKill: (id) => ipcRenderer.invoke('architect:pty-kill', id),
+  onPtyEvent: (fn: (event: PtyEvent) => void) => {
+    const listener = (_event: unknown, payload: PtyEvent) => fn(payload)
+    ipcRenderer.on('architect:pty-event', listener)
+    return () => ipcRenderer.off('architect:pty-event', listener)
   },
 }
 

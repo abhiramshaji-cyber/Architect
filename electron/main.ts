@@ -2,9 +2,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
-import { type Architecture, type Pending, type ProjectSummary } from '../shared/types'
+import { type Architecture, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
 import { createDaemon } from './daemon'
+import { createPtyHost } from './pty/pty'
 
 const MCP_BRIDGE_PATH = path.join(os.homedir(), '.architect', 'bin', 'architect-mcp.mjs')
 
@@ -18,6 +20,10 @@ const daemon = createDaemon({
 })
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+
+const ptyHost = createPtyHost(spawnPty, (event: PtyEvent) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('architect:pty-event', event)
+})
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -34,6 +40,12 @@ function createWindow(): BrowserWindow {
   } else {
     window.loadFile(path.join(import.meta.dirname, '../renderer/index.html'))
   }
+
+  window.on('closed', () => ptyHost.killAll())
+  window.webContents.on('render-process-gone', () => ptyHost.killAll())
+  window.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) ptyHost.killAll()
+  })
 
   return window
 }
@@ -78,6 +90,13 @@ function wireIpc() {
     (_event, root: string, file: string, from: number, length: number) =>
       daemon.readSource(root, file, from, length),
   )
+
+  ipcMain.handle('architect:pty-spawn', (_event, spec: PtySpec) => ptyHost.spawn(spec))
+  ipcMain.handle('architect:pty-write', (_event, id: string, data: string) => ptyHost.write(id, data))
+  ipcMain.handle('architect:pty-resize', (_event, id: string, cols: number, rows: number) =>
+    ptyHost.resize(id, cols, rows),
+  )
+  ipcMain.handle('architect:pty-kill', (_event, id: string) => ptyHost.kill(id))
 }
 
 app.whenReady().then(async () => {
@@ -105,6 +124,14 @@ app.whenReady().then(async () => {
 
   app.setLoginItemSettings({ openAtLogin: true })
   mainWindow = createWindow()
+})
+
+app.on('will-quit', () => {
+  ptyHost.killAll()
+})
+
+process.on('exit', () => {
+  ptyHost.killAll()
 })
 
 app.on('window-all-closed', () => {
