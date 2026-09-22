@@ -127,7 +127,6 @@ export type ArchitectApi = {
   open(root: string): Promise<Architecture | null>
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
-  mcpBridgeInfo(): Promise<McpBridgeInfo>
   edits(root: string): Promise<EditSummary[]>
   edit(root: string, id: string): Promise<Edit>
   createEdit(root: string, architecture: Architecture): Promise<Edit>
@@ -148,8 +147,6 @@ export type ArchitectApi = {
   ptyKill(id: string): Promise<boolean>
   onPtyEvent(fn: (event: PtyEvent) => void): () => void
 }
-
-export type McpBridgeInfo = { path: string; exists: boolean }
 
 export type Response =
   | { id: string; ok: true; result: unknown }

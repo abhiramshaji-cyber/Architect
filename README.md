@@ -120,10 +120,35 @@ npm install
 npm run install:local
 ```
 
-That installs the app and writes the MCP bridge to `~/.architect/bin/architect-mcp.mjs`, outside the app bundle, because Node cannot execute a file inside `app.asar`. Register it once, for every project:
+That installs the app and writes the MCP bridge to `~/.architect/bin/architect-mcp.mjs`, outside the app bundle, because Node cannot execute a file inside `app.asar`. If that file is missing, `npm run install:local` has not run yet and no client can reach Architect.
+
+Register the bridge once, with whichever client you use.
+
+Claude Code, in any terminal:
 
 ```bash
 claude mcp add --scope user architect -- node ~/.architect/bin/architect-mcp.mjs
+```
+
+Claude Desktop, merged into `claude_desktop_config.json`, then restart it. Neither it nor Codex expands `~`, so write the absolute path:
+
+```json
+{
+  "mcpServers": {
+    "architect": {
+      "command": "node",
+      "args": ["/Users/you/.architect/bin/architect-mcp.mjs"]
+    }
+  }
+}
+```
+
+Codex, appended to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.architect]
+command = "node"
+args = ["/Users/you/.architect/bin/architect-mcp.mjs"]
 ```
 
 One registration covers every repo. The bridge sends its working directory with each call, and Architect walks up from there to find `architect.md`, so the right project resolves automatically. A repo with no `architect.md` gets a clear error rather than silently passing.
