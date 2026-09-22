@@ -1,4 +1,4 @@
-import { findCycle } from '../../electron/contract/graph'
+import { findCycle } from '../../shared/cycle'
 import type { Architecture, Component } from '../../shared/types'
 
 export type OpResult = { ok: true; architecture: Architecture } | { ok: false; error: string }
