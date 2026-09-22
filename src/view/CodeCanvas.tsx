@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   ReactFlow,
@@ -27,7 +27,9 @@ import {
   type CodeNode,
   type CodeNodeData
 } from '../model/codemap'
+import { outlineFor } from '../model/outline'
 import { CodeInspector } from './Inspector'
+import Outline from './Outline'
 
 type CodeCanvasProps = {
   map: CodeMap
@@ -161,8 +163,11 @@ function toFlow(logical: CodeNode[], at: Map<string, { x: number; y: number }>):
 export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [source, setSource] = useState<SourceWindow | null>(null)
+  const stage = useRef<HTMLDivElement | null>(null)
 
   const colors = useMemo(() => ({ dots: cssVar('--dots'), ink: cssVar('--ink') }), [theme])
+  const outline = useMemo(() => outlineFor(map, path), [map, path])
+  const returnFocus = useCallback(() => stage.current?.focus(), [])
 
   const index = useMemo(() => fileIndex(map), [map])
   const file = useMemo(() => index.get(path) ?? null, [index, path])
@@ -230,7 +235,15 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
   }, [selectedId, close, onUp])
 
   return (
-    <div className="canvas-stage">
+    <div className="canvas-stage" ref={stage} tabIndex={-1}>
+      {file && (
+        <Outline
+          entries={outline}
+          currentId={selectedId}
+          onSelect={setSelectedId}
+          returnFocus={returnFocus}
+        />
+      )}
       <Picked.Provider value={selectedId}>
         <Enter.Provider value={onEnter}>
           <ReactFlow
