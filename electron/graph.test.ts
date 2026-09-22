@@ -105,6 +105,24 @@ describe('parse', () => {
     expect(() => parse(bad)).toThrow(/bypasses the api layer/)
   })
 
+  it('throws on an owns line that does not match, naming the text and document line', () => {
+    const bad = fixture.replace('owns: `src/api/**`', 'owns: src/api/**')
+    expect(() => parse(bad)).toThrow(/line 9/)
+    expect(() => parse(bad)).toThrow(/owns: src\/api\/\*\*/)
+  })
+
+  it('throws on an owns line with unclosed backtick', () => {
+    const bad = fixture.replace('owns: `src/api/**`', 'owns: `src/api/**')
+    expect(() => parse(bad)).toThrow(/line 9/)
+    expect(() => parse(bad)).toThrow(/malformed owns entry/)
+  })
+
+  it('throws on an owns line with empty backticks', () => {
+    const bad = fixture.replace('owns: `src/api/**`', 'owns: ``')
+    expect(() => parse(bad)).toThrow(/line 9/)
+    expect(() => parse(bad)).toThrow(/malformed owns entry/)
+  })
+
   it('reports the document line number when the malformed line is the last line of the file', () => {
     const tail = `${h1} T\n\nS.\n\n${h2} Components\n\n${h3} a\nDoes a.\n\n${h2} Dependencies\n\n- a -> a\n- a => a`
     expect(() => parse(tail)).toThrow(/line 13/)
