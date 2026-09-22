@@ -4,6 +4,7 @@ import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
 import { type Architecture, type CodeMap, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
 import { createDaemon } from './daemon'
+import * as git from './git/git'
 import { createPtyHost } from './pty/pty'
 
 const TRAY_ICON = nativeImage.createFromPath(
@@ -89,6 +90,20 @@ function wireIpc() {
     ptyHost.resize(id, cols, rows),
   )
   ipcMain.handle('architect:pty-kill', (_event, id: string) => ptyHost.kill(id))
+
+  ipcMain.handle('architect:git-status', (_event, root: string) => git.status(root))
+  ipcMain.handle('architect:git-default-branch', (_event, root: string) => git.defaultBranch(root))
+  ipcMain.handle('architect:git-local-branches', (_event, root: string) => git.localBranches(root))
+  ipcMain.handle('architect:git-remote-branches', (_event, root: string) => git.remoteBranches(root))
+  ipcMain.handle('architect:git-worktrees', (_event, root: string) => git.worktrees(root))
+  ipcMain.handle('architect:git-fetch', (_event, root: string) => git.fetch(root))
+  ipcMain.handle('architect:git-create-worktree', (_event, root: string, target: string, name: string, base?: string) =>
+    git.createWorktree(root, target, name, base),
+  )
+  ipcMain.handle('architect:git-remove-worktree', (_event, root: string, target: string) =>
+    git.removeWorktree(root, target),
+  )
+  ipcMain.handle('architect:git-prune-worktrees', (_event, root: string) => git.pruneWorktrees(root))
 }
 
 app.whenReady().then(async () => {

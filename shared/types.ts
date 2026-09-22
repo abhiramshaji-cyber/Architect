@@ -114,6 +114,63 @@ export type CodeMap = { root: string; scannedAt: number; folders: FolderEntry[] 
 
 export type ProjectSummary = { root: string; title: string; parseError?: string }
 
+export type Head =
+  | { kind: 'branch'; branch: string; commit: string | null }
+  | { kind: 'detached'; commit: string }
+
+export type GitStatus = {
+  head: Head
+  upstream: string | null
+  ahead: number
+  behind: number
+  staged: number
+  unstaged: number
+  untracked: number
+  conflicted: number
+  dirty: boolean
+}
+
+export type Worktree = {
+  path: string
+  head: string | null
+  branch: string | null
+  detached: boolean
+  bare: boolean
+  locked: boolean
+  prunable: boolean
+  exists: boolean
+}
+
+export type LocalBranch = { name: string; commit: string; upstream: string | null; current: boolean }
+
+export type RemoteBranch = { name: string; commit: string }
+
+export type DefaultBranch = { remote: string; branch: string }
+
+export type WorktreeCreated = { path: string; branch: string; base: string }
+
+export type GitFailure =
+  | { kind: 'not-installed' }
+  | { kind: 'missing-root'; root: string }
+  | { kind: 'not-a-repo'; root: string }
+  | { kind: 'no-commits'; root: string }
+  | { kind: 'no-remote'; root: string }
+  | { kind: 'no-default-branch'; remote: string }
+  | { kind: 'bad-ref'; ref: string }
+  | { kind: 'not-in-ref'; ref: string; file: string }
+  | { kind: 'bad-argument'; value: string }
+  | { kind: 'invalid-branch'; name: string }
+  | { kind: 'branch-exists'; name: string }
+  | { kind: 'branch-checked-out'; name: string; path: string }
+  | { kind: 'worktree-exists'; path: string }
+  | { kind: 'no-worktree'; path: string }
+  | { kind: 'main-worktree'; path: string }
+  | { kind: 'locked-worktree'; path: string }
+  | { kind: 'dirty'; root: string }
+  | { kind: 'failed'; args: string[]; code: number | null; stderr: string }
+
+export type GitResult<T> = { ok: true; value: T } | { ok: false; error: GitFailure }
+
 export type PtySpec = { cwd?: string; shell?: string; args?: string[]; cols: number; rows: number }
 
 export type PtySession = { id: string; pid: number }
@@ -146,6 +203,15 @@ export type ArchitectApi = {
   ptyResize(id: string, cols: number, rows: number): Promise<boolean>
   ptyKill(id: string): Promise<boolean>
   onPtyEvent(fn: (event: PtyEvent) => void): () => void
+  gitStatus(root: string): Promise<GitResult<GitStatus>>
+  gitDefaultBranch(root: string): Promise<GitResult<DefaultBranch>>
+  gitLocalBranches(root: string): Promise<GitResult<LocalBranch[]>>
+  gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
+  gitWorktrees(root: string): Promise<GitResult<Worktree[]>>
+  gitFetch(root: string): Promise<GitResult<{ remote: string }>>
+  gitCreateWorktree(root: string, path: string, name: string, base?: string): Promise<GitResult<WorktreeCreated>>
+  gitRemoveWorktree(root: string, path: string): Promise<GitResult<{ path: string }>>
+  gitPruneWorktrees(root: string): Promise<GitResult<Worktree[]>>
 }
 
 export type Response =

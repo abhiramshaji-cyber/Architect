@@ -52,6 +52,8 @@ owns: `lsp/**`
 - app -> types
 - app -> daemon
 - app -> pty
+- app -> git
+- git -> types
 - pty -> types
 - canvas -> types
 - bridge -> types
@@ -67,6 +69,7 @@ owns: `lsp/**`
 - bridge -> graph : the bridge holds no domain logic, it only translates and forwards
 - bridge -> daemon : they communicate over the socket, never by import
 - canvas -> pty : node-pty never reaches the renderer, terminal output arrives over the preload bridge
+- canvas -> git : the renderer never shells out to git, results arrive over the preload bridge
 
 ## Packages
 
