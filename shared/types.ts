@@ -171,6 +171,48 @@ export type GitFailure =
 
 export type GitResult<T> = { ok: true; value: T } | { ok: false; error: GitFailure }
 
+export type GithubAccount = { host: string; login: string; scopes: string[] }
+
+export type GithubAuth =
+  | { kind: 'logged-in'; account: GithubAccount }
+  | { kind: 'insufficient-scopes'; account: GithubAccount; missing: string[] }
+  | { kind: 'logged-out'; host: string }
+  | { kind: 'not-installed' }
+  | { kind: 'unreachable'; host: string; detail: string }
+
+export type GithubRepo = {
+  nameWithOwner: string
+  name: string
+  owner: string
+  description: string
+  isPrivate: boolean
+  isFork: boolean
+  isArchived: boolean
+  defaultBranch: string | null
+  pushedAt: string | null
+  url: string
+  language: string | null
+}
+
+export type GithubBranch = { name: string; commit: string; protected: boolean }
+
+export type GithubBudget = { limit: number; remaining: number; resetAt: number }
+
+export type GithubRates = { core: GithubBudget; graphql: GithubBudget; search: GithubBudget }
+
+export type GithubFailure =
+  | { kind: 'not-installed' }
+  | { kind: 'auth-required' }
+  | { kind: 'not-found' }
+  | { kind: 'bad-argument'; value: string }
+  | { kind: 'rate-limited'; resource: string; resetAt: number }
+  | { kind: 'unreachable'; detail: string }
+  | { kind: 'timed-out'; args: string[] }
+  | { kind: 'unreadable'; args: string[] }
+  | { kind: 'failed'; args: string[]; code: number; stderr: string }
+
+export type GithubResult<T> = { ok: true; value: T } | { ok: false; error: GithubFailure }
+
 export type PtySpec = { cwd?: string; shell?: string; args?: string[]; cols: number; rows: number }
 
 export type PtySession = { id: string; pid: number }
@@ -214,6 +256,10 @@ export type ArchitectApi = {
   gitCreateWorktree(root: string, path: string, name: string, base?: string): Promise<GitResult<WorktreeCreated>>
   gitRemoveWorktree(root: string, path: string): Promise<GitResult<{ path: string }>>
   gitPruneWorktrees(root: string): Promise<GitResult<Worktree[]>>
+  githubAuth(): Promise<GithubResult<GithubAuth>>
+  githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
+  githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>
+  githubRates(): Promise<GithubResult<GithubRates>>
 }
 
 export type Response =

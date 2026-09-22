@@ -51,6 +51,10 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     gitCreateWorktree: vi.fn(),
     gitRemoveWorktree: vi.fn(),
     gitPruneWorktrees: vi.fn(),
+    githubAuth: vi.fn(),
+    githubRepos: vi.fn(),
+    githubBranches: vi.fn(),
+    githubRates: vi.fn(),
     ...overrides,
   }
 }

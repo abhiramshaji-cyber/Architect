@@ -16,6 +16,10 @@ owns: `electron/contract/graph.ts`
 Shells out to the git binary and returns typed results for branch, dirty state, worktrees, the remote default branch and a file at a ref. No git library, no domain logic.
 owns: `electron/git/**`
 
+### github
+Shells out to the gh CLI for the GitHub credential and reads the account's repos and a repo's branches. No token is stored by us and none crosses the preload bridge.
+owns: `electron/github/**`
+
 ### daemon
 Socket server, project resolution by cwd, file watching and the pending proposal queue.
 owns: `electron/daemon.ts`
@@ -53,7 +57,9 @@ owns: `lsp/**`
 - app -> daemon
 - app -> pty
 - app -> git
+- app -> github
 - git -> types
+- github -> types
 - pty -> types
 - canvas -> types
 - bridge -> types
@@ -70,6 +76,7 @@ owns: `lsp/**`
 - bridge -> daemon : they communicate over the socket, never by import
 - canvas -> pty : node-pty never reaches the renderer, terminal output arrives over the preload bridge
 - canvas -> git : the renderer never shells out to git, results arrive over the preload bridge
+- canvas -> github : the renderer never shells out to gh and never holds a token, repos and branches arrive over the preload bridge
 
 ## Packages
 
