@@ -1336,6 +1336,15 @@ body.resizing {
   overflow-wrap: anywhere;
 }
 
+.inspector-src-more {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font);
+  font-size: 11px;
+}
+
 .code-empty {
   position: absolute;
   inset: 0;

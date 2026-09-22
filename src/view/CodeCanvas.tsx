@@ -12,7 +12,7 @@ import {
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { CodeMap } from '../../shared/types'
+import type { CodeMap, SourceWindow } from '../../shared/types'
 import {
   baseName,
   callPositions,
@@ -160,7 +160,7 @@ function toFlow(logical: CodeNode[], at: Map<string, { x: number; y: number }>):
 
 export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [source, setSource] = useState<string | null>(null)
+  const [source, setSource] = useState<SourceWindow | null>(null)
 
   const colors = useMemo(() => ({ dots: cssVar('--dots'), ink: cssVar('--ink') }), [theme])
 
@@ -204,12 +204,12 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
 
     let live = true
     window.architect
-      .readSource(map.root, selected.path, selected.line, selected.endLine)
-      .then((text) => {
-        if (live) setSource(text)
+      .readSource(map.root, selected.path, selected.line, selected.endLine - selected.line + 1)
+      .then((window) => {
+        if (live) setSource(window)
       })
       .catch(() => {
-        if (live) setSource('')
+        if (live) setSource({ from: selected.line, lines: [], total: 0, error: 'unreadable' })
       })
 
     return () => {

@@ -30,6 +30,15 @@ export type Architecture = {
   layout?: Layout
 }
 
+export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary'
+
+export type SourceWindow = {
+  from: number
+  lines: string[]
+  total: number
+  error: SourceError | null
+}
+
 export type Ownership = {
   owned: { path: string; owner: string }[]
   unowned: string[]
@@ -116,7 +125,7 @@ export type ArchitectApi = {
   getCodeMap(root: string): Promise<CodeMap | null>
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
-  readSource(root: string, file: string, from: number, to: number): Promise<string>
+  readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: ProjectSummary[]) => void): void

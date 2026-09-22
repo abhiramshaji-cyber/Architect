@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
-import type { Architecture } from '../../shared/types'
+import type { Architecture, SourceError, SourceWindow } from '../../shared/types'
 import { hangingIndent, type CodeNodeData, type FnRef } from '../model/codemap'
 import { renameComponent, setOwns, setPurpose, type OpResult } from '../model/edit-ops'
 import { clampInspectorWidth, statusOf, INSPECTOR_W, type NodeData } from '../model/layout'
@@ -72,9 +72,19 @@ function useWidth() {
   return { panel, width, grab }
 }
 
-function Listing({ text, from, last }: { text: string; from: number; last: number }) {
-  const lines = text.replace(/\n$/, '').split('\n')
-  const gutter = `${String(Math.max(last, from + lines.length - 1)).length}ch`
+const REFUSALS: Record<SourceError, string> = {
+  closed: 'This project is not open',
+  range: 'That line range is not valid',
+  outside: 'That file is outside the project',
+  unreadable: 'This file could not be read',
+  binary: 'This file is not readable text'
+}
+
+function Listing({ window }: { window: SourceWindow }) {
+  const { from, lines, total } = window
+  const last = from + lines.length - 1
+  const gutter = `${String(Math.max(last, total)).length}ch`
+  const beyond = total - last
 
   return (
     <div className="inspector-src">
@@ -94,6 +104,11 @@ function Listing({ text, from, last }: { text: string; from: number; last: numbe
           </span>
         </div>
       ))}
+      {beyond > 0 && (
+        <p className="inspector-src-more">
+          {beyond} more {beyond === 1 ? 'line' : 'lines'} below, {total} in the file
+        </p>
+      )}
     </div>
   )
 }
@@ -139,7 +154,7 @@ export function CodeInspector({
   onClose
 }: {
   node: CodeNodeData
-  source?: string | null
+  source?: SourceWindow | null
   onClose: () => void
 }) {
   const { panel, width, grab } = useWidth()
@@ -193,10 +208,14 @@ export function CodeInspector({
               <h3>Source</h3>
               {source === null || source === undefined ? (
                 <p className="inspector-purpose">Loading source…</p>
-              ) : source === '' ? (
-                <p className="inspector-purpose">Source unavailable</p>
+              ) : source.error !== null ? (
+                <p className="inspector-purpose">{REFUSALS[source.error]}</p>
+              ) : source.lines.length === 0 ? (
+                <p className="inspector-purpose">
+                  {source.total === 0 ? 'This file is empty' : 'Nothing to show at that line'}
+                </p>
               ) : (
-                <Listing text={source} from={node.line} last={node.endLine} />
+                <Listing window={source} />
               )}
             </section>
           </>

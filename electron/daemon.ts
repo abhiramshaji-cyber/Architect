@@ -19,6 +19,7 @@ import {
   requestSchema,
   type Request,
   type Response,
+  type SourceWindow,
   type Verdict,
 } from '../shared/types'
 import { describe, type DescriptionCache } from './scan/describe'
@@ -131,9 +132,18 @@ export function createDaemon(options: DaemonOptions = {}) {
   let projectsListener: ((p: { root: string; title: string }[]) => void) | null = null
   let server: net.Server | null = null
 
-  async function readSource(root: string, file: string, from: number, to: number): Promise<string> {
-    if (!projects.has(root)) return ''
-    if (!Number.isFinite(from) || !Number.isFinite(to)) return ''
+  async function readSource(
+    root: string,
+    file: string,
+    from: number,
+    length: number
+  ): Promise<SourceWindow> {
+    const start = Math.max(1, Math.floor(from))
+    const span = Math.min(MAX_SOURCE_LINES, Math.max(0, Math.floor(length)))
+    const empty = { from: start, lines: [], total: 0 }
+
+    if (!projects.has(root)) return { ...empty, error: 'closed' }
+    if (!Number.isFinite(from) || !Number.isFinite(length)) return { ...empty, error: 'range' }
 
     let base: string
     let target: string
@@ -141,23 +151,31 @@ export function createDaemon(options: DaemonOptions = {}) {
       base = await fs.promises.realpath(root)
       target = await fs.promises.realpath(path.resolve(base, file))
     } catch {
-      return ''
+      return { ...empty, error: 'unreadable' }
     }
 
-    if (target !== base && !target.startsWith(base + path.sep)) return ''
+    if (target !== base && !target.startsWith(base + path.sep)) return { ...empty, error: 'outside' }
 
-    let lines: string[]
+    let raw: Buffer
     try {
-      lines = (await fs.promises.readFile(target, 'utf8')).split('\n')
+      raw = await fs.promises.readFile(target)
     } catch {
-      return ''
+      return { ...empty, error: 'unreadable' }
     }
 
-    const start = Math.max(1, Math.floor(from))
-    const end = Math.min(lines.length, Math.floor(to), start + MAX_SOURCE_LINES - 1)
-    if (end < start) return ''
+    let text: string
+    try {
+      text = new TextDecoder('utf8', { fatal: true }).decode(raw)
+    } catch {
+      return { ...empty, error: 'binary' }
+    }
 
-    return lines.slice(start - 1, end).join('\n')
+    if (text.includes('\u0000')) return { ...empty, error: 'binary' }
+
+    const lines = text.split('\n')
+    if (lines.at(-1) === '') lines.pop()
+
+    return { from: start, lines: lines.slice(start - 1, start - 1 + span), total: lines.length, error: null }
   }
 
   function architectMdPath(root: string) {
