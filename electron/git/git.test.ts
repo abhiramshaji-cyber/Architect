@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { defaultBranch, fileAtRef, head, parseStatus, parseWorktrees, status, unquotePath, worktrees } from './git'
+import { createBranch, createWorktree, defaultBranch, fileAtRef, head, parseStatus, parseWorktrees, status, unquotePath, worktrees } from './git'
 
 const roots: string[] = []
 
@@ -206,6 +206,96 @@ describe('defaultBranch', () => {
     sh(root, 'remote', 'add', 'origin', tmp('bare'))
 
     expect(await defaultBranch(root)).toEqual({ ok: false, error: { kind: 'no-default-branch', remote: 'origin' } })
+  })
+})
+
+function cloned(): string {
+  const origin = tmp('origin')
+  sh(origin, 'init', '--bare', '-b', 'main')
+  const source = committed()
+  sh(source, 'remote', 'add', 'origin', origin)
+  sh(source, 'push', '-u', 'origin', 'main')
+  const clone = path.join(tmp('clone'), 'work')
+  sh(path.dirname(clone), 'clone', origin, 'work')
+  return clone
+}
+
+describe('createBranch', () => {
+  it('branches from the fetched default branch, not HEAD', async () => {
+    const clone = cloned()
+    sh(clone, 'checkout', '-b', 'stale')
+
+    const out = await createBranch(clone, 'feature')
+
+    expect(out).toEqual({ ok: true, value: { branch: 'feature', base: 'origin/main' } })
+    expect(await head(clone)).toEqual({ ok: true, value: { kind: 'branch', branch: 'feature', commit: expect.any(String) } })
+  })
+
+  it('refuses a branch name that already exists', async () => {
+    const clone = cloned()
+    sh(clone, 'branch', 'feature')
+
+    expect(await createBranch(clone, 'feature')).toEqual({ ok: false, error: { kind: 'branch-exists', name: 'feature' } })
+  })
+
+  it('reports a repo with no remote', async () => {
+    const root = committed()
+
+    expect(await createBranch(root, 'feature')).toEqual({ ok: false, error: { kind: 'no-remote', root } })
+  })
+
+  it('rejects an invalid branch name', async () => {
+    const clone = cloned()
+
+    expect(await createBranch(clone, 'bad..name')).toEqual({ ok: false, error: { kind: 'invalid-branch', name: 'bad..name' } })
+  })
+
+  it('rejects a name that would read as an option', async () => {
+    const clone = cloned()
+
+    expect(await createBranch(clone, '--force')).toEqual({ ok: false, error: { kind: 'bad-argument', value: '--force' } })
+  })
+
+  it('refuses to switch a dirty working tree', async () => {
+    const clone = cloned()
+    fs.writeFileSync(path.join(clone, 'a.txt'), 'changed\n')
+
+    expect(await createBranch(clone, 'feature')).toEqual({ ok: false, error: { kind: 'dirty', root: clone } })
+  })
+})
+
+describe('createWorktree', () => {
+  it('adds a worktree branched from the fetched default branch', async () => {
+    const clone = cloned()
+    const target = path.join(tmp('wt'), 'feature')
+
+    const out = await createWorktree(clone, target, 'feature')
+
+    expect(out).toEqual({ ok: true, value: { path: target, branch: 'feature', base: 'origin/main' } })
+    expect(await head(target)).toEqual({ ok: true, value: { kind: 'branch', branch: 'feature', commit: expect.any(String) } })
+    expect(await head(clone)).toEqual({ ok: true, value: { kind: 'branch', branch: 'main', commit: expect.any(String) } })
+  })
+
+  it('refuses a worktree path that already exists', async () => {
+    const clone = cloned()
+    const target = tmp('taken')
+
+    expect(await createWorktree(clone, target, 'feature')).toEqual({ ok: false, error: { kind: 'worktree-exists', path: target } })
+  })
+
+  it('refuses a branch name that already exists', async () => {
+    const clone = cloned()
+    sh(clone, 'branch', 'feature')
+    const target = path.join(tmp('wt'), 'feature')
+
+    expect(await createWorktree(clone, target, 'feature')).toEqual({ ok: false, error: { kind: 'branch-exists', name: 'feature' } })
+  })
+
+  it('reports a repo with no remote', async () => {
+    const root = committed()
+    const target = path.join(tmp('wt'), 'feature')
+
+    expect(await createWorktree(root, target, 'feature')).toEqual({ ok: false, error: { kind: 'no-remote', root } })
   })
 })
 
