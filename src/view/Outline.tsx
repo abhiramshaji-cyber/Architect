@@ -1,14 +1,16 @@
 import { useRef } from 'react'
+import type { SymbolRef } from '../model/goto'
 import type { OutlineEntry } from '../model/outline'
 
 type OutlineProps = {
   entries: OutlineEntry[]
   currentId: string | null
   onSelect: (id: string) => void
+  onGoto: (ref: SymbolRef) => void
   returnFocus: () => void
 }
 
-export default function Outline({ entries, currentId, onSelect, returnFocus }: OutlineProps) {
+export default function Outline({ entries, currentId, onSelect, onGoto, returnFocus }: OutlineProps) {
   const list = useRef<HTMLDivElement | null>(null)
 
   const move = (from: HTMLElement, delta: number) => {
@@ -42,17 +44,26 @@ export default function Outline({ entries, currentId, onSelect, returnFocus }: O
       ) : (
         <div ref={list} className="outline-list" role="listbox" aria-label="Symbols in this file">
           {entries.map((entry) => (
-            <button
-              key={entry.id}
-              className={entry.id === currentId ? 'outline-item current' : 'outline-item'}
-              role="option"
-              aria-selected={entry.id === currentId}
-              onClick={() => onSelect(entry.id)}
-              onKeyDown={onKey}
-            >
-              <span className="code-fn-name outline-item-name">{entry.name}</span>
-              <span className="outline-item-line">{entry.line}</span>
-            </button>
+            <div key={entry.id} className="outline-row">
+              <button
+                className={entry.id === currentId ? 'outline-item current' : 'outline-item'}
+                role="option"
+                aria-selected={entry.id === currentId}
+                onClick={() => onSelect(entry.id)}
+                onKeyDown={onKey}
+              >
+                <span className="code-fn-name outline-item-name">{entry.name}</span>
+                <span className="outline-item-line">{entry.line}</span>
+              </button>
+              <button
+                className="code-open"
+                aria-label={`Show definition and references for ${entry.name}`}
+                title="Definition and references"
+                onClick={() => onGoto({ file: entry.file, index: entry.index })}
+              >
+                ⌕
+              </button>
+            </div>
           ))}
         </div>
       )}

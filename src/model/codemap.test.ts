@@ -346,6 +346,7 @@ describe('function node size', () => {
       kind: 'codefn',
       name: 'run',
       path: 'a.ts',
+      index: 0,
       line: 1,
       endLine: 900,
       description,
@@ -357,7 +358,7 @@ describe('function node size', () => {
   it('ignores the line span now that the card carries no source', () => {
     expect(at('')).toBe(FN_BASE_H)
     expect(
-      heightOf({ kind: 'codefn', name: 'run', path: 'a.ts', line: 1, endLine: 1, description: '', calls: [], callers: [], external: false })
+      heightOf({ kind: 'codefn', name: 'run', path: 'a.ts', index: 0, line: 1, endLine: 1, description: '', calls: [], callers: [], external: false })
     ).toBe(FN_BASE_H)
   })
 
@@ -370,6 +371,7 @@ describe('function node size', () => {
       kind: 'codefn',
       name: 'run',
       path: 'a.ts',
+      index: 0,
       line: 1,
       endLine: 2,
       description: '',

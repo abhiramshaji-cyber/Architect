@@ -18,6 +18,7 @@ import {
   callPositions,
   codePositions,
   fileIndex,
+  fnNodeId,
   folderIndex,
   functionEdges,
   functionNodes,
@@ -27,8 +28,10 @@ import {
   type CodeNode,
   type CodeNodeData
 } from '../model/codemap'
+import { gotoSymbol, type Located, type SymbolRef } from '../model/goto'
 import { outlineFor } from '../model/outline'
 import { CodeInspector } from './Inspector'
+import GotoPanel from './GotoPanel'
 import Outline from './Outline'
 
 type CodeCanvasProps = {
@@ -41,6 +44,7 @@ type CodeCanvasProps = {
 
 const Picked = createContext<string | null>(null)
 const Enter = createContext<(path: string) => void>(() => {})
+const Goto = createContext<(ref: SymbolRef) => void>(() => {})
 
 function card(kind: string, picked: boolean) {
   return picked ? `node code-node ${kind} picked` : `node code-node ${kind}`
@@ -120,6 +124,25 @@ function FileNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
   )
 }
 
+function GotoButton({ path, index, name }: { path: string; index: number; name: string }) {
+  const goto = useContext(Goto)
+
+  return (
+    <button
+      className="code-open"
+      aria-label={`Show definition and references for ${name}`}
+      title="Definition and references"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        goto({ file: path, index })
+      }}
+    >
+      ⌕
+    </button>
+  )
+}
+
 function FunctionNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
   const picked = useContext(Picked) === id
   if (data.kind !== 'codefn') return null
@@ -135,6 +158,7 @@ function FunctionNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
         <span className="node-role">
           {data.external ? baseName(data.path) : `${data.line}–${data.endLine}`}
         </span>
+        <GotoButton path={data.path} index={data.index} name={data.name} />
         {data.external && <Open path={data.path} name={baseName(data.path)} />}
       </div>
       {data.description !== '' && <div className="code-fn-desc code-fn-lead">{data.description}</div>}
@@ -163,7 +187,9 @@ function toFlow(logical: CodeNode[], at: Map<string, { x: number; y: number }>):
 export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [source, setSource] = useState<SourceWindow | null>(null)
+  const [gotoRef, setGotoRef] = useState<SymbolRef | null>(null)
   const stage = useRef<HTMLDivElement | null>(null)
+  const pendingSelect = useRef<string | null>(null)
 
   const colors = useMemo(() => ({ dots: cssVar('--dots'), ink: cssVar('--ink') }), [theme])
   const outline = useMemo(() => outlineFor(map, path), [map, path])
@@ -199,7 +225,10 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
     [world, colors]
   )
 
-  useEffect(() => setSelectedId(null), [path])
+  useEffect(() => {
+    setSelectedId(pendingSelect.current)
+    pendingSelect.current = null
+  }, [path])
 
   const selected = world.nodes.find((n) => n.id === selectedId)?.data ?? null
 
@@ -222,6 +251,22 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
     }
   }, [map.root, selected])
 
+  const gotoResult = useMemo(() => (gotoRef ? gotoSymbol(map, gotoRef) : null), [map, gotoRef])
+
+  const jumpGoto = useCallback(
+    (item: Located) => {
+      setGotoRef(null)
+      const id = fnNodeId(item.file, item.index, item.name)
+      if (item.file === path) {
+        setSelectedId(id)
+        return
+      }
+      pendingSelect.current = id
+      onEnter(item.file)
+    },
+    [path, onEnter]
+  )
+
   const close = useCallback(() => setSelectedId(null), [])
 
   useEffect(() => {
@@ -241,32 +286,35 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
           entries={outline}
           currentId={selectedId}
           onSelect={setSelectedId}
+          onGoto={setGotoRef}
           returnFocus={returnFocus}
         />
       )}
       <Picked.Provider value={selectedId}>
         <Enter.Provider value={onEnter}>
-          <ReactFlow
-            key={path}
-            nodes={world.nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            zoomOnDoubleClick={false}
-            fitView
-            fitViewOptions={{ padding: 0.14 }}
-            minZoom={0.1}
-            proOptions={{ hideAttribution: true }}
-            onNodeClick={(_event, node) => setSelectedId(node.id)}
-            onNodeDoubleClick={(_event, node) => {
-              if (node.data.kind !== 'codefn' || node.data.external) onEnter(node.data.path)
-            }}
-            onPaneClick={close}
-          >
-            <Background gap={26} size={1} color={colors.dots} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
+          <Goto.Provider value={setGotoRef}>
+            <ReactFlow
+              key={path}
+              nodes={world.nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              zoomOnDoubleClick={false}
+              fitView
+              fitViewOptions={{ padding: 0.14 }}
+              minZoom={0.1}
+              proOptions={{ hideAttribution: true }}
+              onNodeClick={(_event, node) => setSelectedId(node.id)}
+              onNodeDoubleClick={(_event, node) => {
+                if (node.data.kind !== 'codefn' || node.data.external) onEnter(node.data.path)
+              }}
+              onPaneClick={close}
+            >
+              <Background gap={26} size={1} color={colors.dots} />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          </Goto.Provider>
         </Enter.Provider>
       </Picked.Provider>
       {world.nodes.length === 0 && (
@@ -275,6 +323,9 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
         </div>
       )}
       {selected && <CodeInspector key={selectedId} node={selected} source={source} onClose={close} />}
+      {gotoResult && (
+        <GotoPanel root={map.root} result={gotoResult} onClose={() => setGotoRef(null)} onJump={jumpGoto} />
+      )}
     </div>
   )
 }

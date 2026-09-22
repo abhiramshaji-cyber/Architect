@@ -23,6 +23,7 @@ export type CodeNodeData =
       kind: 'codefn'
       name: string
       path: string
+      index: number
       line: number
       endLine: number
       description: string
@@ -152,6 +153,7 @@ export function functionNodes(file: FileEntry, index: Map<string, FileEntry>): C
       kind: 'codefn',
       name: fn.name,
       path: file.path,
+      index: i,
       line: fn.line,
       endLine: fn.endLine,
       description: fn.description,
@@ -169,6 +171,7 @@ export function functionNodes(file: FileEntry, index: Map<string, FileEntry>): C
       kind: 'codefn',
       name: fn.name,
       path: ref.file,
+      index: ref.index,
       line: fn.line,
       endLine: fn.endLine,
       description: fn.description,
