@@ -24,6 +24,10 @@ owns: `electron/daemon.ts`
 Electron lifecycle, window, tray and the preload bridge to the renderer.
 owns: `electron/main.ts`
 
+### pty
+Spawns and owns pty processes in the main process, keyed by session id, and batches their output into a single streaming channel.
+owns: `electron/pty/**`
+
 ### canvas
 React Flow diagram, project sidebar, approval inbox and the ghost proposal preview. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
 owns: `src/**`
@@ -39,6 +43,8 @@ owns: `mcp/**`
 - daemon -> graph
 - app -> types
 - app -> daemon
+- app -> pty
+- pty -> types
 - canvas -> types
 - bridge -> types
 
@@ -48,6 +54,7 @@ owns: `mcp/**`
 - canvas -> daemon : the renderer reaches the daemon only through the preload bridge in app
 - bridge -> graph : the bridge holds no domain logic, it only translates and forwards
 - bridge -> daemon : they communicate over the socket, never by import
+- canvas -> pty : node-pty never reaches the renderer, terminal output arrives over the preload bridge
 
 ## Packages
 
@@ -57,3 +64,6 @@ owns: `mcp/**`
 - react
 - react-dom
 - electron
+- node-pty
+- @xterm/xterm
+- @xterm/addon-fit
