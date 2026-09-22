@@ -21,10 +21,10 @@ import {
   type Response,
   type Verdict,
 } from '../shared/types'
-import { describe, type DescriptionCache } from './describe'
-import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './edits'
-import { apply, check, ownership, parse, serialize } from './graph'
-import { scan } from './scan'
+import { describe, type DescriptionCache } from './scan/describe'
+import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
+import { apply, check, ownership, parse, serialize } from './contract/graph'
+import { scan } from './scan/scan'
 
 const MAP_VERSION = 3
 

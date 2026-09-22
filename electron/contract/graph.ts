@@ -1,6 +1,6 @@
 import picomatch from 'picomatch'
 
-import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Ownership, type Proposal, type Pt, type Verdict } from '../shared/types'
+import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Ownership, type Proposal, type Pt, type Verdict } from '../../shared/types'
 
 const LAYOUT_OPEN = '<!-- architect:layout'
 const LAYOUT_CLOSE = '-->'

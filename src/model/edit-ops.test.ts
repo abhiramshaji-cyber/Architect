@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Architecture } from '../shared/types'
-import { parse, serialize } from '../electron/graph'
+import type { Architecture } from '../../shared/types'
+import { parse, serialize } from '../../electron/contract/graph'
 import {
   addComponent,
   addEdge,

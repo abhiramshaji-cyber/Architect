@@ -12,7 +12,7 @@ import {
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { CodeMap } from '../shared/types'
+import type { CodeMap } from '../../shared/types'
 import {
   baseName,
   callPositions,
@@ -26,7 +26,7 @@ import {
   FUNCTIONS_SHOWN,
   type CodeNode,
   type CodeNodeData
-} from './codemap'
+} from '../model/codemap'
 import { CodeInspector } from './Inspector'
 
 type CodeCanvasProps = {

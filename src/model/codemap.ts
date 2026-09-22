@@ -1,5 +1,5 @@
 import dagre from '@dagrejs/dagre'
-import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry, Pt } from '../shared/types'
+import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry, Pt } from '../../shared/types'
 import { NODE_W } from './layout'
 
 export const FUNCTIONS_SHOWN = 8

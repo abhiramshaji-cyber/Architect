@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { scan } from './scan'
-import type { CallRef, CodeMap, FolderEntry, FunctionEntry } from '../shared/types'
+import type { CallRef, CodeMap, FolderEntry, FunctionEntry } from '../../shared/types'
 
 const roots: string[] = []
 

@@ -1,9 +1,9 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
-import type { Architecture } from '../shared/types'
-import { hangingIndent, type CodeNodeData, type FnRef } from './codemap'
-import { renameComponent, setOwns, setPurpose, type OpResult } from './edit-ops'
-import { clampInspectorWidth, statusOf, INSPECTOR_W, type NodeData } from './layout'
+import type { Architecture } from '../../shared/types'
+import { hangingIndent, type CodeNodeData, type FnRef } from '../model/codemap'
+import { renameComponent, setOwns, setPurpose, type OpResult } from '../model/edit-ops'
+import { clampInspectorWidth, statusOf, INSPECTOR_W, type NodeData } from '../model/layout'
 
 const WIDTH_KEY = 'architect.inspector.width'
 

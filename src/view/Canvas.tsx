@@ -17,8 +17,8 @@ import {
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { Architecture, Ownership, Pending } from '../shared/types'
-import { addEdge, removeComponent, removeEdge, type OpResult } from './edit-ops'
+import type { Architecture, Ownership, Pending } from '../../shared/types'
+import { addEdge, removeComponent, removeEdge, type OpResult } from '../model/edit-ops'
 import Inspector from './Inspector'
 import {
   build,
@@ -30,7 +30,7 @@ import {
   HANDLE_OUT,
   NODE_W,
   type NodeData
-} from './layout'
+} from '../model/layout'
 
 type CanvasProps = {
   architecture: Architecture

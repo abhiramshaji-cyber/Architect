@@ -161,7 +161,7 @@ describe('parse', () => {
   })
 
   it('parses the architect.md of this repository', () => {
-    const doc = readFileSync(fileURLToPath(new URL('../architect.md', import.meta.url)), 'utf8')
+    const doc = readFileSync(fileURLToPath(new URL('../../architect.md', import.meta.url)), 'utf8')
     const arch = parse(doc)
     expect(arch.components.map((c) => c.id)).toContain('graph')
     expect(arch.edges).toContainEqual({ from: 'daemon', to: 'graph' })

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe as suite, expect, it, vi } from 'vitest'
-import type { CodeMap } from '../shared/types'
+import type { CodeMap } from '../../shared/types'
 import { describe } from './describe'
 
 let root: string
