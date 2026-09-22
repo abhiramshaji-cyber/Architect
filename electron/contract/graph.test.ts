@@ -216,8 +216,8 @@ describe('check', () => {
     expect(check(arch, 'ui', 'db')).toEqual({ status: 'forbidden', reason: 'bypasses the api layer' })
   })
 
-  it('returns unknown when neither matches', () => {
-    expect(check(arch, 'api', 'ui')).toEqual({ status: 'unknown' })
+  it('returns undrawn-edge when both components exist but no edge is drawn', () => {
+    expect(check(arch, 'api', 'ui')).toEqual({ status: 'undrawn-edge' })
   })
 
   it('checks forbidden before allowed', () => {
@@ -229,8 +229,16 @@ describe('check', () => {
     expect(check(both, 'ui', 'api')).toEqual({ status: 'forbidden', reason: 'also forbidden' })
   })
 
-  it('returns unknown for an unknown component id, never allowed', () => {
-    expect(check(arch, 'ghost', 'api')).toEqual({ status: 'unknown' })
+  it('returns unknown-component naming the missing id, never allowed', () => {
+    expect(check(arch, 'ghost', 'api')).toEqual({ status: 'unknown-component', ids: ['ghost'] })
+  })
+
+  it('names both ids when neither component exists', () => {
+    expect(check(arch, 'ghost', 'phantom')).toEqual({ status: 'unknown-component', ids: ['ghost', 'phantom'] })
+  })
+
+  it('dedupes when the same missing id is used on both sides', () => {
+    expect(check(arch, 'ghost', 'ghost')).toEqual({ status: 'unknown-component', ids: ['ghost'] })
   })
 })
 
