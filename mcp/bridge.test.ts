@@ -94,6 +94,20 @@ describe('bridge', () => {
     stopServer(server, path)
   })
 
+  it('ignores a malformed line and handles the following valid response', async () => {
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        s.write('not json\n')
+        s.write(JSON.stringify({ id: req.id, ok: true, result: 'still connected' }) + '\n')
+      })
+    })
+
+    const result = await send({ op: 'get_architecture' }, path)
+    expect(result).toBe('still connected')
+
+    stopServer(server, path)
+  })
+
   it('delivers two responses arriving in one chunk to the right callers, out of order', async () => {
     const requests: Request[] = []
     const { server, path } = startServer((socket) => {
