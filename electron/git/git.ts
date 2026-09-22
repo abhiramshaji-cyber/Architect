@@ -45,6 +45,10 @@ export type GitFailure =
   | { kind: 'bad-ref'; ref: string }
   | { kind: 'not-in-ref'; ref: string; file: string }
   | { kind: 'bad-argument'; value: string }
+  | { kind: 'invalid-branch'; name: string }
+  | { kind: 'branch-exists'; name: string }
+  | { kind: 'worktree-exists'; path: string }
+  | { kind: 'dirty'; root: string }
   | { kind: 'failed'; args: string[]; code: number | null; stderr: string }
 
 export type GitResult<T> = { ok: true; value: T } | { ok: false; error: GitFailure }
@@ -278,6 +282,62 @@ export async function defaultBranch(root: string): Promise<GitResult<DefaultBran
   const prefix = `${remote}/`
   const branch = short.startsWith(prefix) ? short.slice(prefix.length) : short
   return branch ? { ok: true, value: { remote, branch } } : { ok: false, error: { kind: 'no-default-branch', remote } }
+}
+
+function badArgument(value: string): boolean {
+  return value === '' || value.startsWith('-') || value.includes('\0')
+}
+
+async function branchExists(root: string, name: string): Promise<boolean> {
+  return succeeds(root, ['show-ref', '--verify', '--quiet', `refs/heads/${name}`])
+}
+
+async function resolveBase(root: string, name: string): Promise<GitResult<DefaultBranch>> {
+  if (badArgument(name)) return { ok: false, error: { kind: 'bad-argument', value: name } }
+  if (!(await succeeds(root, ['check-ref-format', '--branch', name]))) return { ok: false, error: { kind: 'invalid-branch', name } }
+  if (await branchExists(root, name)) return { ok: false, error: { kind: 'branch-exists', name } }
+
+  const base = await defaultBranch(root)
+  if (!base.ok) return base
+
+  const fetched = await git(root, ['fetch', base.value.remote, base.value.branch])
+  if (!fetched.ok) return fetched
+
+  return base
+}
+
+export async function createBranch(root: string, name: string): Promise<GitResult<{ branch: string; base: string }>> {
+  const base = await resolveBase(root, name)
+  if (!base.ok) return base
+
+  const state = await status(root)
+  if (!state.ok) return state
+  if (state.value.dirty) return { ok: false, error: { kind: 'dirty', root } }
+
+  const startPoint = `${base.value.remote}/${base.value.branch}`
+  const checkout = await git(root, ['checkout', '-b', name, startPoint])
+  if (!checkout.ok) return checkout
+
+  return { ok: true, value: { branch: name, base: startPoint } }
+}
+
+export async function createWorktree(root: string, worktreePath: string, name: string): Promise<GitResult<{ path: string; branch: string; base: string }>> {
+  if (badArgument(worktreePath)) return { ok: false, error: { kind: 'bad-argument', value: worktreePath } }
+
+  const occupied = await fs.stat(worktreePath).then(
+    () => true,
+    () => false,
+  )
+  if (occupied) return { ok: false, error: { kind: 'worktree-exists', path: worktreePath } }
+
+  const base = await resolveBase(root, name)
+  if (!base.ok) return base
+
+  const startPoint = `${base.value.remote}/${base.value.branch}`
+  const added = await git(root, ['worktree', 'add', '-b', name, worktreePath, startPoint])
+  if (!added.ok) return added
+
+  return { ok: true, value: { path: worktreePath, branch: name, base: startPoint } }
 }
 
 export async function fileAtRef(root: string, ref: string, file: string): Promise<GitResult<string>> {
