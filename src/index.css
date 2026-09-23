@@ -74,7 +74,8 @@ body {
   overflow: hidden;
 }
 
-.app-body {
+.app-body,
+.contract-layout {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -108,59 +109,65 @@ body {
   color: var(--danger);
 }
 
-.sidebar {
-  width: 280px;
-  flex-shrink: 0;
+.contract-main,
+.rail-body {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.contract-main {
+  overflow: hidden;
+}
+
+.contract-rail {
+  flex-shrink: 0;
+  width: 300px;
+  display: flex;
   background: var(--panel);
+  border-left: 1px solid var(--border);
+}
+
+.contract-rail.closed {
+  width: auto;
+}
+
+.rail-handle {
+  flex-shrink: 0;
+  width: 16px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
   border-right: 1px solid var(--border);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rail-body {
   overflow-y: auto;
 }
 
-.sidebar-section {
-  padding: 20px;
+.rail-section {
+  padding: 16px;
   border-bottom: 1px solid var(--border);
 }
 
-.sidebar-section.inbox {
+.rail-section.inbox {
   flex: 1;
-}
-
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.sidebar h1 {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  margin: 0;
 }
 
 .theme-toggle {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  margin-left: auto;
+  padding: 0 4px;
+  font-size: 12px;
   color: var(--text-dim);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
-}
-
-.theme-toggle:hover {
-  color: var(--text);
-  background: var(--hover);
 }
 
 .theme-toggle:focus-visible {
@@ -169,13 +176,18 @@ body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-.sidebar h2 {
+.rail-section h2,
+.open-projects h3 {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-dim);
   margin: 0 0 12px;
+}
+
+.open-projects {
+  margin: 14px 0 4px;
 }
 
 .project-list,
@@ -217,7 +229,10 @@ body {
   overflow-wrap: anywhere;
 }
 
+.rail-handle:hover,
+.theme-toggle:hover,
 .project:hover {
+  color: var(--text);
   background: var(--hover);
 }
 
@@ -623,7 +638,7 @@ body.resizing {
   border-radius: 6px;
 }
 
-.sidebar-action {
+.action {
   width: 100%;
   margin-top: 10px;
   padding: 7px 10px;
@@ -636,7 +651,7 @@ body.resizing {
   cursor: pointer;
 }
 
-.sidebar-action:hover {
+.action:hover {
   color: var(--text);
   border-color: var(--text-dim);
   background: var(--hover);
@@ -1876,6 +1891,6 @@ body.resizing {
   color: var(--text);
 }
 
-.sidebar-action.danger {
+.action.danger {
   color: var(--danger);
 }

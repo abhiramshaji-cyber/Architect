@@ -179,7 +179,7 @@ export function installMock() {
             {
               path: 'src/App.tsx',
               functions: [
-                fn('App', 25, 96, 'Holds every screen level state and wires the sidebar to the canvas.', ['placeholderId', 'describe']),
+                fn('App', 25, 96, 'Holds every screen level state and wires the canvas to the statusline.', ['placeholderId', 'describe']),
                 fn('placeholderId', 10, 15, 'Picks the next unused component id.'),
                 fn('describe', 17, 23, '')
               ]

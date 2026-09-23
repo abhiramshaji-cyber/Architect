@@ -30,7 +30,7 @@ export default function PendingInbox() {
   }
 
   return (
-    <div className="sidebar-section inbox">
+    <div className="rail-section inbox">
       <h2>Approval inbox</h2>
       <ul className="pending-list">
         {pending.map((p) => {

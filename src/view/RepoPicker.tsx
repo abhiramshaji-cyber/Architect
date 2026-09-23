@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ProjectList from './ProjectList'
 import { openProject, useProject } from '../model/store'
 import {
   authNote,
@@ -279,6 +280,8 @@ export default function RepoPicker() {
           {error && <p className="picker-error">{error}</p>}
           {message && <p className="picker-note">{message}</p>}
 
+          {!repo && <ProjectList />}
+
           <ul className="picker-list">
             {!repo &&
               shownRepos.map((item, at) => {
@@ -366,15 +369,15 @@ export default function RepoPicker() {
           <p className="picker-prompt-head">
             {prompt.row.branch} - {riskText(prompt.plan.risk)} in {basename(prompt.plan.existing)}:
           </p>
-          <button className="sidebar-action" onClick={() => void run(prompt.row, 'keep', `Opening ${prompt.row.label}...`)}>
+          <button className="action" onClick={() => void run(prompt.row, 'keep', `Opening ${prompt.row.label}...`)}>
             Keep changes &nbsp; pull {prompt.plan.risk.tracking} via rebase --autostash
           </button>
-          <button className="sidebar-action danger" onClick={() => void run(prompt.row, 'clean', `Wiping ${prompt.row.branch}...`)}>
+          <button className="action danger" onClick={() => void run(prompt.row, 'clean', `Wiping ${prompt.row.branch}...`)}>
             Clean pull &nbsp; DELETE the worktree, recreate from {prompt.plan.risk.tracking}
             {riskText(prompt.plan.risk) === 'nothing local' ? '' : `  [loses ${riskText(prompt.plan.risk)}]`}
           </button>
           <button
-            className="sidebar-action"
+            className="action"
             onClick={() => {
               setPrompt(null)
               setMessage(`Cancelled: ${prompt.row.branch} left as it is`)
