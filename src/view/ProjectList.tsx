@@ -1,12 +1,13 @@
 import { folderName } from '../model/layout'
-import { closeProject, openFolder, openProject, useProject } from '../model/store'
+import { closeProject, openProject, useProject } from '../model/store'
 
 type Props = {
   theme: string
   onFlipTheme: () => void
+  onShowRepos: () => void
 }
 
-export default function ProjectList({ theme, onFlipTheme }: Props) {
+export default function ProjectList({ theme, onFlipTheme, onShowRepos }: Props) {
   const { projects, currentRoot, entries } = useProject()
   const label = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'
 
@@ -54,11 +55,15 @@ export default function ProjectList({ theme, onFlipTheme }: Props) {
             </li>
           )
         })}
-        {projects.length === 0 && <li className="empty">No projects yet</li>}
       </ul>
-      <button className="sidebar-action" onClick={openFolder}>
-        Open project
-      </button>
+      {projects.length === 0 && (
+        <>
+          <p className="empty">No projects yet. Open one from Repos.</p>
+          <button className="sidebar-action" onClick={onShowRepos}>
+            Go to Repos
+          </button>
+        </>
+      )}
     </div>
   )
 }

@@ -108,10 +108,6 @@ async function openRepoBranch(
 
 function wireIpc() {
   handle('architect:projects', () => daemon.projects())
-  handle('architect:choose-directory', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-    return canceled ? null : filePaths[0] ?? null
-  })
   handle('architect:create-contract', (root: string) => daemon.createContract(root))
   handle('architect:open', (root: string) => daemon.open(root))
   handle('architect:close-project', (root: string) => daemon.closeProject(root))

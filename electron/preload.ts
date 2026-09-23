@@ -9,7 +9,6 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 
 const architect: ArchitectApi = {
   projects: () => invoke('architect:projects'),
-  chooseDirectory: () => invoke('architect:choose-directory'),
   createContract: (root) => invoke('architect:create-contract', root),
   open: (root) => invoke('architect:open', root),
   closeProject: (root) => invoke('architect:close-project', root),

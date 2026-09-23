@@ -260,7 +260,6 @@ export type PtyEvent =
 
 export type ArchitectApi = {
   projects(): Promise<ProjectSummary[]>
-  chooseDirectory(): Promise<string | null>
   open(root: string): Promise<OpenedProject>
   closeProject(root: string): Promise<void>
   pending(): Promise<Pending[]>
