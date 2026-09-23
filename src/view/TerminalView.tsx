@@ -9,7 +9,7 @@ import type { ViewProps } from '../shell/views'
 const DARK = { background: '#101014', foreground: '#e6e6e6', cursor: '#e6e6e6' }
 const LIGHT = { background: '#ffffff', foreground: '#1b1b1f', cursor: '#1b1b1f' }
 
-export default function TerminalView({ theme }: ViewProps) {
+export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?: boolean }) {
   const host = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | null>(null)
   const { currentRoot } = useProject()
@@ -62,7 +62,7 @@ export default function TerminalView({ theme }: ViewProps) {
     observer.observe(mount)
 
     window.architect
-      .ptySpawn({ cwd: currentRoot ?? undefined, cols: term.cols, rows: term.rows })
+      .ptySpawn({ cwd: currentRoot ?? undefined, tmux, cols: term.cols, rows: term.rows })
       .then((started) => {
         if (disposed) {
           window.architect.ptyKill(started.id)
@@ -83,7 +83,7 @@ export default function TerminalView({ theme }: ViewProps) {
       term.dispose()
       terminal.current = null
     }
-  }, [currentRoot])
+  }, [currentRoot, tmux])
 
   useEffect(() => {
     if (terminal.current) terminal.current.options.theme = theme === 'light' ? LIGHT : DARK
@@ -92,7 +92,7 @@ export default function TerminalView({ theme }: ViewProps) {
   return (
     <>
       <header className="canvas-header">
-        <h2>Terminal</h2>
+        <h2>{tmux ? 'Terminal' : 'Shell'}</h2>
         {exited !== null && <span className="muted">exited {exited}</span>}
       </header>
       {error && <div className="empty-state">{error}</div>}
@@ -103,4 +103,8 @@ export default function TerminalView({ theme }: ViewProps) {
       />
     </>
   )
+}
+
+export function PlainShell(props: ViewProps) {
+  return <TerminalView {...props} tmux={false} />
 }

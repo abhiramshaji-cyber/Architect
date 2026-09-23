@@ -260,7 +260,14 @@ export type DraftFailure =
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
 
-export type PtySpec = { cwd?: string; shell?: string; args?: string[]; cols: number; rows: number }
+export type PtySpec = {
+  cwd?: string
+  shell?: string
+  args?: string[]
+  tmux?: boolean
+  cols: number
+  rows: number
+}
 
 export type PtySession = { id: string; pid: number }
 

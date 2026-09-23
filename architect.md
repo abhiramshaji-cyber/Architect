@@ -33,7 +33,7 @@ Electron lifecycle, window, tray and the preload bridge to the renderer.
 owns: `electron/main.ts`
 
 ### pty
-Spawns and owns pty processes in the main process, keyed by session id, and batches their output into a single streaming channel.
+Spawns and owns pty processes in the main process, keyed by session id, and batches their output into a single streaming channel. A session runs `tmux new-session -A -s <name derived from its cwd>` when tmux is available, so tearing the pty down detaches rather than kills, and falls back to a plain shell otherwise.
 owns: `electron/pty/**`
 
 ### canvas
