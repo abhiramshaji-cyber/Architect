@@ -158,6 +158,29 @@ export type DefaultBranch = { remote: string; branch: string }
 
 export type WorktreeCreated = { path: string; branch: string; base: string }
 
+export type OpenRisk = {
+  tracking: string
+  dirty: number
+  unpushed: number
+  dirtyFiles: string[]
+  unpushedCommits: string[]
+}
+
+export type OpenPlan =
+  | { kind: 'clone'; basePath: string; worktreePath: string }
+  | { kind: 'fresh'; basePath: string; worktreePath: string }
+  | { kind: 'existing'; basePath: string; worktreePath: string; existing: string; risk: OpenRisk }
+
+export type OpenChoice = 'keep' | 'clean'
+
+export type OpenedBranch = { path: string; pulled: boolean; warning: string | null }
+
+export type OpenFailure =
+  | { source: 'git'; error: GitFailure }
+  | { source: 'github'; error: GithubFailure }
+
+export type OpenResult<T> = { ok: true; value: T } | { ok: false; error: OpenFailure }
+
 export type GitFailure =
   | { kind: 'not-installed' }
   | { kind: 'missing-root'; root: string }
@@ -176,6 +199,9 @@ export type GitFailure =
   | { kind: 'main-worktree'; path: string }
   | { kind: 'locked-worktree'; path: string }
   | { kind: 'dirty'; root: string }
+  | { kind: 'clone-dirs-taken'; repo: string }
+  | { kind: 'no-tracking'; tracking: string }
+  | { kind: 'worktree-stuck'; path: string }
   | { kind: 'failed'; args: string[]; code: number | null; stderr: string }
 
 export type GitResult<T> = { ok: true; value: T } | { ok: false; error: GitFailure }
@@ -204,6 +230,8 @@ export type GithubRepo = {
 }
 
 export type GithubBranch = { name: string; commit: string; protected: boolean }
+
+export type GithubPull = { number: number; title: string; head: string }
 
 export type GithubBudget = { limit: number; remaining: number; resetAt: number }
 
@@ -269,6 +297,9 @@ export type ArchitectApi = {
   githubAuth(): Promise<GithubResult<GithubAuth>>
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
   githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>
+  githubPulls(owner: string, repo: string): Promise<GithubResult<GithubPull[]>>
+  repoPlan(repo: string, branch: string, pr?: number): Promise<GitResult<OpenPlan>>
+  repoOpen(repo: string, branch: string, choice: OpenChoice, pr?: number): Promise<OpenResult<OpenedBranch>>
   githubRates(): Promise<GithubResult<GithubRates>>
 }
 
