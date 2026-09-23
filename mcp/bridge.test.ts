@@ -45,6 +45,15 @@ function readRequests(socket: Socket, onRequest: (req: Request, socket: Socket) 
   })
 }
 
+function startServerWithNoise(noise: string) {
+  return startServer((socket) => {
+    readRequests(socket, (req, s) => {
+      s.write(noise)
+      s.write(JSON.stringify({ id: req.id, ok: true, result: 'survived' }) + '\n')
+    })
+  })
+}
+
 describe('bridge', () => {
   afterEach(() => {
     disconnect()
@@ -256,6 +265,99 @@ describe('bridge', () => {
     const result = await checkChange('a', 'b', path)
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toBe('forbidden dependency')
+
+    stopServer(server, path)
+  })
+  it('survives a truncated line and still delivers the response', async () => {
+    const { server, path } = startServerWithNoise('{"id":"abc","ok":true,"resu\n')
+
+    expect(await send({ op: 'get_architecture' }, path)).toBe('survived')
+
+    stopServer(server, path)
+  })
+
+  it('survives a line that is not JSON at all', async () => {
+    const { server, path } = startServerWithNoise('not json\n')
+
+    expect(await send({ op: 'get_architecture' }, path)).toBe('survived')
+
+    stopServer(server, path)
+  })
+
+  it('survives valid JSON that is not a response', async () => {
+    const { server, path } = startServerWithNoise('null\n7\n"hello"\n[1,2]\ntrue\n{"nope":1}\n{"id":42}\n')
+
+    expect(await send({ op: 'get_architecture' }, path)).toBe('survived')
+
+    stopServer(server, path)
+  })
+
+  it('survives empty and whitespace-only lines', async () => {
+    const { server, path } = startServerWithNoise('\n\n   \n\t\n')
+
+    expect(await send({ op: 'get_architecture' }, path)).toBe('survived')
+
+    stopServer(server, path)
+  })
+
+  it('survives a very long malformed line', async () => {
+    const { server, path } = startServerWithNoise(`${'x'.repeat(2_000_000)}\n`)
+
+    expect(await send({ op: 'get_architecture' }, path)).toBe('survived')
+
+    stopServer(server, path)
+  })
+
+  it('keeps serving later calls after a malformed line', async () => {
+    let calls = 0
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        calls += 1
+        if (calls === 1) s.write('}{ broken\n')
+        s.write(JSON.stringify({ id: req.id, ok: true, result: calls }) + '\n')
+      })
+    })
+
+    expect(await send({ op: 'get_architecture' }, path)).toBe(1)
+    expect(await send({ op: 'get_architecture' }, path)).toBe(2)
+
+    stopServer(server, path)
+  })
+
+  it('rejects rather than hangs when a reply carries a known id but no verdict', async () => {
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        s.write(JSON.stringify({ id: req.id, result: 'ambiguous' }) + '\n')
+      })
+    })
+
+    await expect(send({ op: 'get_architecture' }, path, 5_000)).rejects.toThrow(/not a result or an error/i)
+
+    stopServer(server, path)
+  })
+
+  it('rejects an in-flight call when disconnect() is called', async () => {
+    const { server, path } = startServer(() => {})
+
+    const call = send({ op: 'get_architecture' }, path, 5_000)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    disconnect()
+
+    await expect(call).rejects.toThrow(/connection closed/i)
+
+    stopServer(server, path)
+  })
+  it('parses a response split inside a multibyte character', async () => {
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        const line = Buffer.from(JSON.stringify({ id: req.id, ok: true, result: 'caf\u00e9 \u2705' }) + '\n', 'utf8')
+        const cut = line.indexOf(Buffer.from('\u2705', 'utf8')) + 1
+        s.write(line.subarray(0, cut))
+        setTimeout(() => s.write(line.subarray(cut)), 5)
+      })
+    })
+
+    expect(await send({ op: 'get_architecture' }, path)).toBe('caf\u00e9 \u2705')
 
     stopServer(server, path)
   })
