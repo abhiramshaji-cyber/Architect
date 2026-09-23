@@ -5,6 +5,7 @@ import EditBar from './EditBar'
 import EditList from './EditList'
 import PendingInbox from './PendingInbox'
 import { addComponent, type OpResult } from '../model/edit-ops'
+import { draftMessage } from '../model/picker'
 import {
   applyEdit,
   createContract,
@@ -39,7 +40,7 @@ function draftNote(failure: DraftFailure): string {
   if (failure.kind === 'nothing-to-draft') return 'Architect found no source it recognises here, so there is nothing to draft from.'
   if (failure.kind === 'timed-out') return 'Claude took too long to answer, so nothing was drafted.'
   if (failure.kind === 'unusable') return `Claude replied with something that is not a contract, so nothing was drafted (${failure.detail}).`
-  return `Claude could not finish the draft${failure.stderr ? ` (${failure.stderr})` : ''}.`
+  return `Claude could not finish the draft: ${draftMessage(failure)}`
 }
 
 export default function ContractView({ theme }: ViewProps) {

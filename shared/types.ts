@@ -215,9 +215,25 @@ export type GitFailure =
   | { kind: 'clone-dirs-taken'; repo: string }
   | { kind: 'no-tracking'; tracking: string }
   | { kind: 'worktree-stuck'; path: string }
+  | { kind: 'nothing-staged'; root: string }
+  | { kind: 'detached-head'; root: string }
+  | { kind: 'no-upstream'; branch: string }
+  | { kind: 'non-fast-forward'; branch: string }
+  | { kind: 'auth-failed'; remote: string }
+  | { kind: 'unreachable'; remote: string }
+  | { kind: 'diverged'; ahead: number; behind: number }
+  | { kind: 'conflicted'; files: number }
   | { kind: 'failed'; args: string[]; code: number | null; stderr: string }
 
 export type GitResult<T> = { ok: true; value: T } | { ok: false; error: GitFailure }
+
+export type Committed = { commit: string; branch: string | null }
+
+export type Pushed = { remote: string; branch: string; setUpstream: boolean }
+
+export type Pulled = { remote: string; branch: string; changed: boolean }
+
+export type BranchPatch = { base: string; branch: string; commits: number; log: string; patch: string }
 
 export type DiffSection = 'branch' | 'staged' | 'unstaged'
 
@@ -298,7 +314,7 @@ export type GithubRepo = {
 
 export type GithubBranch = { name: string; commit: string; protected: boolean }
 
-export type GithubPull = { number: number; title: string; head: string }
+export type GithubPull = { number: number; title: string; head: string; url: string }
 
 export type GithubCompare = { ahead: number; behind: number }
 
@@ -326,9 +342,15 @@ export type DraftFailure =
   | { kind: 'nothing-to-draft' }
   | { kind: 'timed-out' }
   | { kind: 'unusable'; detail: string }
+  | { kind: 'no-skill'; name: string }
+  | { kind: 'git'; error: GitFailure }
   | { kind: 'failed'; code: number; stderr: string }
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
+
+export type CommitDraft = { title: string; description: string }
+
+export type PullDraft = { title: string; body: string }
 
 export type PtySpec = {
   cwd?: string
@@ -391,10 +413,17 @@ export type ArchitectApi = {
   gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
   gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
   gitUnstageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
+  gitCommit(root: string, title: string, description: string): Promise<GitResult<Committed>>
+  gitPush(root: string): Promise<GitResult<Pushed>>
+  gitPull(root: string): Promise<GitResult<Pulled>>
+  draftCommitMessage(root: string): Promise<DraftResult<CommitDraft>>
+  draftPullRequest(root: string): Promise<DraftResult<PullDraft>>
   githubAuth(): Promise<GithubResult<GithubAuth>>
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
   githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>
   githubPulls(owner: string, repo: string): Promise<GithubResult<GithubPull[]>>
+  githubPullFor(root: string, head: string): Promise<GithubResult<GithubPull | null>>
+  githubCreatePull(root: string, base: string, head: string, title: string, body: string): Promise<GithubResult<GithubPull>>
   githubCompare(owner: string, repo: string, base: string, heads: string[]): Promise<void>
   githubCancelCompare(): Promise<void>
   onGithubCompared(fn: (compared: GithubCompared) => void): () => void

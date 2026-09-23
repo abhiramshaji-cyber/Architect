@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import parseDiff from 'parse-diff'
 import {
   MAX_DIFF_BYTES,
+  type BranchPatch,
   type ChangeStatus,
   type ChangedFile,
   type DiffChanges,
@@ -327,6 +328,44 @@ async function pathArgs(file: ChangedFile): Promise<GitResult<string[]>> {
   }
 
   return { ok: true, value: file.from === null || file.from === file.path ? [file.path] : [file.from, file.path] }
+}
+
+export async function stagedPatch(root: string): Promise<GitResult<string>> {
+  return git(root, [...PATCH, '--cached'])
+}
+
+export async function branchPatch(root: string): Promise<GitResult<BranchPatch>> {
+  const base = await defaultBranch(root)
+  if (!base.ok) return base
+
+  const state = await git(root, STATE)
+  if (!state.ok) return state
+
+  const head = parseStatus(state.value).head
+  if (head.kind !== 'branch') return { ok: false, error: { kind: 'detached-head', root } }
+
+  const ref = `${base.value.remote}/${base.value.branch}`
+  const range = `${ref}...HEAD`
+
+  const counted = await git(root, ['rev-list', '--count', `${ref}..HEAD`])
+  if (!counted.ok) return counted
+
+  const log = await git(root, ['log', '--no-color', '--format=%s%n%n%b', `${ref}..HEAD`])
+  if (!log.ok) return log
+
+  const patch = await git(root, [...PATCH, range])
+  if (!patch.ok) return patch
+
+  return {
+    ok: true,
+    value: {
+      base: base.value.branch,
+      branch: head.branch,
+      commits: Number.parseInt(counted.value.trim(), 10) || 0,
+      log: log.value,
+      patch: patch.value,
+    },
+  }
 }
 
 export async function stageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>> {

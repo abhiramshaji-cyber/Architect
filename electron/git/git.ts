@@ -1,13 +1,17 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
+import net from 'node:net'
 import { promisify } from 'node:util'
 import type {
+  Committed,
   DefaultBranch,
   GitFailure,
   GitResult,
   GitStatus,
   Head,
   LocalBranch,
+  Pulled,
+  Pushed,
   RemoteBranch,
   Worktree,
   WorktreeCreated,
@@ -16,6 +20,8 @@ import type {
 const run = promisify(execFile)
 
 const MAX_OUTPUT = 64 * 1024 * 1024
+const CONNECT_MS = 5000
+const PORTS: Record<string, number> = { https: 443, http: 80, ssh: 22, git: 9418 }
 
 type ExecFailure = { code?: unknown; syscall?: unknown; stderr?: unknown }
 
@@ -427,6 +433,167 @@ export async function removeWorktree(root: string, worktreePath: string): Promis
   if (!pruned.ok) return pruned
 
   return { ok: true, value: { path: worktreePath } }
+}
+
+export async function gitInput(root: string, args: string[], input: string): Promise<GitResult<string>> {
+  return new Promise((resolve) => {
+    const options = { cwd: root, maxBuffer: MAX_OUTPUT, windowsHide: true }
+
+    const child = execFile('git', args, options, (error, stdout) => {
+      if (!error) return resolve({ ok: true, value: text(stdout) })
+      void classify(root, args, error as ExecFailure).then((failure) => resolve({ ok: false, error: failure }))
+    })
+
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(input)
+  })
+}
+
+export function endpoint(url: string): { host: string; port: number } | null {
+  const scp = /^(?:[^@/]+@)?([^/:]+):(?!\/)/.exec(url)
+  const host = scp?.[1]
+  if (host !== undefined && host !== '') return { host, port: 22 }
+
+  try {
+    const parsed = new URL(url)
+    const named = PORTS[parsed.protocol.replace(':', '')]
+    const port = parsed.port === '' ? named : Number.parseInt(parsed.port, 10)
+    if (parsed.hostname === '' || port === undefined || !Number.isFinite(port)) return null
+    return { host: parsed.hostname, port }
+  } catch {
+    return null
+  }
+}
+
+function connects(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port })
+    const settle = (reachable: boolean): void => {
+      socket.destroy()
+      resolve(reachable)
+    }
+
+    socket.setTimeout(CONNECT_MS, () => settle(false))
+    socket.once('connect', () => settle(true))
+    socket.once('error', () => settle(false))
+  })
+}
+
+async function remoteRefusal(root: string, remote: string): Promise<GitFailure> {
+  const url = await git(root, ['remote', 'get-url', remote])
+  const target = url.ok ? endpoint(url.value.trim()) : null
+  const reachable = target !== null && (await connects(target.host, target.port))
+
+  return reachable ? { kind: 'auth-failed', remote } : { kind: 'unreachable', remote }
+}
+
+async function unreachableOr(root: string, remote: string, fallback: GitFailure): Promise<GitFailure> {
+  return (await git(root, ['ls-remote', '--heads', remote])).ok ? fallback : remoteRefusal(root, remote)
+}
+
+async function upstreamRemote(root: string, branch: string): Promise<string | null> {
+  const out = await git(root, ['config', '--get', `branch.${branch}.remote`])
+  const name = out.ok ? out.value.trim() : ''
+  return name === '' ? null : name
+}
+
+export async function commit(root: string, title: string, description: string): Promise<GitResult<Committed>> {
+  const subject = title.trim()
+  if (subject === '' || subject.includes('\0')) return { ok: false, error: { kind: 'bad-argument', value: title } }
+  if (description.includes('\0')) return { ok: false, error: { kind: 'bad-argument', value: description } }
+
+  const before = await status(root)
+  if (!before.ok) return before
+  if (before.value.conflicted > 0) return { ok: false, error: { kind: 'conflicted', files: before.value.conflicted } }
+  if (before.value.staged === 0) return { ok: false, error: { kind: 'nothing-staged', root } }
+
+  const body = description.trim()
+  const message = body === '' ? `${subject}\n` : `${subject}\n\n${body}\n`
+
+  const recorded = await gitInput(root, ['commit', '--cleanup=verbatim', '-F', '-'], message)
+  if (!recorded.ok) return recorded
+
+  const oid = await git(root, ['rev-parse', 'HEAD'])
+  if (!oid.ok) return oid
+
+  const after = await status(root)
+  if (!after.ok) return after
+
+  return {
+    ok: true,
+    value: { commit: oid.value.trim(), branch: after.value.head.kind === 'branch' ? after.value.head.branch : null },
+  }
+}
+
+async function whyPushRefused(root: string, remote: string, branch: string, fallback: GitFailure): Promise<GitFailure> {
+  const listed = await git(root, ['ls-remote', '--heads', remote, branch])
+  if (!listed.ok) return remoteRefusal(root, remote)
+
+  const [sha = ''] = listed.value.trim().split(/\s+/)
+  if (sha !== '' && !(await succeeds(root, ['merge-base', '--is-ancestor', sha, 'HEAD']))) {
+    return { kind: 'non-fast-forward', branch }
+  }
+
+  return fallback
+}
+
+export async function push(root: string): Promise<GitResult<Pushed>> {
+  const state = await status(root)
+  if (!state.ok) return state
+  if (state.value.head.kind !== 'branch') return { ok: false, error: { kind: 'detached-head', root } }
+
+  const branch = state.value.head.branch
+  if (badArgument(branch)) return { ok: false, error: { kind: 'bad-argument', value: branch } }
+
+  const setUpstream = state.value.upstream === null
+  const configured = setUpstream ? null : await upstreamRemote(root, branch)
+  const chosen = configured === null ? await remoteName(root) : { ok: true as const, value: configured }
+  if (!chosen.ok) return chosen
+
+  const remote = chosen.value
+  const args = setUpstream ? ['push', '--set-upstream', remote, branch] : ['push']
+
+  const pushed = await git(root, args)
+  if (pushed.ok) return { ok: true, value: { remote, branch, setUpstream } }
+  if (pushed.error.kind !== 'failed') return pushed
+
+  return { ok: false, error: await whyPushRefused(root, remote, branch, pushed.error) }
+}
+
+export async function pull(root: string): Promise<GitResult<Pulled>> {
+  const state = await status(root)
+  if (!state.ok) return state
+  if (state.value.head.kind !== 'branch') return { ok: false, error: { kind: 'detached-head', root } }
+
+  const branch = state.value.head.branch
+  if (state.value.conflicted > 0) return { ok: false, error: { kind: 'conflicted', files: state.value.conflicted } }
+  if (state.value.upstream === null) return { ok: false, error: { kind: 'no-upstream', branch } }
+
+  const remote = await upstreamRemote(root, branch)
+  if (remote === null) return { ok: false, error: { kind: 'no-upstream', branch } }
+
+  const before = await git(root, ['rev-parse', 'HEAD'])
+  if (!before.ok) return before
+
+  const pulled = await git(root, ['pull', '--ff-only'])
+  if (pulled.ok) {
+    const after = await git(root, ['rev-parse', 'HEAD'])
+    if (!after.ok) return after
+    return { ok: true, value: { remote, branch, changed: before.value.trim() !== after.value.trim() } }
+  }
+  if (pulled.error.kind !== 'failed') return pulled
+
+  const reached = await unreachableOr(root, remote, pulled.error)
+  if (reached.kind !== 'failed') return { ok: false, error: reached }
+
+  const after = await status(root)
+  if (!after.ok) return { ok: false, error: pulled.error }
+
+  if (after.value.ahead > 0 && after.value.behind > 0) {
+    return { ok: false, error: { kind: 'diverged', ahead: after.value.ahead, behind: after.value.behind } }
+  }
+
+  return { ok: false, error: after.value.dirty ? { kind: 'dirty', root } : pulled.error }
 }
 
 export async function fileAtRef(root: string, ref: string, file: string): Promise<GitResult<string>> {

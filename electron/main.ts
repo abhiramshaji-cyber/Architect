@@ -6,7 +6,9 @@ import {
   type Architecture,
   type ChangedFile,
   type CodeMap,
+  type CommitDraft,
   type DiffSection,
+  type DraftResult,
   type GithubCompare,
   type GithubResult,
   type IpcResult,
@@ -17,8 +19,10 @@ import {
   type ProjectSummary,
   type PtyEvent,
   type PtySpec,
+  type PullDraft,
 } from '../shared/types'
 import { createDaemon } from './daemon'
+import * as message from './draft/message'
 import * as diff from './git/diff'
 import * as git from './git/git'
 import * as open from './git/open'
@@ -251,12 +255,34 @@ function wireIpc() {
   )
   handle('architect:git-stage-file', (root: string, file: ChangedFile) => diff.stageFile(root, file))
   handle('architect:git-unstage-file', (root: string, file: ChangedFile) => diff.unstageFile(root, file))
+  handle('architect:git-commit', (root: string, title: string, description: string) =>
+    git.commit(root, title, description),
+  )
+  handle('architect:git-push', (root: string) => git.push(root))
+  handle('architect:git-pull', (root: string) => git.pull(root))
+
+  handle('architect:draft-commit-message', async (root: string): Promise<DraftResult<CommitDraft>> => {
+    const staged = await diff.stagedPatch(root)
+    if (!staged.ok) return { ok: false, error: { kind: 'git', error: staged.error } }
+
+    return message.commitMessage(root, staged.value)
+  })
+  handle('architect:draft-pull-request', async (root: string): Promise<DraftResult<PullDraft>> => {
+    const work = await diff.branchPatch(root)
+    if (!work.ok) return { ok: false, error: { kind: 'git', error: work.error } }
+
+    return message.pullRequest(root, work.value)
+  })
 
   handle('architect:github-auth', () => github.auth())
   handle('architect:github-repos', (limit?: number) => github.allRepos(limit))
   handle('architect:github-branches', (owner: string, repo: string) => github.branches(owner, repo))
   handle('architect:github-rates', () => github.rates())
   handle('architect:github-pulls', (owner: string, repo: string) => github.pulls(owner, repo))
+  handle('architect:github-pull-for', (root: string, head: string) => github.pullFor(root, head))
+  handle('architect:github-create-pull', (root: string, base: string, head: string, title: string, body: string) =>
+    github.createPull(root, base, head, title, body),
+  )
 
   handleIn('architect:github-compare', async (window, owner: string, repo: string, base: string, heads: string[]) => {
     stopCompare(window)

@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MAX_DIFF_BYTES, type ChangedFile, type DiffSection } from '../../shared/types'
-import { changes, fileDiff, mergeBase, stageFile, unstageFile } from './diff'
+import { branchPatch, changes, fileDiff, mergeBase, stagedPatch, stageFile, unstageFile } from './diff'
 
 const roots: string[] = []
 
@@ -455,5 +455,83 @@ describe('staging', () => {
 
     expect(out).toEqual({ ok: true, value: { path: 'a.txt' } })
     expect(await section(root, 'staged')).toEqual([])
+  })
+})
+
+describe('stagedPatch', () => {
+  it('reads only what is in the index, not the working tree', async () => {
+    const root = tracked('staged-patch')
+    write(root, 'a.txt', 'one\ntwo\nSTAGED\nfour\nfive\n')
+    sh(root, 'add', '--', 'a.txt')
+    write(root, 'a.txt', 'one\ntwo\nSTAGED\nfour\nWORKING\n')
+
+    const out = await stagedPatch(root)
+
+    expect(out.ok).toBe(true)
+    expect(out.ok && out.value).toContain('+STAGED')
+    expect(out.ok && out.value).not.toContain('WORKING')
+  })
+
+  it('is empty when nothing is staged', async () => {
+    const out = await stagedPatch(tracked('staged-empty'))
+
+    expect(out).toEqual({ ok: true, value: '' })
+  })
+})
+
+describe('branchPatch', () => {
+  it('reads the branch, the base, the commit count, the log and the patch since the base', async () => {
+    const root = tracked('branch-patch')
+    sh(root, 'checkout', '-q', '-b', 'feat/thing')
+    write(root, 'b.txt', 'added on the branch\n')
+    sh(root, 'add', '-A')
+    sh(root, 'commit', '-m', 'add b')
+
+    const out = await branchPatch(root)
+
+    expect(out.ok).toBe(true)
+    expect(out.ok && out.value.branch).toBe('feat/thing')
+    expect(out.ok && out.value.base).toBe('main')
+    expect(out.ok && out.value.commits).toBe(1)
+    expect(out.ok && out.value.log).toContain('add b')
+    expect(out.ok && out.value.patch).toContain('+added on the branch')
+  })
+
+  it('counts no commits on a branch level with the base', async () => {
+    const out = await branchPatch(tracked('branch-level'))
+
+    expect(out.ok && out.value.commits).toBe(0)
+    expect(out.ok && out.value.patch).toBe('')
+  })
+
+  it('reports a detached HEAD rather than inventing a branch name', async () => {
+    const root = tracked('branch-detached')
+    sh(root, 'checkout', '-q', '--detach')
+
+    const out = await branchPatch(root)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'detached-head', root } })
+  })
+
+  it('leaves out a commit the base already has', async () => {
+    const root = tracked('branch-shared')
+    sh(root, 'checkout', '-q', '-b', 'feat/thing')
+    write(root, 'b.txt', 'mine\n')
+    sh(root, 'add', '-A')
+    sh(root, 'commit', '-m', 'mine')
+    sh(root, 'checkout', '-q', 'main')
+    write(root, 'c.txt', 'theirs\n')
+    sh(root, 'add', '-A')
+    sh(root, 'commit', '-m', 'theirs')
+    sh(root, 'push', '-q', 'origin', 'main')
+    sh(root, 'fetch', '-q', 'origin')
+    sh(root, 'checkout', '-q', 'feat/thing')
+
+    const out = await branchPatch(root)
+
+    expect(out.ok && out.value.commits).toBe(1)
+    expect(out.ok && out.value.log).toContain('mine')
+    expect(out.ok && out.value.log).not.toContain('theirs')
+    expect(out.ok && out.value.patch).not.toContain('theirs')
   })
 })
