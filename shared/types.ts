@@ -30,7 +30,7 @@ export type Architecture = {
   layout?: Layout
 }
 
-export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary'
+export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
 export type SourceWindow = {
   from: number
@@ -38,6 +38,18 @@ export type SourceWindow = {
   total: number
   error: SourceError | null
 }
+
+export type SourceFile = { text: string; hash: string; error: SourceError | null }
+
+export type WriteError = Exclude<SourceError, 'range'> | 'stale' | 'denied'
+
+export type WriteResult = { hash: string; error: WriteError | null }
+
+export type TreeError = 'closed' | 'outside' | 'unreadable'
+
+export type TreeEntry = { name: string; dir: boolean; owners: string[] }
+
+export type TreeListing = { dir: string; entries: TreeEntry[]; error: TreeError | null }
 
 export type Ownership = {
   owned: { path: string; owner: string }[]
@@ -347,6 +359,9 @@ export type ArchitectApi = {
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
+  openSource(root: string, file: string): Promise<SourceFile>
+  writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>
+  readTree(root: string, dir: string): Promise<TreeListing>
   onChange(fn: (a: Architecture) => void): void
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: ProjectSummary[]) => void): void

@@ -25,7 +25,7 @@ Asks the Claude Code binary for a first `architect.md`, from a bounded summary o
 owns: `electron/draft/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching and the pending proposal queue.
+Socket server, project resolution by cwd, file watching, the pending proposal queue, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
 
 ### app
@@ -37,7 +37,7 @@ Spawns and owns pty processes in the main process, keyed by session id, and batc
 owns: `electron/pty/**`
 
 ### canvas
-React Flow diagram, the contract rail holding edits and the approval inbox, and the ghost proposal preview. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
+React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the approval inbox, and the ghost proposal preview. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
 owns: `src/**`
 
 ### cli
@@ -99,3 +99,12 @@ owns: `lsp/**`
 - @xterm/addon-fit
 - vscode-languageserver
 - vscode-languageserver-textdocument
+- @codemirror/state
+- @codemirror/view
+- @codemirror/language
+- @codemirror/commands
+- @codemirror/lang-javascript
+- @codemirror/lang-json
+- @codemirror/lang-markdown
+- @codemirror/lang-css
+- @lezer/highlight
