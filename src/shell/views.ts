@@ -2,15 +2,16 @@ import type { ComponentType } from 'react'
 import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
 import RepoPicker from '../view/RepoPicker'
-import TerminalView from '../view/TerminalView'
+import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'contract' | 'code' | 'terminal' | 'repos'
+export type ViewId = 'contract' | 'code' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
   contract: { label: 'Contract', component: ContractView },
   code: { label: 'Code', component: CodeView },
   terminal: { label: 'Terminal', component: TerminalView },
+  shell: { label: 'Shell', component: PlainShell },
   repos: { label: 'Repos', component: RepoPicker },
 }
 

@@ -1,5 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
 import os from 'node:os'
+import path from 'node:path'
 import process from 'node:process'
 import type { PtyEvent, PtySpec } from '../../shared/types'
 
@@ -35,6 +37,27 @@ function defaultShell(): string {
   return process.env.SHELL ?? '/bin/bash'
 }
 
+export function tmuxSessionName(cwd: string): string {
+  const full = path.resolve(cwd)
+  const digest = createHash('sha256').update(full).digest('hex').slice(0, 8)
+  const slug = path
+    .basename(full)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .slice(0, 32)
+    .replace(/^-+|-+$/g, '')
+
+  return slug ? `architect-${slug}-${digest}` : `architect-${digest}`
+}
+
+function tmuxAvailable(): boolean {
+  try {
+    return spawnSync('tmux', ['-V'], { stdio: 'ignore' }).status === 0
+  } catch {
+    return false
+  }
+}
+
 function cells(value: number, fallback: number): number {
   return Number.isFinite(value) ? Math.max(1, Math.trunc(value)) : fallback
 }
@@ -46,7 +69,11 @@ function shellEnv(): Record<string, string> {
   return env
 }
 
-export function createPtyHost(spawn: PtySpawner, send: (event: PtyEvent) => void) {
+export function createPtyHost(
+  spawn: PtySpawner,
+  send: (event: PtyEvent) => void,
+  hasTmux: () => boolean = tmuxAvailable,
+) {
   const sessions = new Map<string, Session>()
 
   function flush(id: string, session: Session) {
@@ -88,8 +115,14 @@ export function createPtyHost(spawn: PtySpawner, send: (event: PtyEvent) => void
     const id = randomUUID()
     const cols = cells(spec.cols, 80)
     const rows = cells(spec.rows, 24)
-    const file = spec.shell ?? defaultShell()
-    const pty = spawn(file, spec.args ?? [], {
+    const tmux =
+      spec.tmux !== false && spec.shell === undefined && spec.cwd !== undefined && hasTmux()
+        ? tmuxSessionName(spec.cwd)
+        : null
+    const file = tmux ? 'tmux' : (spec.shell ?? defaultShell())
+    const args = tmux ? ['new-session', '-A', '-s', tmux] : (spec.args ?? [])
+
+    const pty = spawn(file, args, {
       name: 'xterm-256color',
       cwd: spec.cwd ?? os.homedir(),
       cols,

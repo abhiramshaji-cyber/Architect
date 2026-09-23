@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPtyHost, type PtyProcess, type PtySpawner } from './pty'
+import { createPtyHost, tmuxSessionName, type PtyProcess, type PtySpawner } from './pty'
 import type { PtyEvent } from '../../shared/types'
 
 type Fake = PtyProcess & {
@@ -60,9 +60,9 @@ function fakes() {
   return { spawn, made }
 }
 
-function host(spawn: PtySpawner) {
+function host(spawn: PtySpawner, hasTmux = () => false) {
   const events: PtyEvent[] = []
-  return { host: createPtyHost(spawn, (event) => events.push(event)), events }
+  return { host: createPtyHost(spawn, (event) => events.push(event), hasTmux), events }
 }
 
 beforeEach(() => {
@@ -380,5 +380,90 @@ describe('killAll', () => {
     vi.advanceTimersByTime(50)
 
     expect(events).toEqual([])
+  })
+})
+
+describe('tmux', () => {
+  it('attaches or creates one session named for the worktree', () => {
+    const { spawn, made } = fakes()
+    host(spawn, () => true).host.spawn({ cwd: '/tmp/work', cols: 80, rows: 24 })
+
+    expect(made[0]?.file).toBe('tmux')
+    expect(made[0]?.args).toEqual(['new-session', '-A', '-s', tmuxSessionName('/tmp/work')])
+    expect(made[0]?.options.cwd).toBe('/tmp/work')
+  })
+
+  it('runs the plain shell when tmux is not available', () => {
+    const { spawn, made } = fakes()
+    host(spawn, () => false).host.spawn({ cwd: '/tmp/work', cols: 80, rows: 24 })
+
+    expect(made[0]?.file).not.toBe('tmux')
+    expect(made[0]?.args).toEqual([])
+  })
+
+  it('runs the plain shell when the caller opts out', () => {
+    const { spawn, made } = fakes()
+    host(spawn, () => true).host.spawn({ cwd: '/tmp/work', tmux: false, cols: 80, rows: 24 })
+
+    expect(made[0]?.file).not.toBe('tmux')
+  })
+
+  it('runs the named program rather than tmux when the caller names one', () => {
+    const { spawn, made } = fakes()
+    host(spawn, () => true).host.spawn({ cwd: '/tmp/work', shell: '/bin/zsh', args: ['-l'], cols: 80, rows: 24 })
+
+    expect(made[0]?.file).toBe('/bin/zsh')
+    expect(made[0]?.args).toEqual(['-l'])
+  })
+
+  it('runs the plain shell when there is no worktree to key on', () => {
+    const { spawn, made } = fakes()
+    host(spawn, () => true).host.spawn({ cols: 80, rows: 24 })
+
+    expect(made[0]?.file).not.toBe('tmux')
+  })
+
+  it('reattaches the same worktree and separates different ones', () => {
+    const { spawn, made } = fakes()
+    const { host: h } = host(spawn, () => true)
+    h.spawn({ cwd: '/repo/main', cols: 80, rows: 24 })
+    h.spawn({ cwd: '/repo/main/', cols: 80, rows: 24 })
+    h.spawn({ cwd: '/repo/feature', cols: 80, rows: 24 })
+
+    expect(made[1]?.args).toEqual(made[0]?.args)
+    expect(made[2]?.args).not.toEqual(made[0]?.args)
+  })
+
+  it('names a session tmux accepts for any path', () => {
+    const names = [
+      tmuxSessionName('/tmp/my repo.v2:beta'),
+      tmuxSessionName('/tmp/....'),
+      tmuxSessionName('/'),
+      tmuxSessionName('/tmp/' + 'x'.repeat(200)),
+      tmuxSessionName('/tmp/日本語'),
+    ]
+
+    for (const name of names) expect(name).toMatch(/^architect-[a-z0-9_-]+$/)
+    for (const name of names) expect(name.includes('.') || name.includes(':')).toBe(false)
+    expect(new Set(names).size).toBe(names.length)
+  })
+
+  it('names two different worktrees differently even when they share a basename', () => {
+    expect(tmuxSessionName('/a/work')).not.toBe(tmuxSessionName('/b/work'))
+  })
+
+  it('detaches rather than killing the session on every teardown path', () => {
+    const { spawn, made } = fakes()
+    const { host: h } = host(spawn, () => true)
+    const one = h.spawn({ cwd: '/repo/main', cols: 80, rows: 24 })
+    h.spawn({ cwd: '/repo/feature', cols: 80, rows: 24 })
+
+    h.kill(one.id)
+    h.killAll()
+
+    expect(made).toHaveLength(2)
+    expect(made[0]?.kills).toEqual([undefined, 'SIGKILL'])
+    expect(made[1]?.kills).toEqual(['SIGKILL'])
+    expect(h.ids()).toEqual([])
   })
 })
