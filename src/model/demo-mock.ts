@@ -416,6 +416,13 @@ export function installMock() {
       return { ok: false, error: { kind: 'not-installed' } }
     },
     async closeProject() {},
+    async claimRoot() {
+      return true
+    },
+    async releaseRoot() {},
+    async focusRoot() {
+      return true
+    },
     async pending() {
       return pendingByRoot['/Users/demo/code/architect'] ?? []
     },

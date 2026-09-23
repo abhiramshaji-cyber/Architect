@@ -10,6 +10,7 @@ beforeEach(() => {
   vi.resetModules()
   architect = {
     open: vi.fn().mockResolvedValue({ contract: { status: 'ready' }, architecture: null }),
+    claimRoot: vi.fn().mockResolvedValue(true),
     edits: vi.fn().mockResolvedValue([]),
     ownership: vi.fn().mockResolvedValue(null),
     openSource: vi.fn().mockResolvedValue({ text: 'one\ntwo\n', hash: 'h1', error: null }),

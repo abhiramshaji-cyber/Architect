@@ -29,7 +29,7 @@ Socket server, project resolution by cwd, file watching, the pending proposal qu
 owns: `electron/daemon.ts`
 
 ### app
-Electron lifecycle, window, tray and the preload bridge to the renderer.
+Electron lifecycle, tray and the preload bridge to the renderer. Every window is a native macOS tab in one group, holding its own pty host and a claim on at most one project root, so a project is open in at most one tab and closing a tab tears down only its terminals.
 owns: `electron/main.ts`
 
 ### pty
