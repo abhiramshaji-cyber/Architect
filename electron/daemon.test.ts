@@ -5,8 +5,13 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Architecture, Decision, Request, Response, Verdict } from '../shared/types'
+import type { Architecture, Decision, ProjectSummary, Request, Response, Verdict } from '../shared/types'
+import { parse } from './contract/graph'
 import { createDaemon } from './daemon'
+
+function parseErrorOf(summary: ProjectSummary | undefined): string | undefined {
+  return summary?.contract.status === 'invalid' ? summary.contract.error : undefined
+}
 
 type OmitId<T> = T extends unknown ? Omit<T, 'id'> : never
 type RequestInput = OmitId<Request>
@@ -98,19 +103,73 @@ afterEach(async () => {
 })
 
 describe('open', () => {
-  it('names the missing contract for a directory that is not an Architect project', async () => {
+  it('opens a directory that has no contract and registers it as missing one', async () => {
     daemon = createDaemon({ socketPath })
     const plain = fs.mkdtempSync(path.join(tmpRoot, 'plain-'))
+    fs.writeFileSync(path.join(plain, 'index.ts'), 'export function go() {}\n')
 
-    await expect(daemon.open(plain)).rejects.toThrow(/no architect\.md/)
-    expect(daemon.projects()).toEqual([])
+    await expect(daemon.open(plain)).resolves.toEqual({ contract: { status: 'missing' }, architecture: null })
+    expect(daemon.projects()).toEqual([
+      { root: plain, title: path.basename(plain), contract: { status: 'missing' } },
+    ])
+  })
+
+  it('refuses every agent call for a root that has no contract', async () => {
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    const plain = fs.mkdtempSync(path.join(tmpRoot, 'plain-'))
+    await daemon.open(plain)
+
+    const c = await client(socketPath)
+    const architecture = await c.request({ op: 'get_architecture', cwd: plain })
+    const changed = await c.request({ op: 'check_change', cwd: plain, from: 'a', to: 'b' })
+    c.close()
+
+    expect(architecture.ok).toBe(false)
+    if (!architecture.ok) expect(architecture.error).toMatch(/no architecture defined for/)
+    expect(changed.ok).toBe(false)
+    if (!changed.ok) expect(changed.error).toMatch(/no architecture defined for/)
+  })
+
+  it('scaffolds a starter contract from the folders it scanned', async () => {
+    daemon = createDaemon({ socketPath })
+    const plain = fs.mkdtempSync(path.join(tmpRoot, 'plain-'))
+    fs.mkdirSync(path.join(plain, 'src'))
+    fs.mkdirSync(path.join(plain, 'server'))
+    fs.writeFileSync(path.join(plain, 'src', 'app.ts'), 'export function app() {}\n')
+    fs.writeFileSync(path.join(plain, 'server', 'api.ts'), 'export function api() {}\n')
+    fs.writeFileSync(path.join(plain, 'readme.ts'), 'export const readme = 1\n')
+    fs.mkdirSync(path.join(plain, 'web app'))
+    fs.writeFileSync(path.join(plain, 'web app', 'page.ts'), 'export function page() {}\n')
+    await daemon.open(plain)
+
+    const architecture = await daemon.createContract(plain)
+
+    expect(architecture.components.map((c) => c.id)).toEqual(['server', 'src', 'web-app'])
+    expect(architecture.components.map((c) => c.owns)).toEqual([['server/**'], ['src/**'], ['web app/**']])
+    expect(parse(fs.readFileSync(path.join(plain, 'architect.md'), 'utf8'))).toEqual(architecture)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
+    await expect(daemon.createContract(plain)).rejects.toThrow(/already has an architect\.md/)
+  })
+
+  it('writes a contract with no components for a project that has no source folders', async () => {
+    daemon = createDaemon({ socketPath })
+    const flat = fs.mkdtempSync(path.join(tmpRoot, 'flat-'))
+    fs.writeFileSync(path.join(flat, 'index.ts'), 'export const one = 1\n')
+    await daemon.open(flat)
+
+    const architecture = await daemon.createContract(flat)
+
+    expect(architecture.components).toEqual([])
+    expect(parse(fs.readFileSync(path.join(flat, 'architect.md'), 'utf8'))).toEqual(architecture)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
   })
 
   it('opens a directory that holds a contract', async () => {
     daemon = createDaemon({ socketPath })
     writeArchitect(tmpRoot, fixture(component('a')))
 
-    await expect(daemon.open(tmpRoot)).resolves.toMatchObject({ title: 'Test' })
+    await expect(daemon.open(tmpRoot)).resolves.toMatchObject({ architecture: { title: 'Test' } })
     expect(daemon.projects().map((p) => p.root)).toEqual([tmpRoot])
   })
 })
@@ -189,7 +248,7 @@ describe('project resolution', () => {
   it('notifies subscribers when an mcp call registers a project', async () => {
     writeArchitect(tmpRoot, fixture(component('api')))
     daemon = createDaemon({ socketPath })
-    const seen: { root: string; title: string }[][] = []
+    const seen: ProjectSummary[][] = []
     daemon.onProjects((p) => seen.push(p))
     await daemon.listen()
 
@@ -199,7 +258,7 @@ describe('project resolution', () => {
     await c.request({ op: 'get_architecture', cwd: tmpRoot })
     c.close()
 
-    expect(seen.at(-1)).toEqual([{ root: tmpRoot, title: 'Test' }])
+    expect(seen.at(-1)).toEqual([{ root: tmpRoot, title: 'Test', contract: { status: 'ready' } }])
   })
 
   it('remembers registered projects across a restart', async () => {
@@ -213,10 +272,10 @@ describe('project resolution', () => {
 
     daemon = createDaemon({ socketPath })
     await daemon.listen()
-    expect(daemon.projects()).toEqual([{ root: tmpRoot, title: 'Test' }])
+    expect(daemon.projects()).toEqual([{ root: tmpRoot, title: 'Test', contract: { status: 'ready' } }])
   })
 
-  it('drops a remembered project whose architect.md is gone or malformed', async () => {
+  it('keeps a remembered project whose architect.md is gone and says the contract is missing', async () => {
     writeArchitect(tmpRoot, fixture(component('api')))
     daemon = createDaemon({ socketPath })
     await daemon.listen()
@@ -229,7 +288,9 @@ describe('project resolution', () => {
 
     daemon = createDaemon({ socketPath })
     await daemon.listen()
-    expect(daemon.projects()).toEqual([])
+    expect(daemon.projects()).toEqual([
+      { root: tmpRoot, title: path.basename(tmpRoot), contract: { status: 'missing' } },
+    ])
   })
 
   it('does not notify again for an already registered project', async () => {
@@ -386,7 +447,7 @@ describe('correctness requirements', () => {
 
     const stale = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'api', to: 'db' })
     expect(stale.ok && (stale.result as Verdict).status).toBe('unknown')
-    expect(daemon.projects()[0]?.title).toBe(good!.title)
+    expect(daemon.projects()[0]?.title).toBe(good.architecture!.title)
     expect(changeCount).toBe(0)
     c.close()
   })
@@ -468,7 +529,7 @@ describe('correctness requirements', () => {
     expect(res.ok).toBe(true)
     if (res.ok) expect((res.result as Decision).status).toBe('approved')
 
-    const architecture = (await daemon.open(tmpRoot))!
+    const architecture = (await daemon.open(tmpRoot)).architecture!
     const api = architecture.components.find((comp) => comp.id === 'api')!
     const db = architecture.components.find((comp) => comp.id === 'db')!
     expect(api.owns).not.toContain('shared.ts')
@@ -534,7 +595,7 @@ describe('correctness requirements', () => {
     expect(componentRes.ok).toBe(true)
     if (componentRes.ok) expect((componentRes.result as Decision).status).toBe('approved')
 
-    const architecture = (await daemon.open(tmpRoot))!
+    const architecture = (await daemon.open(tmpRoot)).architecture!
     expect(architecture.components.some((comp) => comp.id === 'worker')).toBe(true)
     c.close()
   })
@@ -1177,15 +1238,15 @@ ${h2} Packages
     writeArchitect(tmpRoot, good)
     await daemonOn(tmpRoot)
 
-    const seen: { root: string; parseError?: string }[][] = []
+    const seen: ProjectSummary[][] = []
     daemon.onProjects((p) => seen.push(p))
 
     writeArchitect(tmpRoot, broken)
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toMatch(new RegExp(`malformed dependency on line ${badLine}: <<<<<<< HEAD`))
-    expect(daemon.projects()[0]?.parseError).toContain(path.join(tmpRoot, 'architect.md'))
-    expect(seen.at(-1)?.[0]?.parseError).toBe(daemon.projects()[0]?.parseError)
+    expect(parseErrorOf(daemon.projects()[0])).toMatch(new RegExp(`malformed dependency on line ${badLine}: <<<<<<< HEAD`))
+    expect(parseErrorOf(daemon.projects()[0])).toContain(path.join(tmpRoot, 'architect.md'))
+    expect(parseErrorOf(seen.at(-1)?.[0])).toBe(parseErrorOf(daemon.projects()[0]))
   })
 
   it('clears the error and pushes the architecture again once the file is fixed', async () => {
@@ -1194,7 +1255,7 @@ ${h2} Packages
 
     writeArchitect(tmpRoot, broken)
     await settle()
-    expect(daemon.projects()[0]?.parseError).toBeDefined()
+    expect(parseErrorOf(daemon.projects()[0])).toBeDefined()
 
     const changes: Architecture[] = []
     daemon.onChange((a) => changes.push(a))
@@ -1202,7 +1263,7 @@ ${h2} Packages
     writeArchitect(tmpRoot, good.replace('- api -> db', '- api -> db\n- db -> db'))
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toBeUndefined()
+    expect(parseErrorOf(daemon.projects()[0])).toBeUndefined()
     expect(changes.at(-1)?.edges).toContainEqual({ from: 'db', to: 'db' })
   })
 
@@ -1253,9 +1314,13 @@ ${h2} Packages
     writeArchitect(tmpRoot, broken)
     await daemonOn(tmpRoot)
 
-    expect(await daemon.open(tmpRoot)).toBeNull()
+    expect((await daemon.open(tmpRoot)).architecture).toBeNull()
     expect(daemon.projects()).toEqual([
-      { root: tmpRoot, title: path.basename(tmpRoot), parseError: expect.stringContaining(`line ${badLine}`) },
+      {
+        root: tmpRoot,
+        title: path.basename(tmpRoot),
+        contract: { status: 'invalid', error: expect.stringContaining(`line ${badLine}`) },
+      },
     ])
 
     const c = await client(socketPath)
@@ -1269,18 +1334,20 @@ ${h2} Packages
     c.close()
   })
 
-  it('reports a deleted architect.md and keeps the last good architecture', async () => {
+  it('turns a deleted architect.md back into a project waiting for a contract', async () => {
     writeArchitect(tmpRoot, good)
     await daemonOn(tmpRoot)
 
     fs.rmSync(path.join(tmpRoot, 'architect.md'))
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toMatch(/could not read .*architect\.md/)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'missing' })
+    expect((await daemon.open(tmpRoot)).architecture).toBeNull()
 
     writeArchitect(tmpRoot, good)
     await settle()
-    expect(daemon.projects()[0]?.parseError).toBeUndefined()
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
+    expect((await daemon.open(tmpRoot)).architecture?.edges).toEqual([{ from: 'api', to: 'db' }])
   })
 
   it('survives rapid successive bad saves and reports the last one', async () => {
@@ -1292,7 +1359,7 @@ ${h2} Packages
     }
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toContain('unknown component in dependency: ghost')
+    expect(parseErrorOf(daemon.projects()[0])).toContain('unknown component in dependency: ghost')
   })
 
   it('marks only the broken project when two are open', async () => {
@@ -1305,17 +1372,17 @@ ${h2} Packages
     writeArchitect(tmpRoot, broken)
     await settle()
 
-    const byRoot = Object.fromEntries(daemon.projects().map((p) => [p.root, p.parseError]))
+    const byRoot = Object.fromEntries(daemon.projects().map((p) => [p.root, parseErrorOf(p)]))
     expect(byRoot[tmpRoot]).toContain(`line ${badLine}`)
     expect(byRoot[other]).toBeUndefined()
 
-    expect(await daemon.open(other)).not.toBeNull()
-    expect((await daemon.open(tmpRoot))?.edges).toEqual([{ from: 'api', to: 'db' }])
-    expect(daemon.projects().find((p) => p.root === tmpRoot)?.parseError).toContain(`line ${badLine}`)
+    expect((await daemon.open(other)).architecture).not.toBeNull()
+    expect((await daemon.open(tmpRoot)).architecture?.edges).toEqual([{ from: 'api', to: 'db' }])
+    expect(parseErrorOf(daemon.projects().find((p) => p.root === tmpRoot))).toContain(`line ${badLine}`)
 
     writeArchitect(tmpRoot, good)
     await settle()
-    expect(daemon.projects().find((p) => p.root === tmpRoot)?.parseError).toBeUndefined()
+    expect(parseErrorOf(daemon.projects().find((p) => p.root === tmpRoot))).toBeUndefined()
   })
 
   it('refuses to approve a proposal against a broken file', async () => {

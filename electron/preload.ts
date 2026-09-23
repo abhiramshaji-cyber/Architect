@@ -1,24 +1,31 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Architecture, ArchitectApi, CodeMap, Pending, ProjectSummary, PtyEvent } from '../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, IpcResult, Pending, ProjectSummary, PtyEvent } from '../shared/types'
+
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  const result = (await ipcRenderer.invoke(channel, ...args)) as IpcResult<T>
+  if (!result.ok) throw new Error(result.error)
+  return result.value
+}
 
 const architect: ArchitectApi = {
-  projects: () => ipcRenderer.invoke('architect:projects'),
-  chooseDirectory: () => ipcRenderer.invoke('architect:choose-directory'),
-  open: (root) => ipcRenderer.invoke('architect:open', root),
-  closeProject: (root) => ipcRenderer.invoke('architect:close-project', root),
-  pending: () => ipcRenderer.invoke('architect:pending'),
-  decide: (id, approved, reason, component) => ipcRenderer.invoke('architect:decide', id, approved, reason, component),
-  edits: (root) => ipcRenderer.invoke('architect:edits', root),
-  edit: (root, id) => ipcRenderer.invoke('architect:edit', root, id),
-  createEdit: (root, architecture) => ipcRenderer.invoke('architect:create-edit', root, architecture),
-  updateEdit: (root, id, architecture) => ipcRenderer.invoke('architect:update-edit', root, id, architecture),
-  handEdit: (root, id) => ipcRenderer.invoke('architect:hand-edit', root, id),
-  deleteEdit: (root, id) => ipcRenderer.invoke('architect:delete-edit', root, id),
-  getCodeMap: (root) => ipcRenderer.invoke('architect:code-map', root),
-  rescan: (root) => ipcRenderer.invoke('architect:rescan', root),
-  ownership: (root) => ipcRenderer.invoke('architect:ownership', root),
+  projects: () => invoke('architect:projects'),
+  chooseDirectory: () => invoke('architect:choose-directory'),
+  createContract: (root) => invoke('architect:create-contract', root),
+  open: (root) => invoke('architect:open', root),
+  closeProject: (root) => invoke('architect:close-project', root),
+  pending: () => invoke('architect:pending'),
+  decide: (id, approved, reason, component) => invoke('architect:decide', id, approved, reason, component),
+  edits: (root) => invoke('architect:edits', root),
+  edit: (root, id) => invoke('architect:edit', root, id),
+  createEdit: (root, architecture) => invoke('architect:create-edit', root, architecture),
+  updateEdit: (root, id, architecture) => invoke('architect:update-edit', root, id, architecture),
+  handEdit: (root, id) => invoke('architect:hand-edit', root, id),
+  deleteEdit: (root, id) => invoke('architect:delete-edit', root, id),
+  getCodeMap: (root) => invoke('architect:code-map', root),
+  rescan: (root) => invoke('architect:rescan', root),
+  ownership: (root) => invoke('architect:ownership', root),
   readSource: (root, file, from, length) =>
-    ipcRenderer.invoke('architect:read-source', root, file, from, length),
+    invoke('architect:read-source', root, file, from, length),
   onChange: (fn: (a: Architecture) => void) => {
     ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))
   },
@@ -31,29 +38,29 @@ const architect: ArchitectApi = {
   onCodeMap: (fn: (root: string, map: CodeMap) => void) => {
     ipcRenderer.on('architect:code-map-update', (_event, root: string, map: CodeMap) => fn(root, map))
   },
-  ptySpawn: (spec) => ipcRenderer.invoke('architect:pty-spawn', spec),
-  ptyWrite: (id, data) => ipcRenderer.invoke('architect:pty-write', id, data),
-  ptyResize: (id, cols, rows) => ipcRenderer.invoke('architect:pty-resize', id, cols, rows),
-  ptyKill: (id) => ipcRenderer.invoke('architect:pty-kill', id),
+  ptySpawn: (spec) => invoke('architect:pty-spawn', spec),
+  ptyWrite: (id, data) => invoke('architect:pty-write', id, data),
+  ptyResize: (id, cols, rows) => invoke('architect:pty-resize', id, cols, rows),
+  ptyKill: (id) => invoke('architect:pty-kill', id),
   onPtyEvent: (fn: (event: PtyEvent) => void) => {
     const listener = (_event: unknown, payload: PtyEvent) => fn(payload)
     ipcRenderer.on('architect:pty-event', listener)
     return () => ipcRenderer.off('architect:pty-event', listener)
   },
-  gitStatus: (root) => ipcRenderer.invoke('architect:git-status', root),
-  gitDefaultBranch: (root) => ipcRenderer.invoke('architect:git-default-branch', root),
-  gitLocalBranches: (root) => ipcRenderer.invoke('architect:git-local-branches', root),
-  gitRemoteBranches: (root) => ipcRenderer.invoke('architect:git-remote-branches', root),
-  gitWorktrees: (root) => ipcRenderer.invoke('architect:git-worktrees', root),
-  gitFetch: (root) => ipcRenderer.invoke('architect:git-fetch', root),
+  gitStatus: (root) => invoke('architect:git-status', root),
+  gitDefaultBranch: (root) => invoke('architect:git-default-branch', root),
+  gitLocalBranches: (root) => invoke('architect:git-local-branches', root),
+  gitRemoteBranches: (root) => invoke('architect:git-remote-branches', root),
+  gitWorktrees: (root) => invoke('architect:git-worktrees', root),
+  gitFetch: (root) => invoke('architect:git-fetch', root),
   gitCreateWorktree: (root, path, name, base) =>
-    ipcRenderer.invoke('architect:git-create-worktree', root, path, name, base),
-  gitRemoveWorktree: (root, path) => ipcRenderer.invoke('architect:git-remove-worktree', root, path),
-  gitPruneWorktrees: (root) => ipcRenderer.invoke('architect:git-prune-worktrees', root),
-  githubAuth: () => ipcRenderer.invoke('architect:github-auth'),
-  githubRepos: (limit) => ipcRenderer.invoke('architect:github-repos', limit),
-  githubBranches: (owner, repo) => ipcRenderer.invoke('architect:github-branches', owner, repo),
-  githubRates: () => ipcRenderer.invoke('architect:github-rates'),
+    invoke('architect:git-create-worktree', root, path, name, base),
+  gitRemoveWorktree: (root, path) => invoke('architect:git-remove-worktree', root, path),
+  gitPruneWorktrees: (root) => invoke('architect:git-prune-worktrees', root),
+  githubAuth: () => invoke('architect:github-auth'),
+  githubRepos: (limit) => invoke('architect:github-repos', limit),
+  githubBranches: (owner, repo) => invoke('architect:github-branches', owner, repo),
+  githubRates: () => invoke('architect:github-rates'),
 }
 
 contextBridge.exposeInMainWorld('architect', architect)

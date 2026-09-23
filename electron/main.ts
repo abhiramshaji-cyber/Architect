@@ -2,7 +2,7 @@ import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
-import { type Architecture, type CodeMap, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
+import { type Architecture, type CodeMap, type IpcResult, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
 import { createDaemon } from './daemon'
 import * as git from './git/git'
 import * as github from './github/github'
@@ -59,62 +59,71 @@ function createTray() {
   updateTray(daemon.pending())
 }
 
+function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) {
+  ipcMain.handle(channel, async (_event, ...args: A): Promise<IpcResult<Awaited<R>>> => {
+    try {
+      return { ok: true, value: await fn(...args) }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+}
+
 function wireIpc() {
-  ipcMain.handle('architect:projects', () => daemon.projects())
-  ipcMain.handle('architect:choose-directory', async () => {
+  handle('architect:projects', () => daemon.projects())
+  handle('architect:choose-directory', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return canceled ? null : filePaths[0] ?? null
   })
-  ipcMain.handle('architect:open', (_event, root: string) => daemon.open(root))
-  ipcMain.handle('architect:close-project', (_event, root: string) => daemon.closeProject(root))
-  ipcMain.handle('architect:pending', () => daemon.pending())
-  ipcMain.handle('architect:decide', (_event, id: string, approved: boolean, reason?: string, component?: string) =>
+  handle('architect:create-contract', (root: string) => daemon.createContract(root))
+  handle('architect:open', (root: string) => daemon.open(root))
+  handle('architect:close-project', (root: string) => daemon.closeProject(root))
+  handle('architect:pending', () => daemon.pending())
+  handle('architect:decide', (id: string, approved: boolean, reason?: string, component?: string) =>
     daemon.decide(id, approved, reason, component),
   )
-  ipcMain.handle('architect:edits', (_event, root: string) => daemon.edits(root))
-  ipcMain.handle('architect:edit', (_event, root: string, id: string) => daemon.edit(root, id))
-  ipcMain.handle('architect:create-edit', (_event, root: string, architecture: Architecture) =>
+  handle('architect:edits', (root: string) => daemon.edits(root))
+  handle('architect:edit', (root: string, id: string) => daemon.edit(root, id))
+  handle('architect:create-edit', (root: string, architecture: Architecture) =>
     daemon.createEdit(root, architecture),
   )
-  ipcMain.handle('architect:update-edit', (_event, root: string, id: string, architecture: Architecture) =>
+  handle('architect:update-edit', (root: string, id: string, architecture: Architecture) =>
     daemon.updateEdit(root, id, architecture),
   )
-  ipcMain.handle('architect:hand-edit', (_event, root: string, id: string) => daemon.handEdit(root, id))
-  ipcMain.handle('architect:delete-edit', (_event, root: string, id: string) => daemon.deleteEdit(root, id))
-  ipcMain.handle('architect:code-map', (_event, root: string) => daemon.codeMap(root))
-  ipcMain.handle('architect:rescan', (_event, root: string) => daemon.rescan(root))
-  ipcMain.handle('architect:ownership', (_event, root: string) => daemon.ownership(root))
-  ipcMain.handle(
-    'architect:read-source',
-    (_event, root: string, file: string, from: number, length: number) =>
-      daemon.readSource(root, file, from, length),
+  handle('architect:hand-edit', (root: string, id: string) => daemon.handEdit(root, id))
+  handle('architect:delete-edit', (root: string, id: string) => daemon.deleteEdit(root, id))
+  handle('architect:code-map', (root: string) => daemon.codeMap(root))
+  handle('architect:rescan', (root: string) => daemon.rescan(root))
+  handle('architect:ownership', (root: string) => daemon.ownership(root))
+  handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
+    daemon.readSource(root, file, from, length),
   )
 
-  ipcMain.handle('architect:pty-spawn', (_event, spec: PtySpec) => ptyHost.spawn(spec))
-  ipcMain.handle('architect:pty-write', (_event, id: string, data: string) => ptyHost.write(id, data))
-  ipcMain.handle('architect:pty-resize', (_event, id: string, cols: number, rows: number) =>
+  handle('architect:pty-spawn', (spec: PtySpec) => ptyHost.spawn(spec))
+  handle('architect:pty-write', (id: string, data: string) => ptyHost.write(id, data))
+  handle('architect:pty-resize', (id: string, cols: number, rows: number) =>
     ptyHost.resize(id, cols, rows),
   )
-  ipcMain.handle('architect:pty-kill', (_event, id: string) => ptyHost.kill(id))
+  handle('architect:pty-kill', (id: string) => ptyHost.kill(id))
 
-  ipcMain.handle('architect:git-status', (_event, root: string) => git.status(root))
-  ipcMain.handle('architect:git-default-branch', (_event, root: string) => git.defaultBranch(root))
-  ipcMain.handle('architect:git-local-branches', (_event, root: string) => git.localBranches(root))
-  ipcMain.handle('architect:git-remote-branches', (_event, root: string) => git.remoteBranches(root))
-  ipcMain.handle('architect:git-worktrees', (_event, root: string) => git.worktrees(root))
-  ipcMain.handle('architect:git-fetch', (_event, root: string) => git.fetch(root))
-  ipcMain.handle('architect:git-create-worktree', (_event, root: string, target: string, name: string, base?: string) =>
+  handle('architect:git-status', (root: string) => git.status(root))
+  handle('architect:git-default-branch', (root: string) => git.defaultBranch(root))
+  handle('architect:git-local-branches', (root: string) => git.localBranches(root))
+  handle('architect:git-remote-branches', (root: string) => git.remoteBranches(root))
+  handle('architect:git-worktrees', (root: string) => git.worktrees(root))
+  handle('architect:git-fetch', (root: string) => git.fetch(root))
+  handle('architect:git-create-worktree', (root: string, target: string, name: string, base?: string) =>
     git.createWorktree(root, target, name, base),
   )
-  ipcMain.handle('architect:git-remove-worktree', (_event, root: string, target: string) =>
+  handle('architect:git-remove-worktree', (root: string, target: string) =>
     git.removeWorktree(root, target),
   )
-  ipcMain.handle('architect:git-prune-worktrees', (_event, root: string) => git.pruneWorktrees(root))
+  handle('architect:git-prune-worktrees', (root: string) => git.pruneWorktrees(root))
 
-  ipcMain.handle('architect:github-auth', () => github.auth())
-  ipcMain.handle('architect:github-repos', (_event, limit?: number) => github.repos(limit))
-  ipcMain.handle('architect:github-branches', (_event, owner: string, repo: string) => github.branches(owner, repo))
-  ipcMain.handle('architect:github-rates', () => github.rates())
+  handle('architect:github-auth', () => github.auth())
+  handle('architect:github-repos', (limit?: number) => github.repos(limit))
+  handle('architect:github-branches', (owner: string, repo: string) => github.branches(owner, repo))
+  handle('architect:github-rates', () => github.rates())
 }
 
 app.whenReady().then(async () => {

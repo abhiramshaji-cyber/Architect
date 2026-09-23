@@ -8,9 +8,11 @@ import {
   PROPOSAL_TIMEOUT_MS,
   type Architecture,
   type CodeMap,
+  type ContractState,
   type Decision,
   type Edit,
   type EditSummary,
+  type OpenedProject,
   type Ownership,
   type Pending,
   pendingSchema,
@@ -119,7 +121,7 @@ type PendingEntry = { pending: Pending; waiters: Set<Waiter> }
 type ProjectState = {
   root: string
   architecture: Architecture | null
-  parseError: string | null
+  contract: ContractState
   watcher: FSWatcher
   sources: FSWatcher
   rescanTimer: ReturnType<typeof setTimeout> | null
@@ -129,6 +131,43 @@ type ProjectState = {
 }
 
 type DaemonOptions = { socketPath?: string; proposalTimeoutMs?: number; rescanDebounceMs?: number }
+
+function sameContract(a: ContractState, b: ContractState): boolean {
+  if (a.status === 'invalid' && b.status === 'invalid') return a.error === b.error
+  return a.status === b.status
+}
+
+function starterArchitecture(root: string, map: CodeMap): Architecture {
+  const tops = new Map<string, { dirs: string[]; owns: string[] }>()
+
+  for (const folder of map.folders) {
+    for (const file of folder.files) {
+      const [top] = file.path.split('/')
+      if (top === undefined || top === file.path) continue
+
+      const id = top.replaceAll('->', '-').replace(/\s+/g, '-')
+      const entry = tops.get(id) ?? { dirs: [], owns: [] }
+      if (!entry.dirs.includes(top)) {
+        entry.dirs.push(top)
+        entry.owns.push(`${top}/**`)
+      }
+      tops.set(id, entry)
+    }
+  }
+
+  const components = [...tops]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, entry]) => ({ id, purpose: `Code under ${entry.dirs.join(', ')}.`, owns: entry.owns }))
+
+  return {
+    title: path.basename(root),
+    summary: 'A starter contract from the folders Architect scanned. Say what each component is for and draw the dependencies.',
+    components,
+    edges: [],
+    forbidden: [],
+    packages: [],
+  }
+}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -150,7 +189,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   let activeRoot: string | null = null
   let changeListener: ((a: Architecture) => void) | null = null
   let pendingListener: ((p: Pending[]) => void) | null = null
-  let projectsListener: ((p: { root: string; title: string }[]) => void) | null = null
+  let projectsListener: ((p: ProjectSummary[]) => void) | null = null
   let codeMapListener: ((root: string, map: CodeMap) => void) | null = null
   let server: net.Server | null = null
 
@@ -277,7 +316,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     return [...projects.values()].map((p) => ({
       root: p.root,
       title: p.architecture?.title ?? path.basename(p.root),
-      ...(p.parseError === null ? {} : { parseError: p.parseError }),
+      contract: p.contract,
     }))
   }
 
@@ -360,12 +399,13 @@ export function createDaemon(options: DaemonOptions = {}) {
   function loadProject(root: string): ProjectState {
     const existing = projects.get(root)
     if (existing) return existing
+    if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`${root} is not a directory`)
 
     const filePath = architectMdPath(root)
     const state: ProjectState = {
       root,
       architecture: null,
-      parseError: null,
+      contract: { status: 'missing' },
       lastWrittenContent: null,
       watcher: null as unknown as FSWatcher,
       sources: null as unknown as FSWatcher,
@@ -377,29 +417,31 @@ export function createDaemon(options: DaemonOptions = {}) {
     function absorb(content: string) {
       try {
         state.architecture = parse(content)
-        state.parseError = null
+        state.contract = { status: 'ready' }
       } catch (err) {
-        state.parseError = `${filePath}: ${errorText(err)}`
+        state.contract = { status: 'invalid', error: `${filePath}: ${errorText(err)}` }
       }
     }
 
-    if (!fs.existsSync(filePath)) throw new Error(`${root} is not an Architect project: no architect.md`)
-    absorb(fs.readFileSync(filePath, 'utf8'))
-
-    function reread(): boolean {
+    function reread() {
       let content: string
       try {
         content = fs.readFileSync(filePath, 'utf8')
       } catch (err) {
-        state.parseError = `could not read ${filePath}: ${errorText(err)}`
-        return true
+        if (!fs.existsSync(filePath)) {
+          state.architecture = null
+          state.contract = { status: 'missing' }
+          return
+        }
+        state.contract = { status: 'invalid', error: `could not read ${filePath}: ${errorText(err)}` }
+        return
       }
 
-      if (content === state.lastWrittenContent && state.parseError === null) return false
-
+      if (content === state.lastWrittenContent && state.contract.status === 'ready') return
       absorb(content)
-      return true
     }
+
+    reread()
 
     const watcher = chokidar.watch(filePath, {
       ignoreInitial: true,
@@ -410,12 +452,13 @@ export function createDaemon(options: DaemonOptions = {}) {
     watcher.on('all', (event) => {
       if (event !== 'add' && event !== 'change' && event !== 'unlink') return
 
-      const before = state.parseError
-      if (!reread()) return
-      if (before !== null && state.parseError === before) return
+      const contract = state.contract
+      const architecture = state.architecture
+      reread()
+      if (sameContract(contract, state.contract) && architecture === state.architecture) return
 
       notifyProjects()
-      if (state.root === activeRoot && state.parseError === null && state.architecture) {
+      if (state.root === activeRoot && state.contract.status === 'ready' && state.architecture) {
         changeListener?.(state.architecture)
       }
     })
@@ -527,8 +570,15 @@ export function createDaemon(options: DaemonOptions = {}) {
     const root = entry.pending.projectRoot
     const project = approved ? reopen(root) : undefined
 
-    if (approved && project && project.parseError !== null) {
-      resolveWaiters(entry, { status: 'rejected', reason: project.parseError })
+    const blocked =
+      project?.contract.status === 'invalid'
+        ? project.contract.error
+        : project?.contract.status === 'missing'
+          ? `${root} has no architect.md`
+          : null
+
+    if (approved && blocked !== null) {
+      resolveWaiters(entry, { status: 'rejected', reason: blocked })
     } else if (approved && project && project.architecture) {
       let proposal = entry.pending.proposal
       if (component && proposal.kind === 'file') proposal = { ...proposal, component }
@@ -552,10 +602,26 @@ export function createDaemon(options: DaemonOptions = {}) {
     notifyPending()
   }
 
-  async function open(root: string): Promise<Architecture | null> {
+  async function open(root: string): Promise<OpenedProject> {
     const state = loadProject(root)
     activeRoot = root
-    return state.architecture
+    return { contract: state.contract, architecture: state.architecture }
+  }
+
+  async function createContract(root: string): Promise<Architecture> {
+    const state = loadProject(root)
+    if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
+
+    const architecture = starterArchitecture(root, readStoredMap(root)?.map ?? (await scan(root)))
+    const content = serialize(architecture)
+    state.lastWrittenContent = content
+    fs.writeFileSync(architectMdPath(root), content)
+
+    state.architecture = architecture
+    state.contract = { status: 'ready' }
+    notifyProjects()
+    if (root === activeRoot) changeListener?.(architecture)
+    return architecture
   }
 
   function verdictFor(architecture: Architecture, parseError: string | null, from: string, to: string): Verdict {
@@ -581,7 +647,8 @@ export function createDaemon(options: DaemonOptions = {}) {
           const root = resolveRoot(req.cwd)
           if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
           const state = loadProject(root)
-          if (state.parseError !== null) return { id: req.id, ok: false, error: state.parseError }
+          if (state.contract.status === 'invalid') return { id: req.id, ok: false, error: state.contract.error }
+          if (!state.architecture) return { id: req.id, ok: false, error: `${root} has no architect.md` }
           return { id: req.id, ok: true, result: state.architecture }
         }
 
@@ -589,8 +656,9 @@ export function createDaemon(options: DaemonOptions = {}) {
           const root = resolveRoot(req.cwd)
           if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
           const state = loadProject(root)
-          if (!state.architecture) return { id: req.id, ok: false, error: state.parseError ?? 'no architecture' }
-          return { id: req.id, ok: true, result: verdictFor(state.architecture, state.parseError, req.from, req.to) }
+          const stale = state.contract.status === 'invalid' ? state.contract.error : null
+          if (!state.architecture) return { id: req.id, ok: false, error: stale ?? `${root} has no architect.md` }
+          return { id: req.id, ok: true, result: verdictFor(state.architecture, stale, req.from, req.to) }
         }
 
         if (req.op === 'propose_change') {
@@ -714,6 +782,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     closeProject,
     projects: listProjects,
     open,
+    createContract,
     pending: listPending,
     decide,
     edits: (root: string): EditSummary[] => {
@@ -756,7 +825,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     onPending: (fn: (p: Pending[]) => void) => {
       pendingListener = fn
     },
-    onProjects: (fn: (p: { root: string; title: string }[]) => void) => {
+    onProjects: (fn: (p: ProjectSummary[]) => void) => {
       projectsListener = fn
     },
     onCodeMap: (fn: (root: string, map: CodeMap) => void) => {

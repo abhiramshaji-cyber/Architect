@@ -395,7 +395,7 @@ export function installMock() {
 
   window.architect = {
     async projects() {
-      return Object.entries(roots).map(([root, title]) => ({ root, title }))
+      return Object.entries(roots).map(([root, title]) => ({ root, title, contract: { status: 'ready' as const } }))
     },
     async chooseDirectory() {
       return null
@@ -403,7 +403,10 @@ export function installMock() {
     async open(root) {
       const arch = architectures[root]
       if (!arch) throw new Error(`unknown project: ${root}`)
-      return arch
+      return { contract: { status: 'ready' }, architecture: arch }
+    },
+    async createContract(root) {
+      throw new Error(`the demo cannot write architect.md in ${root}`)
     },
     async closeProject() {},
     async pending() {
@@ -488,7 +491,7 @@ export function installMock() {
       pendingListeners.add(fn)
     },
     onProjects(fn) {
-      fn(Object.entries(roots).map(([root, title]) => ({ root, title })))
+      fn(Object.entries(roots).map(([root, title]) => ({ root, title, contract: { status: 'ready' } })))
     },
     onCodeMap() {},
     async ptySpawn() {
