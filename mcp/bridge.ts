@@ -1,5 +1,6 @@
 import { createConnection, type Socket } from 'node:net'
 import { randomUUID } from 'node:crypto'
+import { StringDecoder } from 'node:string_decoder'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -16,9 +17,10 @@ const pending = new Map<string, Waiter>()
 let socket: Socket | null = null
 let connecting: Promise<Socket> | null = null
 let buffer = ''
+let decoder = new StringDecoder('utf8')
 
 function onData(chunk: Buffer) {
-  buffer += chunk.toString('utf8')
+  buffer += decoder.write(chunk)
 
   let index: number
   while ((index = buffer.indexOf('\n')) !== -1) {
@@ -28,15 +30,32 @@ function onData(chunk: Buffer) {
   }
 }
 
+function drop(line: string, why: string) {
+  const preview = line.length > 200 ? `${line.slice(0, 200)}...` : line
+  process.stderr.write(`architect bridge discarded a line (${why}): ${preview}\n`)
+}
+
 function dispatch(line: string) {
-  const res = JSON.parse(line) as { id: string; ok: boolean; result?: unknown; error?: string }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(line)
+  } catch {
+    return drop(line, 'not JSON')
+  }
+
+  const res = parsed as { id?: unknown; ok?: unknown; result?: unknown; error?: unknown }
+  if (typeof parsed !== 'object' || parsed === null || typeof res.id !== 'string') {
+    return drop(line, 'not a response')
+  }
+
   const waiter = pending.get(res.id)
   if (!waiter) return
   clearTimeout(waiter.timer)
   pending.delete(res.id)
 
-  if (res.ok) waiter.resolve(res.result)
-  else waiter.reject(new Error(res.error))
+  if (res.ok === true) waiter.resolve(res.result)
+  else if (res.ok === false) waiter.reject(new Error(typeof res.error === 'string' ? res.error : 'Architect reported an error with no message.'))
+  else waiter.reject(new Error('Architect sent a reply that was not a result or an error.'))
 }
 
 function failAll(error: Error) {
@@ -62,6 +81,7 @@ function connect(path: string): Promise<Socket> {
     s.once('connect', () => {
       s.off('error', onConnectError)
       buffer = ''
+      decoder = new StringDecoder('utf8')
       s.on('data', onData)
       s.on('close', onClose)
       s.on('error', onClose)
@@ -101,6 +121,8 @@ export function disconnect() {
   socket = null
   connecting = null
   buffer = ''
+  decoder = new StringDecoder('utf8')
+  failAll(new Error('Architect connection closed.'))
 }
 
 type ToolResult = { content: [{ type: 'text'; text: string }]; isError?: true }
