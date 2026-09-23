@@ -33,7 +33,7 @@ function spawnFailed(error: ExecFailure): boolean {
   return error.code === 'ENOENT' && typeof error.syscall === 'string' && error.syscall.startsWith('spawn')
 }
 
-async function succeeds(root: string, args: string[]): Promise<boolean> {
+export async function succeeds(root: string, args: string[]): Promise<boolean> {
   try {
     await run('git', args, { cwd: root, maxBuffer: MAX_OUTPUT, windowsHide: true })
     return true
@@ -57,7 +57,7 @@ async function classify(root: string, args: string[], error: ExecFailure): Promi
   return { kind: 'failed', args, code: exitCode(error), stderr: text(error.stderr).trim() }
 }
 
-async function git(root: string, args: string[]): Promise<GitResult<string>> {
+export async function git(root: string, args: string[]): Promise<GitResult<string>> {
   try {
     const { stdout } = await run('git', args, { cwd: root, maxBuffer: MAX_OUTPUT, windowsHide: true })
     return { ok: true, value: text(stdout) }

@@ -61,6 +61,9 @@ const architect: ArchitectApi = {
   githubRepos: (limit) => invoke('architect:github-repos', limit),
   githubBranches: (owner, repo) => invoke('architect:github-branches', owner, repo),
   githubRates: () => invoke('architect:github-rates'),
+  githubPulls: (owner, repo) => invoke('architect:github-pulls', owner, repo),
+  repoPlan: (repo, branch, pr) => invoke('architect:repo-plan', repo, branch, pr),
+  repoOpen: (repo, branch, choice, pr) => invoke('architect:repo-open', repo, branch, choice, pr),
 }
 
 contextBridge.exposeInMainWorld('architect', architect)

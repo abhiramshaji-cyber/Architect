@@ -2,9 +2,21 @@ import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
-import { type Architecture, type CodeMap, type IpcResult, type Pending, type ProjectSummary, type PtyEvent, type PtySpec } from '../shared/types'
+import {
+  type Architecture,
+  type CodeMap,
+  type IpcResult,
+  type OpenChoice,
+  type OpenResult,
+  type OpenedBranch,
+  type Pending,
+  type ProjectSummary,
+  type PtyEvent,
+  type PtySpec,
+} from '../shared/types'
 import { createDaemon } from './daemon'
 import * as git from './git/git'
+import * as open from './git/open'
 import * as github from './github/github'
 import { createPtyHost } from './pty/pty'
 
@@ -69,6 +81,31 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R |
   })
 }
 
+async function openRepoBranch(
+  repo: string,
+  branch: string,
+  choice: OpenChoice,
+  pr?: number,
+): Promise<OpenResult<OpenedBranch>> {
+  const planned = await open.plan(open.GITHUB_DIR, repo, branch, pr)
+  if (!planned.ok) return { ok: false, error: { source: 'git', error: planned.error } }
+
+  const target = planned.value
+  if (target.kind === 'clone') {
+    const cloned = await github.clone(repo, target.basePath)
+    if (!cloned.ok) return { ok: false, error: { source: 'github', error: cloned.error } }
+  }
+
+  const opened =
+    target.kind !== 'existing'
+      ? await open.create(target.basePath, target.worktreePath, branch, repo, pr)
+      : choice === 'keep'
+        ? await open.keep(target.existing, branch, repo)
+        : await open.clean(target.basePath, target.existing, target.worktreePath, branch, repo, pr)
+
+  return opened.ok ? opened : { ok: false, error: { source: 'git', error: opened.error } }
+}
+
 function wireIpc() {
   handle('architect:projects', () => daemon.projects())
   handle('architect:choose-directory', async () => {
@@ -121,9 +158,17 @@ function wireIpc() {
   handle('architect:git-prune-worktrees', (root: string) => git.pruneWorktrees(root))
 
   handle('architect:github-auth', () => github.auth())
-  handle('architect:github-repos', (limit?: number) => github.repos(limit))
+  handle('architect:github-repos', (limit?: number) => github.allRepos(limit))
   handle('architect:github-branches', (owner: string, repo: string) => github.branches(owner, repo))
   handle('architect:github-rates', () => github.rates())
+  handle('architect:github-pulls', (owner: string, repo: string) => github.pulls(owner, repo))
+
+  handle('architect:repo-plan', (repo: string, branch: string, pr?: number) =>
+    open.plan(open.GITHUB_DIR, repo, branch, pr),
+  )
+  handle('architect:repo-open', (repo: string, branch: string, choice: OpenChoice, pr?: number) =>
+    openRepoBranch(repo, branch, choice, pr),
+  )
 }
 
 app.whenReady().then(async () => {

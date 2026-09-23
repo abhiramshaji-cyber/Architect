@@ -5,6 +5,7 @@ import type {
   GithubBranch,
   GithubBudget,
   GithubFailure,
+  GithubPull,
   GithubRates,
   GithubRepo,
   GithubResult,
@@ -14,12 +15,14 @@ const HOST = 'github.com'
 const REQUIRED_SCOPES = ['repo']
 const TOKEN_VARS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']
 const TIMEOUT_MS = 20_000
+const CLONE_TIMEOUT_MS = 30 * 60 * 1000
 const MAX_OUTPUT = 16 * 1024 * 1024
 const MAX_REPOS = 1000
+const EXTRA_ORGS = ['iolotech', 'botpress', 'webarts', 'The-Blue-Space-Australia']
 
 export type GhOutput = { code: number | 'missing' | 'timeout'; stdout: string; stderr: string }
 
-export type GhRun = (args: string[]) => Promise<GhOutput>
+export type GhRun = (args: string[], timeoutMs?: number) => Promise<GhOutput>
 
 export type Gh = { run: GhRun; reach: () => Promise<boolean> }
 
@@ -29,9 +32,9 @@ export function ghEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return scrubbed
 }
 
-export const runGh: GhRun = (args) =>
+export const runGh: GhRun = (args, timeoutMs = TIMEOUT_MS) =>
   new Promise((resolve) => {
-    const options = { env: ghEnv(process.env), maxBuffer: MAX_OUTPUT, timeout: TIMEOUT_MS, windowsHide: true }
+    const options = { env: ghEnv(process.env), maxBuffer: MAX_OUTPUT, timeout: timeoutMs, windowsHide: true }
 
     execFile('gh', args, options, (error, stdout, stderr) => {
       if (!error) return resolve({ code: 0, stdout, stderr })
@@ -174,6 +177,8 @@ export async function token(gh: Gh = GH): Promise<GithubResult<string>> {
   return value === '' ? { ok: false, error: { kind: 'unreadable', args } } : { ok: true, value }
 }
 
+const SEGMENT = /^[A-Za-z0-9._-]+$/
+
 const REPO_FIELDS =
   'nameWithOwner,name,owner,description,isPrivate,isFork,isArchived,defaultBranchRef,pushedAt,url,primaryLanguage'
 
@@ -199,9 +204,12 @@ function repoOf(value: unknown): GithubRepo | null {
   }
 }
 
-export async function repos(limit = 200, gh: Gh = GH): Promise<GithubResult<GithubRepo[]>> {
+export async function repos(limit = 200, gh: Gh = GH, owner?: string): Promise<GithubResult<GithubRepo[]>> {
   const wanted = Math.min(Math.max(Math.trunc(limit) || 1, 1), MAX_REPOS)
-  const args = ['repo', 'list', '--limit', String(wanted), '--json', REPO_FIELDS]
+  if (owner !== undefined && !SEGMENT.test(owner)) return { ok: false, error: { kind: 'bad-argument', value: owner } }
+
+  const target = owner === undefined ? [] : [owner]
+  const args = ['repo', 'list', ...target, '--limit', String(wanted), '--json', REPO_FIELDS]
 
   const out = await gh.run(args)
   if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
@@ -213,8 +221,6 @@ export async function repos(limit = 200, gh: Gh = GH): Promise<GithubResult<Gith
 }
 
 const BRANCH_QUERY = '.[] | {name: .name, commit: .commit.sha, protected: .protected}'
-
-const SEGMENT = /^[A-Za-z0-9._-]+$/
 
 export async function branches(owner: string, repo: string, gh: Gh = GH): Promise<GithubResult<GithubBranch[]>> {
   for (const value of [owner, repo]) {
@@ -237,4 +243,89 @@ export async function branches(owner: string, repo: string, gh: Gh = GH): Promis
   }
 
   return { ok: true, value }
+}
+
+const COLLAB_QUERY = [
+  '.[] | {nameWithOwner: .full_name, name: .name, owner: {login: .owner.login},',
+  'description: .description, isPrivate: .private, isFork: .fork, isArchived: .archived,',
+  'defaultBranchRef: {name: .default_branch}, pushedAt: .pushed_at, url: .html_url,',
+  'primaryLanguage: {name: .language}}',
+].join(' ')
+
+async function orgLogins(gh: Gh): Promise<string[]> {
+  const out = await gh.run(['api', 'user/orgs', '--paginate', '--jq', '.[].login'])
+  if (out.code !== 0) return []
+
+  return out.stdout.split('\n').map((line) => line.trim()).filter((line) => SEGMENT.test(line))
+}
+
+async function collaborating(gh: Gh): Promise<GithubRepo[]> {
+  const query = 'user/repos?affiliation=collaborator,organization_member&per_page=100'
+  const out = await gh.run(['api', query, '--paginate', '--jq', COLLAB_QUERY])
+  if (out.code !== 0) return []
+
+  return out.stdout
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => repoOf(parsed(line)))
+    .filter((repo): repo is GithubRepo => repo !== null)
+}
+
+export async function allRepos(limit = 200, gh: Gh = GH): Promise<GithubResult<GithubRepo[]>> {
+  const [mine, orgs, shared] = await Promise.all([repos(limit, gh), orgLogins(gh), collaborating(gh)])
+  if (!mine.ok) return mine
+
+  const owners = [...new Set([...orgs, ...EXTRA_ORGS])]
+  const listings = await Promise.all(owners.map((owner) => repos(limit, gh, owner)))
+
+  const found = new Map<string, GithubRepo>()
+  for (const repo of [...mine.value, ...shared]) found.set(repo.nameWithOwner, repo)
+  for (const listing of listings) {
+    if (!listing.ok) continue
+    for (const repo of listing.value) found.set(repo.nameWithOwner, repo)
+  }
+
+  const value = [...found.values()].sort((a, b) => a.nameWithOwner.localeCompare(b.nameWithOwner, 'en'))
+  return { ok: true, value }
+}
+
+export async function pulls(owner: string, repo: string, gh: Gh = GH): Promise<GithubResult<GithubPull[]>> {
+  for (const value of [owner, repo]) {
+    if (!SEGMENT.test(value)) return { ok: false, error: { kind: 'bad-argument', value } }
+  }
+
+  const args = ['pr', 'list', '--repo', `${owner}/${repo}`, '--json', 'number,title,headRefName', '--limit', '100']
+  const out = await gh.run(args)
+  if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
+
+  const listed = parsed(out.stdout)
+  if (!Array.isArray(listed)) return { ok: false, error: { kind: 'unreadable', args } }
+
+  const value: GithubPull[] = []
+  for (const entry of listed) {
+    const row = record(entry)
+    const number = count(row?.number)
+    const head = text(row?.headRefName)
+    if (number === null || head === '') return { ok: false, error: { kind: 'unreadable', args } }
+
+    value.push({ number, title: text(row?.title), head })
+  }
+
+  return { ok: true, value }
+}
+
+export async function clone(nameWithOwner: string, target: string, gh: Gh = GH): Promise<GithubResult<{ path: string }>> {
+  const [owner = '', name = '', extra] = nameWithOwner.split('/')
+  if (extra !== undefined || !SEGMENT.test(owner) || !SEGMENT.test(name)) {
+    return { ok: false, error: { kind: 'bad-argument', value: nameWithOwner } }
+  }
+  if (target === '' || target.startsWith('-') || target.includes('\0')) {
+    return { ok: false, error: { kind: 'bad-argument', value: target } }
+  }
+
+  const args = ['repo', 'clone', nameWithOwner, target]
+  const out = await gh.run(args, CLONE_TIMEOUT_MS)
+  if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
+
+  return { ok: true, value: { path: target } }
 }

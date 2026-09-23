@@ -547,6 +547,15 @@ export function installMock() {
     },
     async githubRates() {
       return demoGithub
+    },
+    async githubPulls() {
+      return demoGithub
+    },
+    async repoPlan(repo) {
+      return demoGit(repo)
+    },
+    async repoOpen(repo) {
+      return { ok: false, error: { source: 'git', error: demoGit(repo).error } } as const
     }
   }
 }

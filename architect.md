@@ -13,11 +13,11 @@ Parses, serializes and queries `architect.md`. Fully deterministic, no model cal
 owns: `electron/contract/graph.ts`
 
 ### git
-Shells out to the git binary and returns typed results for branch, dirty state, worktrees, the remote default branch and a file at a ref. No git library, no domain logic.
+Shells out to the git binary and returns typed results for branch, dirty state, worktrees, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. No git library, no domain logic.
 owns: `electron/git/**`
 
 ### github
-Shells out to the gh CLI for the GitHub credential and reads the account's repos and a repo's branches. No token is stored by us and none crosses the preload bridge.
+Shells out to the gh CLI for the GitHub credential, reads the account's repos, a repo's branches and its open pull requests, and clones a repo with that credential. No token is stored by us and none crosses the preload bridge.
 owns: `electron/github/**`
 
 ### daemon

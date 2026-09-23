@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { auth, type GhOutput, type GhRun, ghEnv, branches, rates, repos, token } from './github'
+import { allRepos, auth, clone, type GhOutput, type GhRun, ghEnv, branches, pulls, rates, repos, token } from './github'
 
 function fake(handler: (args: string[]) => Partial<GhOutput>, online = true) {
   const calls: string[][] = []
@@ -357,5 +357,116 @@ describe('rates', () => {
     const out = await rates(fake(() => ({ stdout: '{"resources":{"core":{"limit":1,"remaining":1,"reset":2}}}' })).gh)
 
     expect(out).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
+  })
+})
+
+function named(name: string): string {
+  return JSON.stringify([{ nameWithOwner: name }])
+}
+
+describe('allRepos', () => {
+  function machine(handler: (args: string[]) => Partial<GhOutput>) {
+    return fake((args) => {
+      if (args[0] === 'repo' && args[1] === 'list') return handler(args)
+      if (args[1] === 'user/orgs') return { stdout: 'botpress\niolotech\n' }
+      if (String(args[1]).startsWith('user/repos')) return { stdout: JSON.stringify({ nameWithOwner: 'friend/shared' }) }
+      return {}
+    })
+  }
+
+  it('unions the personal, collaborating and organisation listings without repeating one', async () => {
+    const listing = machine((args) => ({ stdout: named(args[2] === undefined || args[2].startsWith('--') ? 'me/own' : `${args[2]}/thing`) }))
+    const out = await allRepos(10, listing.gh)
+
+    expect(out.ok && out.value.map((repo) => repo.nameWithOwner)).toEqual([
+      'botpress/thing',
+      'friend/shared',
+      'iolotech/thing',
+      'me/own',
+      'The-Blue-Space-Australia/thing',
+      'webarts/thing',
+    ])
+  })
+
+  it('asks each organisation the account never joined but works in', async () => {
+    const listing = machine(() => ({ stdout: '[]' }))
+    await allRepos(10, listing.gh)
+
+    const owners = listing.calls.filter((args) => args[0] === 'repo' && args[2] && !args[2].startsWith('--')).map((args) => args[2])
+
+    expect(owners).toEqual(['botpress', 'iolotech', 'webarts', 'The-Blue-Space-Australia'])
+  })
+
+  it('keeps the listing when one organisation refuses rather than losing every repo', async () => {
+    const listing = machine((args) => (args[2] === 'botpress' ? { code: 1, stderr: 'HTTP 404' } : { stdout: named('me/own') }))
+    const out = await allRepos(10, listing.gh)
+
+    expect(out).toMatchObject({ ok: true })
+    expect(out.ok && out.value.some((repo) => repo.owner === 'botpress')).toBe(false)
+  })
+
+  it('fails when the account listing itself fails, because that is the signed out case', async () => {
+    const listing = machine(() => ({ code: 4 }))
+    const out = await allRepos(10, listing.gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'auth-required' } })
+  })
+})
+
+describe('pulls', () => {
+  it('reads the number, title and head branch of each open pull request', async () => {
+    const rows = JSON.stringify([{ number: 7, title: 'a fix', headRefName: 'fix/thing' }])
+    const out = await pulls('cli', 'cli', fake(() => ({ stdout: rows })).gh)
+
+    expect(out).toEqual({ ok: true, value: [{ number: 7, title: 'a fix', head: 'fix/thing' }] })
+  })
+
+  it('fails rather than dropping a row missing its head branch', async () => {
+    const out = await pulls('cli', 'cli', fake(() => ({ stdout: JSON.stringify([{ number: 7 }]) })).gh)
+
+    expect(out).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
+  })
+
+  it('refuses an owner that is not a path segment', async () => {
+    expect(await pulls('../etc', 'cli', fake(() => ({})).gh)).toEqual({
+      ok: false,
+      error: { kind: 'bad-argument', value: '../etc' },
+    })
+  })
+})
+
+describe('clone', () => {
+  it('hands gh the repository and the target directory', async () => {
+    const machine = fake(() => ({ code: 0 }))
+    const out = await clone('octocat/hello', '/repos/hello', machine.gh)
+
+    expect(out).toEqual({ ok: true, value: { path: '/repos/hello' } })
+    expect(machine.calls[0]).toEqual(['repo', 'clone', 'octocat/hello', '/repos/hello'])
+  })
+
+  it('allows longer than a listing before giving up, because a clone is not a read', async () => {
+    const waits: (number | undefined)[] = []
+    const gh = { run: async (_args: string[], timeoutMs?: number) => { waits.push(timeoutMs); return { code: 0, stdout: '', stderr: '' } satisfies GhOutput }, reach: async () => true }
+    await clone('octocat/hello', '/repos/hello', gh)
+
+    expect(waits[0]).toBeGreaterThan(60_000)
+  })
+
+  it('refuses a target that git would read as a flag and a name that is not owner and repo', async () => {
+    expect(await clone('octocat/hello', '--upload-pack=x', fake(() => ({})).gh)).toEqual({
+      ok: false,
+      error: { kind: 'bad-argument', value: '--upload-pack=x' },
+    })
+    expect(await clone('octocat/hello/extra', '/repos/hello', fake(() => ({})).gh)).toEqual({
+      ok: false,
+      error: { kind: 'bad-argument', value: 'octocat/hello/extra' },
+    })
+  })
+
+  it('reports a repository the token cannot reach rather than a raw exit code', async () => {
+    const body = JSON.stringify({ status: '404' })
+    const out = await clone('octocat/hello', '/repos/hello', fake(() => ({ code: 1, stdout: body })).gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'not-found' } })
   })
 })
