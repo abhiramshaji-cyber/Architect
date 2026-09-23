@@ -397,9 +397,6 @@ export function installMock() {
     async projects() {
       return Object.entries(roots).map(([root, title]) => ({ root, title, contract: { status: 'ready' as const } }))
     },
-    async chooseDirectory() {
-      return null
-    },
     async open(root) {
       const arch = architectures[root]
       if (!arch) throw new Error(`unknown project: ${root}`)

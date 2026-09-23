@@ -234,6 +234,7 @@ body {
 }
 
 .empty {
+  margin: 0;
   color: var(--text-dim);
   font-size: 12px;
   padding: 4px 2px;

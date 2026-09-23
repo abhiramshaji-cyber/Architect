@@ -25,6 +25,8 @@ export default function App() {
     setTheme(next)
   }, [theme])
 
+  const showRepos = useCallback(() => panes.showView(panes.focus, 'repos'), [panes.showView, panes.focus])
+
   const activePane = at(panes.tree, panes.focus)
   const viewLabel = activePane?.kind === 'leaf' ? views[activePane.view].label : null
 
@@ -32,7 +34,7 @@ export default function App() {
     <div className="app">
       <div className="app-body">
         <aside className="sidebar">
-          <ProjectList theme={theme} onFlipTheme={flipTheme} />
+          <ProjectList theme={theme} onFlipTheme={flipTheme} onShowRepos={showRepos} />
           <EditList />
           <PendingInbox />
         </aside>

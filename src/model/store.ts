@@ -238,15 +238,6 @@ export function createContract(): void {
   })
 }
 
-export function openFolder(): void {
-  void window.architect
-    .chooseDirectory()
-    .then((root) => {
-      if (root) openProject(root)
-    })
-    .catch(fail)
-}
-
 export function closeProject(root: string): void {
   const entry = state.entries[root]
   if (entry && !discardOk(entry)) return
