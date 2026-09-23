@@ -207,6 +207,60 @@ export type GitFailure =
 
 export type GitResult<T> = { ok: true; value: T } | { ok: false; error: GitFailure }
 
+export type DiffSection = 'branch' | 'staged' | 'unstaged'
+
+export type ChangeStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'copied'
+  | 'typechanged'
+  | 'unmerged'
+  | 'untracked'
+
+export type ChangedFile = {
+  path: string
+  from: string | null
+  status: ChangeStatus
+  similarity: number | null
+  added: number | null
+  removed: number | null
+  binary: boolean
+}
+
+export type DiffChanges = {
+  status: GitStatus
+  base: GitResult<string>
+  branch: GitResult<ChangedFile[]>
+  staged: GitResult<ChangedFile[]>
+  unstaged: GitResult<ChangedFile[]>
+}
+
+export type DiffSide = { line: number; text: string; noNewline: boolean }
+
+export type DiffRow = { old: DiffSide | null; new: DiffSide | null; context: boolean }
+
+export type DiffHunk = {
+  header: string
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  rows: DiffRow[]
+}
+
+export type FileDiff = {
+  path: string
+  from: string | null
+  binary: boolean
+  bytes: number
+  oversize: boolean
+  hunks: DiffHunk[]
+}
+
+export const MAX_DIFF_BYTES = 2 * 1024 * 1024
+
 export type GithubAccount = { host: string; login: string; scopes: string[] }
 
 export type GithubAuth =
@@ -311,6 +365,10 @@ export type ArchitectApi = {
   gitCreateWorktree(root: string, path: string, name: string, base?: string): Promise<GitResult<WorktreeCreated>>
   gitRemoveWorktree(root: string, path: string): Promise<GitResult<{ path: string }>>
   gitPruneWorktrees(root: string): Promise<GitResult<Worktree[]>>
+  gitChanges(root: string): Promise<GitResult<DiffChanges>>
+  gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
+  gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
+  gitUnstageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
   githubAuth(): Promise<GithubResult<GithubAuth>>
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
   githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>

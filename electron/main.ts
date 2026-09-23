@@ -4,7 +4,9 @@ import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
 import {
   type Architecture,
+  type ChangedFile,
   type CodeMap,
+  type DiffSection,
   type IpcResult,
   type OpenChoice,
   type OpenResult,
@@ -15,6 +17,7 @@ import {
   type PtySpec,
 } from '../shared/types'
 import { createDaemon } from './daemon'
+import * as diff from './git/diff'
 import * as git from './git/git'
 import * as open from './git/open'
 import * as github from './github/github'
@@ -153,6 +156,12 @@ function wireIpc() {
     git.removeWorktree(root, target),
   )
   handle('architect:git-prune-worktrees', (root: string) => git.pruneWorktrees(root))
+  handle('architect:git-changes', (root: string) => diff.changes(root))
+  handle('architect:git-file-diff', (root: string, section: DiffSection, file: ChangedFile, full?: boolean) =>
+    diff.fileDiff(root, section, file, full),
+  )
+  handle('architect:git-stage-file', (root: string, file: ChangedFile) => diff.stageFile(root, file))
+  handle('architect:git-unstage-file', (root: string, file: ChangedFile) => diff.unstageFile(root, file))
 
   handle('architect:github-auth', () => github.auth())
   handle('architect:github-repos', (limit?: number) => github.allRepos(limit))

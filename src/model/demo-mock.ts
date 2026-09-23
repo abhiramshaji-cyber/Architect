@@ -536,6 +536,18 @@ export function installMock() {
     async gitPruneWorktrees(root) {
       return demoGit(root)
     },
+    async gitChanges(root) {
+      return demoGit(root)
+    },
+    async gitFileDiff(root) {
+      return demoGit(root)
+    },
+    async gitStageFile(root) {
+      return demoGit(root)
+    },
+    async gitUnstageFile(root) {
+      return demoGit(root)
+    },
     async githubAuth() {
       return { ok: true, value: { kind: 'not-installed' } }
     },
