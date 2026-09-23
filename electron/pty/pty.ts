@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
@@ -48,6 +49,19 @@ export function tmuxSessionName(cwd: string): string {
     .replace(/^-+|-+$/g, '')
 
   return slug ? `architect-${slug}-${digest}` : `architect-${digest}`
+}
+
+export function resolveCwd(cwd: string | undefined): string {
+  if (cwd === undefined || cwd.trim() === '')
+    throw new Error('Open a project first, a terminal needs a directory to start in.')
+
+  const full = path.resolve(cwd)
+
+  try {
+    return fs.statSync(full).isDirectory() ? full : os.homedir()
+  } catch {
+    return os.homedir()
+  }
 }
 
 function tmuxAvailable(): boolean {
@@ -113,22 +127,15 @@ export function createPtyHost(
 
   function spawnSession(spec: PtySpec) {
     const id = randomUUID()
+    const cwd = resolveCwd(spec.cwd)
     const cols = cells(spec.cols, 80)
     const rows = cells(spec.rows, 24)
     const tmux =
-      spec.tmux !== false && spec.shell === undefined && spec.cwd !== undefined && hasTmux()
-        ? tmuxSessionName(spec.cwd)
-        : null
+      spec.tmux !== false && spec.shell === undefined && hasTmux() ? tmuxSessionName(cwd) : null
     const file = tmux ? 'tmux' : (spec.shell ?? defaultShell())
     const args = tmux ? ['new-session', '-A', '-s', tmux] : (spec.args ?? [])
 
-    const pty = spawn(file, args, {
-      name: 'xterm-256color',
-      cwd: spec.cwd ?? os.homedir(),
-      cols,
-      rows,
-      env: shellEnv(),
-    })
+    const pty = spawn(file, args, { name: 'xterm-256color', cwd, cols, rows, env: shellEnv() })
 
     const session: Session = { pty, pending: '', timer: null, listeners: [], alive: true }
     sessions.set(id, session)
@@ -143,7 +150,7 @@ export function createPtyHost(
       }),
     )
 
-    return { id, pid: pty.pid }
+    return { id, pid: pty.pid, cwd }
   }
 
   function live(id: string): Session | null {

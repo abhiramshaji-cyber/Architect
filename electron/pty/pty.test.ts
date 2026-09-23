@@ -1,5 +1,8 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPtyHost, tmuxSessionName, type PtyProcess, type PtySpawner } from './pty'
+import { createPtyHost, resolveCwd, tmuxSessionName, type PtyProcess, type PtySpawner } from './pty'
 import type { PtyEvent } from '../../shared/types'
 
 type Fake = PtyProcess & {
@@ -65,12 +68,22 @@ function host(spawn: PtySpawner, hasTmux = () => false) {
   return { host: createPtyHost(spawn, (event) => events.push(event), hasTmux), events }
 }
 
+let repo = ''
+let main = ''
+let feature = ''
+
 beforeEach(() => {
   vi.useFakeTimers()
+  repo = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-pty-'))
+  main = path.join(repo, 'main')
+  feature = path.join(repo, 'feature')
+  fs.mkdirSync(main)
+  fs.mkdirSync(feature)
 })
 
 afterEach(() => {
   vi.useRealTimers()
+  fs.rmSync(repo, { recursive: true, force: true })
 })
 
 describe('spawn', () => {
@@ -84,11 +97,11 @@ describe('spawn', () => {
 
   it('passes the requested shell, cwd and size to the child', () => {
     const { spawn, made } = fakes()
-    host(spawn).host.spawn({ cwd: '/tmp/work', shell: '/bin/zsh', args: ['-l'], cols: 100, rows: 40 })
+    host(spawn).host.spawn({ cwd: main, shell: '/bin/zsh', args: ['-l'], cols: 100, rows: 40 })
 
     expect(made[0]?.file).toBe('/bin/zsh')
     expect(made[0]?.args).toEqual(['-l'])
-    expect(made[0]?.options.cwd).toBe('/tmp/work')
+    expect(made[0]?.options.cwd).toBe(main)
     expect(made[0]?.options.cols).toBe(100)
     expect(made[0]?.options.rows).toBe(40)
     expect(made[0]?.options.env.TERM).toBe('xterm-256color')
@@ -116,7 +129,7 @@ describe('spawn', () => {
     }
     const { host: h } = host(failing)
 
-    expect(() => h.spawn({ cwd: '/nope', cols: 80, rows: 24 })).toThrow('posix_spawnp failed')
+    expect(() => h.spawn({ cwd: main, cols: 80, rows: 24 })).toThrow('posix_spawnp failed')
     expect(h.ids()).toEqual([])
   })
 
@@ -383,19 +396,65 @@ describe('killAll', () => {
   })
 })
 
+describe('cwd', () => {
+  it('starts in the directory it was given and reports it back', () => {
+    const { spawn, made } = fakes()
+    const started = host(spawn).host.spawn({ cwd: main, cols: 80, rows: 24 })
+
+    expect(made[0]?.options.cwd).toBe(main)
+    expect(started.cwd).toBe(main)
+  })
+
+  it('refuses to spawn when no project is open rather than landing in the home directory', () => {
+    const { spawn, made } = fakes()
+    const { host: h } = host(spawn)
+
+    expect(() => h.spawn({ cols: 80, rows: 24 })).toThrow(/Open a project/)
+    expect(() => h.spawn({ cwd: '   ', cols: 80, rows: 24 })).toThrow(/Open a project/)
+    expect(made).toHaveLength(0)
+    expect(h.ids()).toEqual([])
+  })
+
+  it('falls back to the home directory and says so when the directory is not one', () => {
+    const { spawn, made } = fakes()
+    const file = path.join(repo, 'a-file')
+    fs.writeFileSync(file, '')
+    const unreadable = [path.join(repo, 'deleted'), file, path.join(file, 'under-a-file')]
+    const { host: h } = host(spawn)
+
+    for (const cwd of unreadable) expect(h.spawn({ cwd, cols: 80, rows: 24 }).cwd).toBe(os.homedir())
+    for (const made0 of made) expect(made0.options.cwd).toBe(os.homedir())
+    expect(made).toHaveLength(unreadable.length)
+  })
+
+  it('resolves a relative or untidy path to one absolute directory', () => {
+    expect(resolveCwd(main + '/')).toBe(main)
+    expect(resolveCwd(path.join(feature, '..', 'main'))).toBe(main)
+    expect(tmuxSessionName(resolveCwd(main + '/'))).toBe(tmuxSessionName(main))
+  })
+
+  it('keys tmux on the directory the shell actually started in', () => {
+    const { spawn, made } = fakes()
+    host(spawn, () => true).host.spawn({ cwd: path.join(repo, 'missing'), cols: 80, rows: 24 })
+
+    expect(made[0]?.args).toEqual(['new-session', '-A', '-s', tmuxSessionName(os.homedir())])
+    expect(made[0]?.options.cwd).toBe(os.homedir())
+  })
+})
+
 describe('tmux', () => {
   it('attaches or creates one session named for the worktree', () => {
     const { spawn, made } = fakes()
-    host(spawn, () => true).host.spawn({ cwd: '/tmp/work', cols: 80, rows: 24 })
+    host(spawn, () => true).host.spawn({ cwd: main, cols: 80, rows: 24 })
 
     expect(made[0]?.file).toBe('tmux')
-    expect(made[0]?.args).toEqual(['new-session', '-A', '-s', tmuxSessionName('/tmp/work')])
-    expect(made[0]?.options.cwd).toBe('/tmp/work')
+    expect(made[0]?.args).toEqual(['new-session', '-A', '-s', tmuxSessionName(main)])
+    expect(made[0]?.options.cwd).toBe(main)
   })
 
   it('runs the plain shell when tmux is not available', () => {
     const { spawn, made } = fakes()
-    host(spawn, () => false).host.spawn({ cwd: '/tmp/work', cols: 80, rows: 24 })
+    host(spawn, () => false).host.spawn({ cwd: main, cols: 80, rows: 24 })
 
     expect(made[0]?.file).not.toBe('tmux')
     expect(made[0]?.args).toEqual([])
@@ -403,32 +462,25 @@ describe('tmux', () => {
 
   it('runs the plain shell when the caller opts out', () => {
     const { spawn, made } = fakes()
-    host(spawn, () => true).host.spawn({ cwd: '/tmp/work', tmux: false, cols: 80, rows: 24 })
+    host(spawn, () => true).host.spawn({ cwd: main, tmux: false, cols: 80, rows: 24 })
 
     expect(made[0]?.file).not.toBe('tmux')
   })
 
   it('runs the named program rather than tmux when the caller names one', () => {
     const { spawn, made } = fakes()
-    host(spawn, () => true).host.spawn({ cwd: '/tmp/work', shell: '/bin/zsh', args: ['-l'], cols: 80, rows: 24 })
+    host(spawn, () => true).host.spawn({ cwd: main, shell: '/bin/zsh', args: ['-l'], cols: 80, rows: 24 })
 
     expect(made[0]?.file).toBe('/bin/zsh')
     expect(made[0]?.args).toEqual(['-l'])
   })
 
-  it('runs the plain shell when there is no worktree to key on', () => {
-    const { spawn, made } = fakes()
-    host(spawn, () => true).host.spawn({ cols: 80, rows: 24 })
-
-    expect(made[0]?.file).not.toBe('tmux')
-  })
-
   it('reattaches the same worktree and separates different ones', () => {
     const { spawn, made } = fakes()
     const { host: h } = host(spawn, () => true)
-    h.spawn({ cwd: '/repo/main', cols: 80, rows: 24 })
-    h.spawn({ cwd: '/repo/main/', cols: 80, rows: 24 })
-    h.spawn({ cwd: '/repo/feature', cols: 80, rows: 24 })
+    h.spawn({ cwd: main, cols: 80, rows: 24 })
+    h.spawn({ cwd: main + '/', cols: 80, rows: 24 })
+    h.spawn({ cwd: feature, cols: 80, rows: 24 })
 
     expect(made[1]?.args).toEqual(made[0]?.args)
     expect(made[2]?.args).not.toEqual(made[0]?.args)
@@ -455,8 +507,8 @@ describe('tmux', () => {
   it('detaches rather than killing the session on every teardown path', () => {
     const { spawn, made } = fakes()
     const { host: h } = host(spawn, () => true)
-    const one = h.spawn({ cwd: '/repo/main', cols: 80, rows: 24 })
-    h.spawn({ cwd: '/repo/feature', cols: 80, rows: 24 })
+    const one = h.spawn({ cwd: main, cols: 80, rows: 24 })
+    h.spawn({ cwd: feature, cols: 80, rows: 24 })
 
     h.kill(one.id)
     h.killAll()

@@ -339,7 +339,7 @@ export type PtySpec = {
   rows: number
 }
 
-export type PtySession = { id: string; pid: number }
+export type PtySession = { id: string; pid: number; cwd?: string }
 
 export type PtyEvent =
   | { type: 'data'; id: string; chunk: string }
