@@ -349,6 +349,8 @@ export function installMock() {
     return lines.join('\n')
   }
 
+  const edited: Record<string, string> = {}
+
   const codeMaps: Record<string, CodeMap> = {
     '/Users/demo/code/architect': mockCodeMap('/Users/demo/code/architect')
   }
@@ -356,13 +358,18 @@ export function installMock() {
   const ownerships: Record<string, Ownership> = {
     '/Users/demo/code/architect': {
       owned: [
-        { path: 'src/api/routes.ts', owner: 'api' },
-        { path: 'src/db/client.ts', owner: 'db' },
-        { path: 'src/ui/App.tsx', owner: 'ui' },
-        { path: 'src/worker/queue.ts', owner: 'worker' }
+        { path: 'src/App.tsx', owner: 'ui' },
+        { path: 'src/ui/Button.tsx', owner: 'ui' },
+        { path: 'src/ui/panels/Inspector.tsx', owner: 'ui' },
+        { path: 'src/parse.ts', owner: 'api' },
+        { path: 'src/layout.ts', owner: 'api' },
+        { path: 'src/workflows/runner.ts', owner: 'worker' },
+        { path: 'src/workflows/queue.ts', owner: 'worker' },
+        { path: 'electron/main.ts', owner: 'db' },
+        { path: 'electron/preload.ts', owner: 'db' }
       ],
-      unowned: ['README.md', 'src/index.ts'],
-      multi: [{ path: 'src/db/schema.ts', owners: ['api', 'db'] }],
+      unowned: ['README.md', 'index.ts', 'package.json', 'vite.config.ts'],
+      multi: [{ path: 'src/types.ts', owners: ['api', 'db'] }],
       dead: [{ component: 'db', pattern: 'scripts/seed/*.ts' }]
     }
   }
@@ -475,6 +482,41 @@ export function installMock() {
       const span = Math.min(400, Math.max(0, length))
 
       return { from: start, lines: lines.slice(start - 1, start - 1 + span), total: lines.length, error: null }
+    },
+    async openSource(root, file) {
+      const text = edited[`${root}:${file}`] ?? mockFileText(root, file)
+      return { text, hash: String(text.length), error: null }
+    },
+    async writeSource(root, file, text, baseline) {
+      const current = edited[`${root}:${file}`] ?? mockFileText(root, file)
+      if (String(current.length) !== baseline) return { hash: '', error: 'stale' }
+      edited[`${root}:${file}`] = text
+      return { hash: String(text.length), error: null }
+    },
+    async readTree(root, dir) {
+      const map = codeMaps[root]
+      if (!map) return { dir, entries: [], error: 'closed' }
+
+      const folder = map.folders.find((f) => f.path === dir)
+      if (!folder) return { dir, entries: [], error: 'unreadable' }
+
+      const owners = ownerships[root]
+      const ownersOf = (path: string) =>
+        owners?.multi.find((m) => m.path === path)?.owners ??
+        (owners?.owned.find((o) => o.path === path)?.owner ? [owners.owned.find((o) => o.path === path)!.owner] : [])
+
+      return {
+        dir,
+        entries: [
+          ...folder.folders.map((at) => ({ name: at.slice(at.lastIndexOf('/') + 1), dir: true, owners: [] })),
+          ...folder.files.map((file) => ({
+            name: file.path.slice(file.path.lastIndexOf('/') + 1),
+            dir: false,
+            owners: ownersOf(file.path),
+          })),
+        ],
+        error: null,
+      }
     },
     async ownership(root) {
       return ownerships[root] ?? null

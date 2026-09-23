@@ -10,6 +10,7 @@ import type {
   Pending,
   ProjectSummary,
 } from '../../shared/types'
+import { isDirty, refusalOf, type Buffer } from './buffer'
 import type { OpResult } from './edit-ops'
 
 export type ProjectEntry = {
@@ -27,6 +28,10 @@ export type ProjectEntry = {
   owners: Ownership | null
   drafting: boolean
   draftError: DraftFailure | null
+  file: Buffer | null
+  fileLine: number | null
+  fileBusy: boolean
+  fileNotice: { text: string; error: boolean } | null
 }
 
 export type ProjectState = {
@@ -48,6 +53,10 @@ export type ProjectState = {
   owners: Ownership | null
   drafting: boolean
   draftError: DraftFailure | null
+  file: Buffer | null
+  fileLine: number | null
+  fileBusy: boolean
+  fileNotice: { text: string; error: boolean } | null
 }
 
 function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
@@ -66,6 +75,10 @@ function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
     owners: null,
     drafting: false,
     draftError: null,
+    file: null,
+    fileLine: null,
+    fileBusy: false,
+    fileNotice: null,
   }
 }
 
@@ -84,6 +97,10 @@ function activeView(entries: Record<string, ProjectEntry>, root: string | null) 
     owners: entry?.owners ?? null,
     drafting: entry?.drafting ?? false,
     draftError: entry?.draftError ?? null,
+    file: entry?.file ?? null,
+    fileLine: entry?.fileLine ?? null,
+    fileBusy: entry?.fileBusy ?? false,
+    fileNotice: entry?.fileNotice ?? null,
   }
 }
 
@@ -431,4 +448,101 @@ export function closeEdit(): void {
   if (!root || !entry || entry.busy || !discardOk(entry)) return
   patchEntry(root, { draft: null, dirty: false })
   set({ message: null })
+}
+
+let fileRequest = 0
+
+export function openFile(path: string, line?: number): void {
+  const root = state.currentRoot
+  const entry = root ? state.entries[root] : undefined
+  if (!root || !entry) return
+
+  if (entry.file?.path === path) {
+    patchEntry(root, { fileLine: line ?? null })
+    return
+  }
+
+  if (isDirty(entry.file) && !confirm(`${entry.file?.path} has unsaved changes. Discard them?`)) return
+
+  const token = ++fileRequest
+  patchEntry(root, { file: null, fileLine: line ?? null, fileBusy: true, fileNotice: null })
+  void window.architect
+    .openSource(root, path)
+    .then((source) => {
+      if (token !== fileRequest || !state.entries[root]) return
+      patchEntry(root, {
+        file: { path, disk: source.text, hash: source.hash, draft: source.text, error: source.error },
+        fileBusy: false,
+      })
+    })
+    .catch((err: unknown) => {
+      if (token !== fileRequest || !state.entries[root]) return
+      patchEntry(root, {
+        file: { path, disk: '', hash: '', draft: '', error: 'unreadable' },
+        fileBusy: false,
+        fileNotice: { text: errorText(err), error: true },
+      })
+    })
+}
+
+export function reloadFile(): void {
+  const root = state.currentRoot
+  const entry = root ? state.entries[root] : undefined
+  const open = entry?.file
+  if (!root || !entry || !open) return
+  patchEntry(root, { file: null })
+  openFile(open.path, entry.fileLine ?? undefined)
+}
+
+export function editFile(draft: string): void {
+  const root = state.currentRoot
+  const entry = root ? state.entries[root] : undefined
+  const open = entry?.file
+  if (!root || !open || open.error !== null || open.draft === draft) return
+  patchEntry(root, { file: { ...open, draft }, fileNotice: null })
+}
+
+export function revertFile(): void {
+  const root = state.currentRoot
+  const entry = root ? state.entries[root] : undefined
+  const open = entry?.file
+  if (!root || !open || !isDirty(open)) return
+  patchEntry(root, { file: { ...open, draft: open.disk }, fileNotice: null })
+}
+
+export function saveFile(): void {
+  const root = state.currentRoot
+  const entry = root ? state.entries[root] : undefined
+  const open = entry?.file
+  if (!root || !entry || !open || entry.fileBusy || !isDirty(open)) return
+
+  const draft = open.draft
+  patchEntry(root, { fileBusy: true, fileNotice: null })
+  void window.architect
+    .writeSource(root, open.path, draft, open.hash)
+    .then((result) => {
+      const still = state.entries[root]?.file
+      if (!still || still.path !== open.path) return
+      if (result.error !== null) {
+        patchEntry(root, { fileBusy: false, fileNotice: { text: refusalOf(result.error), error: true } })
+        return
+      }
+      patchEntry(root, {
+        file: { ...still, disk: draft, hash: result.hash },
+        fileBusy: false,
+        fileNotice: { text: 'Saved', error: false },
+      })
+    })
+    .catch((err: unknown) => {
+      if (!state.entries[root]) return
+      patchEntry(root, { fileBusy: false, fileNotice: { text: errorText(err), error: true } })
+    })
+}
+
+export function closeFile(): void {
+  const root = state.currentRoot
+  const entry = root ? state.entries[root] : undefined
+  if (!root || !entry) return
+  if (isDirty(entry.file) && !confirm(`${entry.file?.path} has unsaved changes. Discard them?`)) return
+  patchEntry(root, { file: null, fileLine: null, fileNotice: null, fileBusy: false })
 }

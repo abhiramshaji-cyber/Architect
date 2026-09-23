@@ -135,6 +135,11 @@ function wireIpc() {
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
   )
+  handle('architect:open-source', (root: string, file: string) => daemon.openSource(root, file))
+  handle('architect:write-source', (root: string, file: string, text: string, baseline: string) =>
+    daemon.writeSource(root, file, text, baseline),
+  )
+  handle('architect:read-tree', (root: string, dir: string) => daemon.readTree(root, dir))
 
   handle('architect:pty-spawn', (spec: PtySpec) => ptyHost.spawn(spec))
   handle('architect:pty-write', (id: string, data: string) => ptyHost.write(id, data))

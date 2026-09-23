@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react'
+import { isDirty } from '../model/buffer'
 import { pendingHere, type ProjectState } from '../model/store'
 import { registerSegment, segmentList, subscribeSegments } from './segments'
 
@@ -32,6 +33,12 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
         text: waiting === 0 ? '' : `${waiting} pending approval${waiting === 1 ? '' : 's'}`,
       }),
     [waiting]
+  )
+
+  const unsaved = isDirty(project.file) ? project.file?.path ?? '' : ''
+  useEffect(
+    () => registerSegment({ id: 'core.unsaved', order: 12, text: unsaved === '' ? '' : `${unsaved} [+]` }),
+    [unsaved]
   )
 
   useEffect(() => {

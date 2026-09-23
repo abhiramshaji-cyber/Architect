@@ -1725,3 +1725,216 @@ describe('source watcher', () => {
     expect(seen[0]?.files).toContain('again.ts')
   })
 })
+
+describe('openSource', () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.open(tmpRoot)
+  })
+
+  it('returns the whole file and a hash of its bytes', async () => {
+    const text = 'one\ntwo\nthree\n'
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), text)
+
+    expect(await daemon.openSource(tmpRoot, 'a.ts')).toEqual({
+      text,
+      hash: createHash('sha256').update(text).digest('hex'),
+      error: null,
+    })
+  })
+
+  it('refuses a root that is not an open project', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\n')
+
+    expect(await daemon.openSource(path.dirname(tmpRoot), `${path.basename(tmpRoot)}/a.ts`)).toMatchObject({
+      text: '',
+      error: 'closed',
+    })
+  })
+
+  it('refuses a path that escapes the root', async () => {
+    const outside = path.join(tmpRoot, '..', `escape-${randomUUID()}.ts`)
+    fs.writeFileSync(outside, 'secret\n')
+
+    try {
+      expect(await daemon.openSource(tmpRoot, `../${path.basename(outside)}`)).toMatchObject({ error: 'outside' })
+      expect(await daemon.openSource(tmpRoot, outside)).toMatchObject({ error: 'outside' })
+    } finally {
+      fs.rmSync(outside, { force: true })
+    }
+  })
+
+  it('refuses a directory, a missing file and a binary file', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'sub'), { recursive: true })
+    fs.writeFileSync(path.join(tmpRoot, 'bin.ts'), Buffer.from([0x68, 0x69, 0x00]))
+
+    expect(await daemon.openSource(tmpRoot, 'sub')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.openSource(tmpRoot, 'nope.ts')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.openSource(tmpRoot, 'bin.ts')).toMatchObject({ error: 'binary' })
+  })
+
+  it('refuses a file past the byte cap', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'huge.ts'), 'x'.repeat(4 * 1024 * 1024 + 1))
+
+    expect(await daemon.openSource(tmpRoot, 'huge.ts')).toMatchObject({ text: '', error: 'large' })
+  })
+})
+
+describe('writeSource', () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.open(tmpRoot)
+  })
+
+  async function opened(file: string, text: string) {
+    fs.writeFileSync(path.join(tmpRoot, file), text)
+    return daemon.openSource(tmpRoot, file)
+  }
+
+  it('round trips a change and hands back the hash of what it wrote', async () => {
+    const before = await opened('a.ts', 'one\ntwo\n')
+    const next = 'one\nTWO\n'
+
+    const written = await daemon.writeSource(tmpRoot, 'a.ts', next, before.hash)
+
+    expect(written.error).toBeNull()
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe(next)
+    expect(await daemon.openSource(tmpRoot, 'a.ts')).toEqual({ text: next, hash: written.hash, error: null })
+  })
+
+  it('accepts a second save against the hash the first one returned', async () => {
+    const before = await opened('a.ts', 'one\n')
+    const first = await daemon.writeSource(tmpRoot, 'a.ts', 'two\n', before.hash)
+    const second = await daemon.writeSource(tmpRoot, 'a.ts', 'three\n', first.hash)
+
+    expect(second.error).toBeNull()
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('three\n')
+  })
+
+  it('refuses a root that is not an open project', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\n')
+
+    expect(await daemon.writeSource(path.dirname(tmpRoot), `${path.basename(tmpRoot)}/a.ts`, 'two\n', '')).toEqual({
+      hash: '',
+      error: 'closed',
+    })
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('one\n')
+  })
+
+  it('refuses a path outside the root, by traversal, by absolute path and through a symlink', async () => {
+    const outside = path.join(tmpRoot, '..', `escape-${randomUUID()}.ts`)
+    fs.writeFileSync(outside, 'secret\n')
+    fs.symlinkSync(outside, path.join(tmpRoot, 'link.ts'))
+
+    try {
+      expect(await daemon.writeSource(tmpRoot, `../${path.basename(outside)}`, 'hacked\n', '')).toEqual({
+        hash: '',
+        error: 'outside',
+      })
+      expect(await daemon.writeSource(tmpRoot, outside, 'hacked\n', '')).toMatchObject({ error: 'outside' })
+      expect(await daemon.writeSource(tmpRoot, 'link.ts', 'hacked\n', '')).toMatchObject({ error: 'outside' })
+      expect(fs.readFileSync(outside, 'utf8')).toBe('secret\n')
+    } finally {
+      fs.rmSync(outside, { force: true })
+    }
+  })
+
+  it('refuses to write over a binary file', async () => {
+    const raw = Buffer.from([0x68, 0x69, 0x00, 0x68])
+    fs.writeFileSync(path.join(tmpRoot, 'bin.ts'), raw)
+
+    expect(await daemon.writeSource(tmpRoot, 'bin.ts', 'text\n', '')).toEqual({ hash: '', error: 'binary' })
+    expect(fs.readFileSync(path.join(tmpRoot, 'bin.ts'))).toEqual(raw)
+  })
+
+  it('refuses a file that changed on disk since it was read', async () => {
+    const before = await opened('a.ts', 'one\n')
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'somebody else\n')
+
+    expect(await daemon.writeSource(tmpRoot, 'a.ts', 'mine\n', before.hash)).toEqual({ hash: '', error: 'stale' })
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('somebody else\n')
+  })
+
+  it('refuses a read only file and leaves it untouched', async () => {
+    const before = await opened('ro.ts', 'one\n')
+    const target = path.join(tmpRoot, 'ro.ts')
+    fs.chmodSync(target, 0o444)
+
+    try {
+      expect(await daemon.writeSource(tmpRoot, 'ro.ts', 'two\n', before.hash)).toEqual({ hash: '', error: 'denied' })
+      expect(fs.readFileSync(target, 'utf8')).toBe('one\n')
+    } finally {
+      fs.chmodSync(target, 0o644)
+    }
+  })
+
+  it('refuses a missing file, a directory and text past the byte cap', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'sub'), { recursive: true })
+    const before = await opened('a.ts', 'one\n')
+
+    expect(await daemon.writeSource(tmpRoot, 'nope.ts', 'two\n', '')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.writeSource(tmpRoot, 'sub', 'two\n', '')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.writeSource(tmpRoot, 'a.ts', 'x'.repeat(4 * 1024 * 1024 + 1), before.hash)).toMatchObject({
+      error: 'large',
+    })
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('one\n')
+  })
+
+  it('keeps the file mode and leaves no temporary file behind', async () => {
+    const before = await opened('bin.sh', '#!/bin/sh\n')
+    const target = path.join(tmpRoot, 'bin.sh')
+    fs.chmodSync(target, 0o755)
+
+    expect((await daemon.writeSource(tmpRoot, 'bin.sh', '#!/bin/sh\necho hi\n', before.hash)).error).toBeNull()
+    expect(fs.statSync(target).mode & 0o777).toBe(0o755)
+    expect(fs.readdirSync(tmpRoot).filter((name) => name.includes('architect-'))).toEqual([])
+  })
+})
+
+describe('readTree', () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.open(tmpRoot)
+  })
+
+  it('lists folders before files, each sorted by name, and never the ignored directories', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'node_modules'), { recursive: true })
+    fs.mkdirSync(path.join(tmpRoot, '.git'), { recursive: true })
+    fs.mkdirSync(path.join(tmpRoot, 'api'), { recursive: true })
+    fs.writeFileSync(path.join(tmpRoot, 'node_modules', 'dep.ts'), 'x\n')
+    fs.writeFileSync(path.join(tmpRoot, 'zed.ts'), 'x\n')
+    fs.writeFileSync(path.join(tmpRoot, 'abc.ts'), 'x\n')
+
+    const listed = await daemon.readTree(tmpRoot, '')
+    const names = listed.entries.map((entry) => entry.name).filter((name) => name !== 'sock-dir')
+
+    expect(listed.error).toBeNull()
+    expect(names).toEqual(['api', 'abc.ts', 'architect.md', 'zed.ts'])
+    expect(names.filter((name) => listed.entries.find((entry) => entry.name === name)?.dir)).toEqual(['api'])
+  })
+
+  it('tags each file with the components that own it', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'api'), { recursive: true })
+    fs.writeFileSync(path.join(tmpRoot, 'api', 'routes.ts'), 'x\n')
+    fs.writeFileSync(path.join(tmpRoot, 'api', 'loose.txt'), 'x\n')
+
+    const listed = await daemon.readTree(tmpRoot, 'api')
+
+    expect(listed.entries).toEqual([
+      { name: 'loose.txt', dir: false, owners: ['api'] },
+      { name: 'routes.ts', dir: false, owners: ['api'] },
+    ])
+    expect((await daemon.readTree(tmpRoot, '')).entries.find((entry) => entry.name === 'architect.md')?.owners).toEqual(
+      []
+    )
+  })
+
+  it('refuses a closed project, a folder outside the root and a folder that is not there', async () => {
+    expect(await daemon.readTree(path.dirname(tmpRoot), '')).toEqual({ dir: '', entries: [], error: 'closed' })
+    expect(await daemon.readTree(tmpRoot, '..')).toMatchObject({ error: 'outside' })
+    expect(await daemon.readTree(tmpRoot, 'nope')).toMatchObject({ error: 'unreadable' })
+  })
+})

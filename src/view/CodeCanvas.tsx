@@ -30,6 +30,7 @@ import {
 } from '../model/codemap'
 import { gotoSymbol, type Located, type SymbolRef } from '../model/goto'
 import { outlineFor } from '../model/outline'
+import { openFile } from '../model/store'
 import { CodeInspector } from './Inspector'
 import GotoPanel from './GotoPanel'
 import Outline from './Outline'
@@ -256,6 +257,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
   const jumpGoto = useCallback(
     (item: Located) => {
       setGotoRef(null)
+      openFile(item.file, item.line)
       const id = fnNodeId(item.file, item.index, item.name)
       if (item.file === path) {
         setSelectedId(id)

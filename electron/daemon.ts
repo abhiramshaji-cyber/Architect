@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -22,7 +22,12 @@ import {
   requestSchema,
   type Request,
   type Response,
+  type SourceFile,
   type SourceWindow,
+  type TreeEntry,
+  type TreeListing,
+  type WriteError,
+  type WriteResult,
   type Verdict,
 } from '../shared/types'
 import { describe, type DescriptionCache } from './scan/describe'
@@ -100,9 +105,33 @@ function writeStoredMap(root: string, stored: { map: CodeMap; cache: Description
 
 const MAX_SOURCE_LINES = 400
 
+const MAX_SOURCE_BYTES = 4 * 1024 * 1024
+
+function digest(raw: Buffer | string): string {
+  return createHash('sha256').update(raw).digest('hex')
+}
+
+function decode(raw: Buffer): string | null {
+  let text: string
+  try {
+    text = new TextDecoder('utf8', { fatal: true }).decode(raw)
+  } catch {
+    return null
+  }
+  return text.includes('\u0000') ? null : text
+}
+
+function splitLines(text: string): string[] {
+  const lines = text.split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  return lines
+}
+
 const RESCAN_DEBOUNCE_MS = 300
 
-function isIgnoredSource(root: string, target: string, stats?: fs.Stats): boolean {
+type Kinded = { isFile(): boolean; isDirectory(): boolean }
+
+function isIgnoredSource(root: string, target: string, stats?: Kinded): boolean {
   const relative = path.relative(root, target)
   if (relative === '') return false
   if (relative.startsWith('..')) return true
@@ -180,6 +209,20 @@ export function createDaemon(options: DaemonOptions = {}) {
   let codeMapListener: ((root: string, map: CodeMap) => void) | null = null
   let server: net.Server | null = null
 
+  async function locate(root: string, file: string): Promise<{ base: string; target: string } | 'unreadable' | 'outside'> {
+    let base: string
+    let target: string
+    try {
+      base = await fs.promises.realpath(root)
+      target = await fs.promises.realpath(path.resolve(base, file))
+    } catch {
+      return 'unreadable'
+    }
+
+    if (target !== base && !target.startsWith(base + path.sep)) return 'outside'
+    return { base, target }
+  }
+
   async function readSource(
     root: string,
     file: string,
@@ -193,37 +236,141 @@ export function createDaemon(options: DaemonOptions = {}) {
     if (!projects.has(root)) return { ...empty, error: 'closed' }
     if (!Number.isFinite(from) || !Number.isFinite(length)) return { ...empty, error: 'range' }
 
-    let base: string
-    let target: string
-    try {
-      base = await fs.promises.realpath(root)
-      target = await fs.promises.realpath(path.resolve(base, file))
-    } catch {
-      return { ...empty, error: 'unreadable' }
-    }
-
-    if (target !== base && !target.startsWith(base + path.sep)) return { ...empty, error: 'outside' }
+    const found = await locate(root, file)
+    if (typeof found === 'string') return { ...empty, error: found }
 
     let raw: Buffer
     try {
-      raw = await fs.promises.readFile(target)
+      raw = await fs.promises.readFile(found.target)
     } catch {
       return { ...empty, error: 'unreadable' }
     }
 
-    let text: string
-    try {
-      text = new TextDecoder('utf8', { fatal: true }).decode(raw)
-    } catch {
-      return { ...empty, error: 'binary' }
-    }
+    const text = decode(raw)
+    if (text === null) return { ...empty, error: 'binary' }
 
-    if (text.includes('\u0000')) return { ...empty, error: 'binary' }
-
-    const lines = text.split('\n')
-    if (lines.at(-1) === '') lines.pop()
+    const lines = splitLines(text)
 
     return { from: start, lines: lines.slice(start - 1, start - 1 + span), total: lines.length, error: null }
+  }
+
+  async function openSource(root: string, file: string): Promise<SourceFile> {
+    const empty = { text: '', hash: '' }
+
+    if (!projects.has(root)) return { ...empty, error: 'closed' }
+
+    const found = await locate(root, file)
+    if (typeof found === 'string') return { ...empty, error: found }
+
+    let raw: Buffer
+    try {
+      const stats = await fs.promises.stat(found.target)
+      if (!stats.isFile()) return { ...empty, error: 'unreadable' }
+      if (stats.size > MAX_SOURCE_BYTES) return { ...empty, error: 'large' }
+      raw = await fs.promises.readFile(found.target)
+    } catch {
+      return { ...empty, error: 'unreadable' }
+    }
+
+    const text = decode(raw)
+    if (text === null) return { ...empty, error: 'binary' }
+
+    return { text, hash: digest(raw), error: null }
+  }
+
+  async function writeSource(
+    root: string,
+    file: string,
+    text: string,
+    baseline: string
+  ): Promise<WriteResult> {
+    const refused = (error: WriteError): WriteResult => ({ hash: '', error })
+
+    if (!projects.has(root)) return refused('closed')
+    if (Buffer.byteLength(text) > MAX_SOURCE_BYTES) return refused('large')
+
+    const found = await locate(root, file)
+    if (typeof found === 'string') return refused(found)
+
+    let current: Buffer
+    let mode: number
+    try {
+      const stats = await fs.promises.stat(found.target)
+      if (!stats.isFile()) return refused('unreadable')
+      mode = stats.mode & 0o777
+      current = await fs.promises.readFile(found.target)
+    } catch {
+      return refused('unreadable')
+    }
+
+    if (decode(current) === null) return refused('binary')
+    if (digest(current) !== baseline) return refused('stale')
+
+    // a rename replaces a read only file, so the write bit has to be checked before we swap
+    try {
+      await fs.promises.access(found.target, fs.constants.W_OK)
+    } catch {
+      return refused('denied')
+    }
+
+    const next = Buffer.from(text, 'utf8')
+    const temp = path.join(path.dirname(found.target), `.${path.basename(found.target)}.architect-${randomUUID()}`)
+
+    try {
+      const handle = await fs.promises.open(temp, 'wx', mode)
+      try {
+        await handle.writeFile(next)
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+      await fs.promises.chmod(temp, mode)
+      await fs.promises.rename(temp, found.target)
+    } catch (err) {
+      await fs.promises.rm(temp, { force: true }).catch(() => {})
+      const code = (err as NodeJS.ErrnoException).code
+      return refused(code === 'EACCES' || code === 'EPERM' || code === 'EROFS' ? 'denied' : 'unreadable')
+    }
+
+    return { hash: digest(next), error: null }
+  }
+
+  async function readTree(root: string, dir: string): Promise<TreeListing> {
+    const empty = { dir, entries: [] }
+
+    if (!projects.has(root)) return { ...empty, error: 'closed' }
+
+    const found = await locate(root, dir)
+    if (typeof found === 'string') return { ...empty, error: found }
+
+    let listed: fs.Dirent[]
+    try {
+      listed = await fs.promises.readdir(found.target, { withFileTypes: true })
+    } catch {
+      return { ...empty, error: 'unreadable' }
+    }
+
+    const kept = listed.filter(
+      (entry) => !isIgnoredSource(found.base, path.join(found.target, entry.name), entry)
+    )
+
+    const relative = path.relative(found.base, found.target).split(path.sep).filter((part) => part !== '')
+    const files = kept.filter((entry) => !entry.isDirectory()).map((entry) => [...relative, entry.name].join('/'))
+    const components = projects.get(root)?.architecture?.components ?? []
+    const owners = new Map<string, string[]>()
+    const classified = ownership(files, components)
+    for (const { path: at, owner } of classified.owned) owners.set(at, [owner])
+    for (const { path: at, owners: many } of classified.multi) owners.set(at, many)
+
+    const entries: TreeEntry[] = kept
+      .map((entry) => ({
+        name: entry.name,
+        dir: entry.isDirectory(),
+        owners: owners.get([...relative, entry.name].join('/')) ?? [],
+      }))
+      .sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1))
+
+    return { dir, entries, error: null }
   }
 
   function architectMdPath(root: string) {
@@ -873,6 +1020,9 @@ export function createDaemon(options: DaemonOptions = {}) {
       return ownership(files, architecture.components)
     },
     readSource,
+    openSource,
+    writeSource,
+    readTree,
     rescan: rescanProject,
     onChange: (fn: (a: Architecture) => void) => {
       changeListener = fn

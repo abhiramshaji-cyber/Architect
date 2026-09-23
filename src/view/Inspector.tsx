@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
-import type { Architecture, SourceError, SourceWindow } from '../../shared/types'
+import type { Architecture, SourceWindow } from '../../shared/types'
+import { refusalOf } from '../model/buffer'
 import { hangingIndent, type CodeNodeData, type FnRef } from '../model/codemap'
 import { renameComponent, setOwns, setPurpose, type OpResult } from '../model/edit-ops'
 import { clampInspectorWidth, statusOf, INSPECTOR_W, type NodeData } from '../model/layout'
@@ -70,14 +71,6 @@ function useWidth() {
   }
 
   return { panel, width, grab }
-}
-
-const REFUSALS: Record<SourceError, string> = {
-  closed: 'This project is not open',
-  range: 'That line range is not valid',
-  outside: 'That file is outside the project',
-  unreadable: 'This file could not be read',
-  binary: 'This file is not readable text'
 }
 
 function Listing({ window }: { window: SourceWindow }) {
@@ -209,7 +202,7 @@ export function CodeInspector({
               {source === null || source === undefined ? (
                 <p className="inspector-purpose">Loading source…</p>
               ) : source.error !== null ? (
-                <p className="inspector-purpose">{REFUSALS[source.error]}</p>
+                <p className="inspector-purpose">{refusalOf(source.error)}</p>
               ) : source.lines.length === 0 ? (
                 <p className="inspector-purpose">
                   {source.total === 0 ? 'This file is empty' : 'Nothing to show at that line'}

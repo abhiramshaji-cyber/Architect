@@ -38,6 +38,9 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     rescan: vi.fn(),
     ownership: vi.fn().mockResolvedValue(null),
     readSource: vi.fn(),
+    openSource: vi.fn(),
+    writeSource: vi.fn(),
+    readTree: vi.fn(),
     onChange: vi.fn(),
     onPending: vi.fn(),
     onProjects: vi.fn(),
@@ -449,5 +452,106 @@ describe('in-flight responses', () => {
     await Promise.resolve()
 
     expect(getSnapshot().entries['/a']).toBeUndefined()
+  })
+})
+
+describe('the open file buffer', () => {
+  async function withFile(text = 'one\ntwo\n') {
+    architect.open = vi.fn().mockResolvedValue(opened('t'))
+    architect.openSource = vi.fn().mockResolvedValue({ text, hash: 'h1', error: null })
+    const store = await import('./store')
+    store.openProject('/a')
+    await vi.waitFor(() => expect(store.getSnapshot().entries['/a']?.status).toBe('ready'))
+    store.openFile('a.ts')
+    await vi.waitFor(() => expect(store.getSnapshot().file?.path).toBe('a.ts'))
+    return store
+  }
+
+  it('opens a file whole and starts clean', async () => {
+    const { getSnapshot } = await withFile()
+    const { isDirty } = await import('./buffer')
+
+    expect(getSnapshot().file).toEqual({ path: 'a.ts', disk: 'one\ntwo\n', hash: 'h1', draft: 'one\ntwo\n', error: null })
+    expect(isDirty(getSnapshot().file)).toBe(false)
+  })
+
+  it('keeps a refusal on the buffer instead of throwing it away', async () => {
+    architect.open = vi.fn().mockResolvedValue(opened('t'))
+    architect.openSource = vi.fn().mockResolvedValue({ text: '', hash: '', error: 'binary' })
+    const { openProject, openFile, getSnapshot } = await import('./store')
+
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+    openFile('logo.png')
+
+    await vi.waitFor(() => expect(getSnapshot().file?.error).toBe('binary'))
+  })
+
+  it('goes dirty on an edit and clean again on revert', async () => {
+    const { editFile, revertFile, getSnapshot } = await withFile()
+    const { isDirty } = await import('./buffer')
+
+    editFile('one\nTWO\n')
+    expect(isDirty(getSnapshot().file)).toBe(true)
+
+    revertFile()
+    expect(getSnapshot().file?.draft).toBe('one\ntwo\n')
+    expect(isDirty(getSnapshot().file)).toBe(false)
+  })
+
+  it('saves the draft against the hash it read and adopts the hash it is given back', async () => {
+    architect.writeSource = vi.fn().mockResolvedValue({ hash: 'h2', error: null })
+    const { editFile, saveFile, getSnapshot } = await withFile()
+    const { isDirty } = await import('./buffer')
+
+    editFile('one\nTWO\n')
+    saveFile()
+
+    await vi.waitFor(() => expect(getSnapshot().fileNotice?.text).toBe('Saved'))
+    expect(architect.writeSource).toHaveBeenCalledWith('/a', 'a.ts', 'one\nTWO\n', 'h1')
+    expect(isDirty(getSnapshot().file)).toBe(false)
+    expect(getSnapshot().file?.hash).toBe('h2')
+  })
+
+  it('does not save a clean buffer', async () => {
+    architect.writeSource = vi.fn()
+    const { saveFile } = await withFile()
+
+    saveFile()
+    expect(architect.writeSource).not.toHaveBeenCalled()
+  })
+
+  it('keeps the draft and says so when the file changed on disk', async () => {
+    architect.writeSource = vi.fn().mockResolvedValue({ hash: '', error: 'stale' })
+    const { editFile, saveFile, getSnapshot } = await withFile()
+    const { isDirty } = await import('./buffer')
+
+    editFile('mine\n')
+    saveFile()
+
+    await vi.waitFor(() => expect(getSnapshot().fileNotice?.error).toBe(true))
+    expect(getSnapshot().fileNotice?.text).toMatch(/changed on disk/)
+    expect(getSnapshot().file?.draft).toBe('mine\n')
+    expect(isDirty(getSnapshot().file)).toBe(true)
+  })
+
+  it('asks before dropping unsaved work and keeps the buffer when refused', async () => {
+    ;(globalThis as unknown as { confirm: () => boolean }).confirm = vi.fn().mockReturnValue(false)
+    const { editFile, openFile, closeFile, getSnapshot } = await withFile()
+
+    editFile('mine\n')
+    openFile('b.ts')
+    expect(getSnapshot().file?.path).toBe('a.ts')
+
+    closeFile()
+    expect(getSnapshot().file?.path).toBe('a.ts')
+  })
+
+  it('moves the cursor instead of rereading when the same file is opened again', async () => {
+    const { openFile, getSnapshot } = await withFile()
+
+    openFile('a.ts', 42)
+    expect(getSnapshot().fileLine).toBe(42)
+    expect(architect.openSource).toHaveBeenCalledTimes(1)
   })
 })

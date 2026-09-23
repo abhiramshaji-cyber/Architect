@@ -26,6 +26,10 @@ const architect: ArchitectApi = {
   ownership: (root) => invoke('architect:ownership', root),
   readSource: (root, file, from, length) =>
     invoke('architect:read-source', root, file, from, length),
+  openSource: (root, file) => invoke('architect:open-source', root, file),
+  writeSource: (root, file, text, baseline) =>
+    invoke('architect:write-source', root, file, text, baseline),
+  readTree: (root, dir) => invoke('architect:read-tree', root, dir),
   onChange: (fn: (a: Architecture) => void) => {
     ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))
   },
