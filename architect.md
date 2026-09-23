@@ -20,6 +20,10 @@ owns: `electron/git/**`
 Shells out to the gh CLI for the GitHub credential, reads the account's repos, a repo's branches and its open pull requests, and clones a repo with that credential. No token is stored by us and none crosses the preload bridge.
 owns: `electron/github/**`
 
+### draft
+Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its generated function descriptions, and candidate edges aggregated from real call refs. The reply is parsed and validated before it is offered, and the ids and globs stay mechanical.
+owns: `electron/draft/**`
+
 ### daemon
 Socket server, project resolution by cwd, file watching and the pending proposal queue.
 owns: `electron/daemon.ts`
@@ -53,6 +57,9 @@ owns: `lsp/**`
 - graph -> types
 - daemon -> types
 - daemon -> graph
+- daemon -> draft
+- draft -> types
+- draft -> graph
 - app -> types
 - app -> daemon
 - app -> pty
@@ -77,6 +84,7 @@ owns: `lsp/**`
 - canvas -> pty : node-pty never reaches the renderer, terminal output arrives over the preload bridge
 - canvas -> git : the renderer never shells out to git, results arrive over the preload bridge
 - canvas -> github : the renderer never shells out to gh and never holds a token, repos and branches arrive over the preload bridge
+- canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
 
 ## Packages
 

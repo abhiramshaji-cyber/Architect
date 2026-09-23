@@ -168,7 +168,7 @@ describe('parse', () => {
     expect(arch.components.map((c) => c.id)).toContain('graph')
     expect(arch.edges).toContainEqual({ from: 'daemon', to: 'graph' })
     expect(arch.forbidden.map((f) => `${f.from}->${f.to}`)).toContain('canvas->pty')
-    expect(arch.forbidden.length).toBe(7)
+    expect(arch.forbidden.length).toBe(8)
   })
 
   it('throws on a duplicate component id', () => {
@@ -392,6 +392,10 @@ describe('apply', () => {
     const before = JSON.parse(JSON.stringify(arch))
     apply(arch, { kind: 'file' as const, path: 'src/api/new.ts', component: 'api' })
     expect(arch).toEqual(before)
+  })
+
+  it('refuses to apply a whole contract proposal to an existing architecture', () => {
+    expect(() => apply(arch, { kind: 'contract', markdown: '# other' })).toThrow(/replaces architect\.md/)
   })
 
   it('removes a component along with every edge and forbidden rule touching it', () => {

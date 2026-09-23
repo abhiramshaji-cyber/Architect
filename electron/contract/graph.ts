@@ -258,6 +258,10 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
     layout: architecture.layout,
   }
 
+  if (proposal.kind === 'contract') {
+    throw new Error('a contract proposal replaces architect.md, it is not applied to an architecture')
+  }
+
   if (proposal.kind === 'component') {
     if (next.components.some((c) => c.id === proposal.id)) return next
     next.components.push({ id: proposal.id, purpose: proposal.purpose, owns: proposal.owns })

@@ -10,6 +10,7 @@ import {
   type CodeMap,
   type ContractState,
   type Decision,
+  type DraftResult,
   type Edit,
   type EditSummary,
   type OpenedProject,
@@ -25,6 +26,7 @@ import {
   type Verdict,
 } from '../shared/types'
 import { describe, type DescriptionCache } from './scan/describe'
+import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
 import { IGNORED_DIRS, scan } from './scan/scan'
@@ -130,7 +132,12 @@ type ProjectState = {
   lastWrittenContent: string | null
 }
 
-type DaemonOptions = { socketPath?: string; proposalTimeoutMs?: number; rescanDebounceMs?: number }
+type DaemonOptions = {
+  socketPath?: string
+  proposalTimeoutMs?: number
+  rescanDebounceMs?: number
+  claude?: ClaudeRun
+}
 
 function sameContract(a: ContractState, b: ContractState): boolean {
   if (a.status === 'invalid' && b.status === 'invalid') return a.error === b.error
@@ -138,31 +145,10 @@ function sameContract(a: ContractState, b: ContractState): boolean {
 }
 
 function starterArchitecture(root: string, map: CodeMap): Architecture {
-  const tops = new Map<string, { dirs: string[]; owns: string[] }>()
-
-  for (const folder of map.folders) {
-    for (const file of folder.files) {
-      const [top] = file.path.split('/')
-      if (top === undefined || top === file.path) continue
-
-      const id = top.replaceAll('->', '-').replace(/\s+/g, '-')
-      const entry = tops.get(id) ?? { dirs: [], owns: [] }
-      if (!entry.dirs.includes(top)) {
-        entry.dirs.push(top)
-        entry.owns.push(`${top}/**`)
-      }
-      tops.set(id, entry)
-    }
-  }
-
-  const components = [...tops]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([id, entry]) => ({ id, purpose: `Code under ${entry.dirs.join(', ')}.`, owns: entry.owns }))
-
   return {
     title: path.basename(root),
     summary: 'A starter contract from the folders Architect scanned. Say what each component is for and draw the dependencies.',
-    components,
+    components: skeleton(map),
     edges: [],
     forbidden: [],
     packages: [],
@@ -183,6 +169,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   const socketPath = options.socketPath ?? process.env.ARCHITECT_SOCKET ?? SOCKET_PATH
   const proposalTimeoutMs = options.proposalTimeoutMs ?? PROPOSAL_TIMEOUT_MS
   const rescanDebounceMs = options.rescanDebounceMs ?? RESCAN_DEBOUNCE_MS
+  const claude = options.claude ?? runClaude
 
   const projects = new Map<string, ProjectState>()
   const pending = new Map<string, PendingEntry>()
@@ -495,6 +482,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     if (a.kind === 'edge' && b.kind === 'edge') return a.from === b.from && a.to === b.to
     if (a.kind === 'package' && b.kind === 'package') return a.name === b.name && a.component === b.component
     if (a.kind === 'file' && b.kind === 'file') return a.path === b.path && a.component === b.component
+    if (a.kind === 'contract' && b.kind === 'contract') return a.markdown === b.markdown
     return false
   }
 
@@ -533,20 +521,28 @@ export function createDaemon(options: DaemonOptions = {}) {
     })
   }
 
+  function queue(root: string, proposal: Proposal, rationale: string): PendingEntry {
+    loadProject(root)
+    const existing = findPendingEntry(root, proposal)
+    if (existing) return existing
+
+    const id = randomUUID()
+    const entry: PendingEntry = {
+      pending: { id, projectRoot: root, proposal, rationale, createdAt: Date.now() },
+      waiters: new Set(),
+    }
+    pending.set(id, entry)
+    notifyPending()
+    return entry
+  }
+
   function proposeChange(
     root: string,
     proposal: Proposal,
     rationale: string,
     registerCancel: (cancel: () => void) => void,
   ): Promise<Decision> {
-    loadProject(root)
-    let entry = findPendingEntry(root, proposal)
-    if (!entry) {
-      const id = randomUUID()
-      entry = { pending: { id, projectRoot: root, proposal, rationale, createdAt: Date.now() }, waiters: new Set() }
-      pending.set(id, entry)
-      notifyPending()
-    }
+    const entry = queue(root, proposal, rationale)
     return waitForDecision(entry, entry.pending.id, registerCancel)
   }
 
@@ -563,9 +559,57 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
+  function writeContract(state: ProjectState, architecture: Architecture, content: string, exclusive = false) {
+    fs.writeFileSync(architectMdPath(state.root), content, exclusive ? { flag: 'wx' } : undefined)
+    state.lastWrittenContent = content
+    state.architecture = architecture
+    state.contract = { status: 'ready' }
+    notifyProjects()
+    if (state.root === activeRoot) changeListener?.(architecture)
+  }
+
+  function settleContract(entry: PendingEntry, approved: boolean, reason?: string) {
+    const proposal = entry.pending.proposal
+    if (proposal.kind !== 'contract') return
+
+    const root = entry.pending.projectRoot
+    const project = approved ? reopen(root) : undefined
+
+    if (!approved) {
+      resolveWaiters(entry, { status: 'rejected', reason: reason ?? '' })
+      return
+    }
+    if (!project) {
+      resolveWaiters(entry, { status: 'rejected', reason: `could not open ${root}` })
+      return
+    }
+    if (project.contract.status !== 'missing') {
+      resolveWaiters(entry, { status: 'rejected', reason: `${root} already has an architect.md` })
+      return
+    }
+
+    try {
+      writeContract(project, parse(proposal.markdown), proposal.markdown, true)
+      resolveWaiters(entry, { status: 'approved' })
+    } catch (err) {
+      const taken = (err as NodeJS.ErrnoException).code === 'EEXIST'
+      resolveWaiters(entry, {
+        status: 'rejected',
+        reason: taken ? `${root} already has an architect.md` : errorText(err),
+      })
+    }
+  }
+
   async function decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void> {
     const entry = pending.get(id)
     if (!entry) return
+
+    if (entry.pending.proposal.kind === 'contract') {
+      settleContract(entry, approved, reason)
+      pending.delete(id)
+      notifyPending()
+      return
+    }
 
     const root = entry.pending.projectRoot
     const project = approved ? reopen(root) : undefined
@@ -613,15 +657,25 @@ export function createDaemon(options: DaemonOptions = {}) {
     if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
 
     const architecture = starterArchitecture(root, readStoredMap(root)?.map ?? (await scan(root)))
-    const content = serialize(architecture)
-    state.lastWrittenContent = content
-    fs.writeFileSync(architectMdPath(root), content)
-
-    state.architecture = architecture
-    state.contract = { status: 'ready' }
-    notifyProjects()
-    if (root === activeRoot) changeListener?.(architecture)
+    writeContract(state, architecture, serialize(architecture))
     return architecture
+  }
+
+  async function draftContract(root: string): Promise<DraftResult<string>> {
+    const state = loadProject(root)
+    if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
+
+    const drafted = await draft(root, readStoredMap(root)?.map ?? (await rescanProject(root)), claude)
+    if (!drafted.ok) return drafted
+
+    for (const [id, entry] of [...pending]) {
+      if (entry.pending.projectRoot !== root || entry.pending.proposal.kind !== 'contract') continue
+      resolveWaiters(entry, { status: 'rejected', reason: 'replaced by a newer draft' })
+      pending.delete(id)
+    }
+
+    queue(root, { kind: 'contract', markdown: drafted.value }, 'A first contract drafted by Claude from the scanned code.')
+    return drafted
   }
 
   function verdictFor(architecture: Architecture, parseError: string | null, from: string, to: string): Verdict {
@@ -783,6 +837,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     projects: listProjects,
     open,
     createContract,
+    draftContract,
     pending: listPending,
     decide,
     edits: (root: string): EditSummary[] => {

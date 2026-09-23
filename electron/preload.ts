@@ -10,6 +10,7 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 const architect: ArchitectApi = {
   projects: () => invoke('architect:projects'),
   createContract: (root) => invoke('architect:create-contract', root),
+  draftContract: (root) => invoke('architect:draft-contract', root),
   open: (root) => invoke('architect:open', root),
   closeProject: (root) => invoke('architect:close-project', root),
   pending: () => invoke('architect:pending'),
