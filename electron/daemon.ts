@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -38,8 +39,23 @@ import { IGNORED_DIRS, scan } from './scan/scan'
 
 const MAP_VERSION = 3
 
-function mapPath(root: string) {
-  return path.join(root, '.architect', 'map.json')
+const LEGACY_MAP = path.join('.architect', 'map.json')
+
+function canonicalRoot(root: string): string {
+  const resolved = path.resolve(root)
+  try {
+    return fs.realpathSync.native(resolved)
+  } catch {
+    return resolved
+  }
+}
+
+function cacheKey(root: string): string {
+  return createHash('sha256').update(canonicalRoot(root)).digest('hex')
+}
+
+function mapPath(dir: string, root: string) {
+  return path.join(dir, 'maps', `${cacheKey(root)}.json`)
 }
 
 function isCallRef(value: unknown): boolean {
@@ -77,16 +93,24 @@ function isCodeMap(value: unknown): value is CodeMap {
   return Array.isArray(map.folders) && map.folders.every(isFolderEntry)
 }
 
-function readStoredMap(root: string): { map: CodeMap | null; cache: DescriptionCache } | null {
+type StoredMap = { map: CodeMap | null; cache: DescriptionCache }
+
+function decodeStoredMap(raw: string, key: string | null): StoredMap | null {
   let parsed: unknown
   try {
-    parsed = JSON.parse(fs.readFileSync(mapPath(root), 'utf8'))
+    parsed = JSON.parse(raw)
   } catch {
     return null
   }
   if (typeof parsed !== 'object' || parsed === null) return null
 
-  const { version, map, cache } = parsed as { version?: unknown; map?: unknown; cache?: unknown }
+  const { version, root, map, cache } = parsed as {
+    version?: unknown
+    root?: unknown
+    map?: unknown
+    cache?: unknown
+  }
+  if (key !== null && root !== key) return null
 
   const entries =
     typeof cache === 'object' && cache !== null && !Array.isArray(cache)
@@ -98,9 +122,70 @@ function readStoredMap(root: string): { map: CodeMap | null; cache: DescriptionC
   return { map: current, cache: Object.fromEntries(entries) }
 }
 
-function writeStoredMap(root: string, stored: { map: CodeMap; cache: DescriptionCache }) {
-  fs.mkdirSync(path.dirname(mapPath(root)), { recursive: true })
-  fs.writeFileSync(mapPath(root), JSON.stringify({ version: MAP_VERSION, ...stored }, null, 2))
+function discardLegacyMap(root: string) {
+  const legacy = path.join(root, LEGACY_MAP)
+  const dir = path.join(root, '.architect')
+  try {
+    if (!fs.existsSync(legacy)) return
+    if (spawnSync('git', ['-C', root, 'ls-files', '--error-unmatch', '--', LEGACY_MAP], { stdio: 'ignore' }).status === 0) return
+    fs.rmSync(legacy, { force: true })
+    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir)
+  } catch (err) {
+    console.error('could not remove the code map from the project:', errorText(err))
+  }
+}
+
+function migrateLegacyMap(dir: string, root: string): StoredMap | null {
+  const legacy = path.join(root, LEGACY_MAP)
+
+  let raw: string
+  try {
+    raw = fs.readFileSync(legacy, 'utf8')
+  } catch {
+    return null
+  }
+
+  const stored = decodeStoredMap(raw, null)
+  if (!stored) return null
+
+  try {
+    writeStoredMap(dir, root, stored)
+  } catch (err) {
+    console.error('could not move the code map out of the project:', errorText(err))
+    return stored
+  }
+
+  discardLegacyMap(root)
+
+  return stored
+}
+
+function readCachedMap(dir: string, root: string): StoredMap | null {
+  let raw: string
+  try {
+    raw = fs.readFileSync(mapPath(dir, root), 'utf8')
+  } catch {
+    return null
+  }
+
+  return decodeStoredMap(raw, cacheKey(root))
+}
+
+function readStoredMap(dir: string, root: string): StoredMap | null {
+  if (!fs.statSync(path.resolve(root), { throwIfNoEntry: false })?.isDirectory()) return null
+
+  const cached = readCachedMap(dir, root)
+  if (!cached) return migrateLegacyMap(dir, root)
+
+  discardLegacyMap(root)
+
+  return cached
+}
+
+function writeStoredMap(dir: string, root: string, stored: StoredMap) {
+  const file = mapPath(dir, root)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ version: MAP_VERSION, root: cacheKey(root), ...stored }, null, 2))
 }
 
 const MAX_SOURCE_LINES = 400
@@ -196,6 +281,7 @@ function recoverId(value: unknown): string | null {
 
 export function createDaemon(options: DaemonOptions = {}) {
   const socketPath = options.socketPath ?? process.env.ARCHITECT_SOCKET ?? SOCKET_PATH
+  const cacheDir = path.dirname(socketPath)
   const proposalTimeoutMs = options.proposalTimeoutMs ?? PROPOSAL_TIMEOUT_MS
   const rescanDebounceMs = options.rescanDebounceMs ?? RESCAN_DEBOUNCE_MS
   const claude = options.claude ?? runClaude
@@ -469,11 +555,11 @@ export function createDaemon(options: DaemonOptions = {}) {
   }
 
   async function rescanProject(root: string): Promise<CodeMap> {
-    const stored = readStoredMap(root)
+    const stored = readStoredMap(cacheDir, root)
     const described = await describe(await scan(root), root, stored?.cache)
 
     try {
-      writeStoredMap(root, described)
+      writeStoredMap(cacheDir, root, described)
     } catch (err) {
       console.error('could not persist code map:', errorText(err))
     }
@@ -803,7 +889,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     const state = loadProject(root)
     if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
 
-    const architecture = starterArchitecture(root, readStoredMap(root)?.map ?? (await scan(root)))
+    const architecture = starterArchitecture(root, readStoredMap(cacheDir, root)?.map ?? (await scan(root)))
     writeContract(state, architecture, serialize(architecture))
     return architecture
   }
@@ -812,7 +898,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     const state = loadProject(root)
     if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
 
-    const drafted = await draft(root, readStoredMap(root)?.map ?? (await rescanProject(root)), claude)
+    const drafted = await draft(root, readStoredMap(cacheDir, root)?.map ?? (await rescanProject(root)), claude)
     if (!drafted.ok) return drafted
 
     for (const [id, entry] of [...pending]) {
@@ -1011,9 +1097,9 @@ export function createDaemon(options: DaemonOptions = {}) {
       loadProject(root)
       deleteEdit(root, id)
     },
-    codeMap: (root: string): CodeMap | null => readStoredMap(root)?.map ?? null,
+    codeMap: (root: string): CodeMap | null => readStoredMap(cacheDir, root)?.map ?? null,
     ownership: (root: string): Ownership | null => {
-      const map = readStoredMap(root)?.map
+      const map = readStoredMap(cacheDir, root)?.map
       const architecture = loadProject(root).architecture
       if (!map || !architecture) return null
       const files = map.folders.flatMap((folder) => folder.files.map((file) => file.path))

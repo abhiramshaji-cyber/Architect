@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -39,6 +39,7 @@ ${h2} Packages
 const component = (id: string) => `${h3} ${id}\ndoes things\nowns: \`${id}/**\`\n`
 
 let tmpRoot: string
+let tmpHome: string
 let socketPath: string
 let daemon: ReturnType<typeof createDaemon>
 
@@ -94,12 +95,14 @@ async function client(path: string) {
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-daemon-'))
-  socketPath = path.join(tmpRoot, 'sock-dir', 'nested', 'sock')
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-home-'))
+  socketPath = path.join(tmpHome, 'sock-dir', 'nested', 'sock')
 })
 
 afterEach(async () => {
   await daemon?.close()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
+  fs.rmSync(tmpHome, { recursive: true, force: true })
 })
 
 describe('open', () => {
@@ -1032,14 +1035,92 @@ describe('code map storage', () => {
 
   it('returns the scanned map even when it cannot be persisted', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
-    fs.writeFileSync(path.join(tmpRoot, '.architect'), 'not a directory')
+    fs.mkdirSync(path.dirname(socketPath), { recursive: true })
+    fs.writeFileSync(path.join(path.dirname(socketPath), 'maps'), 'not a directory')
     daemon = createDaemon({ socketPath })
 
     const map = await daemon.rescan(tmpRoot)
 
     expect(map.root).toBe(tmpRoot)
     expect(map.folders[0]?.files.map((f) => f.path)).toContain('a.ts')
-    expect(fs.existsSync(path.join(tmpRoot, '.architect', 'map.json'))).toBe(false)
+    expect(daemon.codeMap(tmpRoot)).toBeNull()
+  })
+
+  it('writes nothing into the project it scans', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    const before = fs.readdirSync(tmpRoot).sort()
+    daemon = createDaemon({ socketPath })
+
+    await daemon.open(tmpRoot)
+    await daemon.rescan(tmpRoot)
+
+    expect(fs.readdirSync(tmpRoot).sort()).toEqual(before)
+  })
+
+  it('keeps one cache entry for a project scanned twice', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+
+    await daemon.rescan(tmpRoot)
+    await daemon.rescan(tmpRoot)
+
+    expect(fs.readdirSync(path.join(path.dirname(socketPath), 'maps'))).toHaveLength(1)
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+  })
+
+  it('shares one cache entry between two paths that reach the same project', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    const link = path.join(tmpHome, 'link')
+    fs.symlinkSync(tmpRoot, link)
+    daemon = createDaemon({ socketPath })
+
+    await daemon.rescan(tmpRoot)
+    await daemon.rescan(link)
+
+    expect(fs.readdirSync(path.join(path.dirname(socketPath), 'maps'))).toHaveLength(1)
+    expect(daemon.codeMap(link)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+  })
+
+  it('gives two projects separate cache entries', async () => {
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-other-'))
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    fs.writeFileSync(path.join(other, 'b.ts'), 'export function b() {}\n')
+    daemon = createDaemon({ socketPath })
+
+    await daemon.rescan(tmpRoot)
+    await daemon.rescan(other)
+
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+    expect(daemon.codeMap(other)?.folders[0]?.files.map((f) => f.path)).toEqual(['b.ts'])
+    fs.rmSync(other, { recursive: true, force: true })
+  })
+
+  it('refuses a cache entry stored for another root', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+    await daemon.rescan(tmpRoot)
+
+    const maps = path.join(path.dirname(socketPath), 'maps')
+    const file = path.join(maps, fs.readdirSync(maps)[0] as string)
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8')) as { root: string }
+    fs.writeFileSync(file, JSON.stringify({ ...stored, root: 'somewhere else' }))
+
+    expect(daemon.codeMap(tmpRoot)).toBeNull()
+  })
+
+  it('starts with a cache holding an entry for a root that is gone', async () => {
+    const gone = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-gone-'))
+    fs.writeFileSync(path.join(gone, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+    await daemon.rescan(gone)
+    await daemon.close()
+    fs.rmSync(gone, { recursive: true, force: true })
+
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(gone)).toBeNull()
+    expect((await daemon.rescan(tmpRoot)).root).toBe(tmpRoot)
   })
 
   it('refuses a stored map whose folders are malformed', async () => {
@@ -1091,6 +1172,66 @@ describe('code map migration', () => {
       }),
     )
   }
+
+  function writeCurrentMap() {
+    fs.mkdirSync(path.join(tmpRoot, '.architect'), { recursive: true })
+    fs.writeFileSync(
+      path.join(tmpRoot, '.architect', 'map.json'),
+      JSON.stringify({
+        version: 3,
+        map: {
+          root: tmpRoot,
+          scannedAt: 1,
+          folders: [
+            {
+              path: '',
+              folders: [],
+              files: [{ path: 'a.ts', functions: [{ name: 'a', line: 1, endLine: 1, description: 'stored', calls: [] }] }],
+            },
+          ],
+        },
+        cache: {},
+      }),
+    )
+  }
+
+  it('moves a map left inside the project out of it', async () => {
+    writeCurrentMap()
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files[0]?.functions[0]?.description).toBe('stored')
+    expect(fs.existsSync(path.join(tmpRoot, '.architect'))).toBe(false)
+    expect(fs.readdirSync(path.join(path.dirname(socketPath), 'maps'))).toHaveLength(1)
+  })
+
+  it('removes a map that reappears in a project it already caches', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+    await daemon.rescan(tmpRoot)
+    writeCurrentMap()
+
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files[0]?.functions[0]?.description).not.toBe('stored')
+    expect(fs.existsSync(path.join(tmpRoot, '.architect'))).toBe(false)
+  })
+
+  it('leaves an .architect directory that holds something else', async () => {
+    writeCurrentMap()
+    fs.writeFileSync(path.join(tmpRoot, '.architect', 'notes.md'), 'mine\n')
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)).not.toBeNull()
+    expect(fs.readdirSync(path.join(tmpRoot, '.architect'))).toEqual(['notes.md'])
+  })
+
+  it('leaves a map the project tracks in git', async () => {
+    writeCurrentMap()
+    execFileSync('git', ['init', '-q', tmpRoot])
+    execFileSync('git', ['-C', tmpRoot, 'add', '.architect/map.json'])
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)).not.toBeNull()
+    expect(fs.existsSync(path.join(tmpRoot, '.architect', 'map.json'))).toBe(true)
+  })
 
   it('treats a map stored before the call graph as never scanned', async () => {
     writeOldMap({})
@@ -1660,7 +1801,7 @@ describe('source watcher', () => {
     expect(seen).toEqual([])
   })
 
-  it('does not rescan for the map it writes into .architect', async () => {
+  it('does not rescan for the map it writes outside the project', async () => {
     await watching(tmpRoot)
     fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
     await pause(900)
