@@ -27,6 +27,7 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     pending: vi.fn().mockResolvedValue([]),
     decide: vi.fn().mockResolvedValue(undefined),
     createContract: vi.fn(),
+    draftContract: vi.fn(),
     edits: vi.fn().mockResolvedValue([]),
     edit: vi.fn(),
     createEdit: vi.fn(),
@@ -321,6 +322,61 @@ describe('contract state', () => {
     createContract()
 
     expect(architect.createContract).not.toHaveBeenCalled()
+  })
+
+  it('asks for a drafted contract and leaves the project empty until the draft is approved', async () => {
+    architect.open = vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null })
+    architect.draftContract = vi.fn().mockResolvedValue({ ok: true, value: '# drafted' })
+    const { openProject, draftContract, getSnapshot } = await import('./store')
+    openProject('/plain')
+    await vi.waitFor(() => expect(getSnapshot().entries['/plain']?.status).toBe('ready'))
+
+    draftContract()
+
+    expect(getSnapshot().drafting).toBe(true)
+    await vi.waitFor(() => expect(getSnapshot().drafting).toBe(false))
+    expect(architect.draftContract).toHaveBeenCalledWith('/plain')
+    expect(getSnapshot().draftError).toBeNull()
+    expect(getSnapshot().architecture).toBeNull()
+    expect(getSnapshot().contract).toEqual({ status: 'missing' })
+  })
+
+  it('keeps the failure so the empty state can say plainly why there is no draft', async () => {
+    architect.open = vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null })
+    architect.draftContract = vi.fn().mockResolvedValue({ ok: false, error: { kind: 'not-installed' } })
+    const { openProject, draftContract, getSnapshot } = await import('./store')
+    openProject('/plain')
+    await vi.waitFor(() => expect(getSnapshot().entries['/plain']?.status).toBe('ready'))
+
+    draftContract()
+
+    await vi.waitFor(() => expect(getSnapshot().draftError).toEqual({ kind: 'not-installed' }))
+    expect(getSnapshot().drafting).toBe(false)
+  })
+
+  it('turns a broken bridge call into a reported draft failure rather than an unhandled rejection', async () => {
+    architect.open = vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null })
+    architect.draftContract = vi.fn().mockRejectedValue(new Error('bridge is gone'))
+    const { openProject, draftContract, getSnapshot } = await import('./store')
+    openProject('/plain')
+    await vi.waitFor(() => expect(getSnapshot().entries['/plain']?.status).toBe('ready'))
+
+    draftContract()
+
+    await vi.waitFor(() =>
+      expect(getSnapshot().draftError).toEqual({ kind: 'failed', code: 1, stderr: 'bridge is gone' }),
+    )
+  })
+
+  it('never asks for a draft for a project that already has a contract', async () => {
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
+    const { openProject, draftContract, getSnapshot } = await import('./store')
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+
+    draftContract()
+
+    expect(architect.draftContract).not.toHaveBeenCalled()
   })
 })
 

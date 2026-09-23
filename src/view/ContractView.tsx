@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Architecture } from '../../shared/types'
+import type { Architecture, DraftFailure } from '../../shared/types'
 import Canvas from './Canvas'
 import EditBar from './EditBar'
 import { addComponent, type OpResult } from '../model/edit-ops'
-import { applyEdit, createContract, loadErrorOf, parseErrorOf, pendingHere, useProject } from '../model/store'
+import {
+  applyEdit,
+  createContract,
+  draftContract,
+  loadErrorOf,
+  parseErrorOf,
+  pendingHere,
+  useProject,
+} from '../model/store'
 import type { ViewProps } from '../shell/views'
 
 function placeholderId(a: Architecture): string {
@@ -13,9 +21,17 @@ function placeholderId(a: Architecture): string {
   return `component${n}`
 }
 
+function draftNote(failure: DraftFailure): string {
+  if (failure.kind === 'not-installed') return 'Claude Code is not on your PATH, so there is nobody to ask yet.'
+  if (failure.kind === 'nothing-to-draft') return 'Architect found no source it recognises here, so there is nothing to draft from.'
+  if (failure.kind === 'timed-out') return 'Claude took too long to answer, so nothing was drafted.'
+  if (failure.kind === 'unusable') return `Claude replied with something that is not a contract, so nothing was drafted (${failure.detail}).`
+  return `Claude could not finish the draft${failure.stderr ? ` (${failure.stderr})` : ''}.`
+}
+
 export default function ContractView({ theme }: ViewProps) {
   const project = useProject()
-  const { currentRoot, architecture, contract, draft, owners, busy } = project
+  const { currentRoot, architecture, contract, draft, owners, busy, drafting, draftError } = project
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -52,13 +68,28 @@ export default function ContractView({ theme }: ViewProps) {
     if (!currentRoot) return <div className="empty-state">Select a project to open its architecture</div>
     if (contract?.status !== 'missing') return <div className="empty-state">Opening this project…</div>
 
+    const waiting = pendingHere(project).some((p) => p.proposal.kind === 'contract')
+
     return (
-      <div className="empty-state">
-        <p>This project has no architect.md yet, so there is no contract to draw.</p>
-        <p>Start one from the folders Architect scanned, then say what each component is for.</p>
-        <button className="primary" onClick={createContract} disabled={busy}>
-          Create architect.md
-        </button>
+      <div className="empty-state blank-contract">
+        <h2>No architect.md here yet</h2>
+        <p>
+          Write a starter contract from the folders Architect scanned, or have Claude draft one from the code. Nothing
+          is written until you approve it.
+        </p>
+
+        <div className="blank-actions">
+          <button className="primary" onClick={createContract} disabled={busy || drafting}>
+            Create architect.md
+          </button>
+          <button onClick={draftContract} disabled={busy || drafting}>
+            Ask Claude to draft one
+          </button>
+        </div>
+
+        {drafting && <p className="blank-note">Claude is reading the code and writing a draft.</p>}
+        {!drafting && waiting && <p className="blank-note">Claude's draft is waiting in the approval inbox.</p>}
+        {!drafting && draftError && <p className="blank-note">{draftNote(draftError)} You can still write one yourself.</p>}
       </div>
     )
   }

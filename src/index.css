@@ -576,10 +576,51 @@ body.resizing {
 .empty-state {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
   color: var(--text-dim);
   font-size: 14px;
+}
+
+.blank-contract h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.blank-contract p {
+  margin: 0;
+  max-width: 46ch;
+  line-height: 1.5;
+}
+
+.blank-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.blank-note {
+  font-size: 12px;
+}
+
+.pending-contract {
+  max-height: 260px;
+  margin: 6px 0 0;
+  padding: 8px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .sidebar-action {

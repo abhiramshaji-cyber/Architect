@@ -9,6 +9,7 @@ function describe(p: Pending): string {
   if (proposal.kind === 'remove_component') return `remove component: ${proposal.id}`
   if (proposal.kind === 'edge') return `new edge: ${proposal.from} → ${proposal.to}`
   if (proposal.kind === 'package') return `new package: ${proposal.name} on ${proposal.component}`
+  if (proposal.kind === 'contract') return 'first architect.md, drafted by Claude'
   return `new file: ${proposal.path}`
 }
 
@@ -41,6 +42,7 @@ export default function PendingInbox() {
             <li key={p.id} className={`pending-item${p.proposal.kind === 'remove_component' ? ' pending-removal' : ''}`}>
               <div className="pending-summary">{describe(p)}</div>
               <div className="pending-rationale">{p.rationale}</div>
+              {p.proposal.kind === 'contract' && <pre className="pending-contract">{p.proposal.markdown}</pre>}
               {cycle && <div className="pending-cycle">would introduce a cycle</div>}
               {p.proposal.kind === 'file' && architecture && architecture.components.length > 0 && (
                 <select

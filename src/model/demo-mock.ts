@@ -405,6 +405,9 @@ export function installMock() {
     async createContract(root) {
       throw new Error(`the demo cannot write architect.md in ${root}`)
     },
+    async draftContract() {
+      return { ok: false, error: { kind: 'not-installed' } }
+    },
     async closeProject() {},
     async pending() {
       return pendingByRoot['/Users/demo/code/architect'] ?? []

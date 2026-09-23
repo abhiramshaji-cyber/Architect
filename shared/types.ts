@@ -52,6 +52,7 @@ export const proposalSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('edge'), from: z.string(), to: z.string() }),
   z.object({ kind: z.literal('package'), name: z.string(), component: z.string() }),
   z.object({ kind: z.literal('file'), path: z.string(), component: z.string() }),
+  z.object({ kind: z.literal('contract'), markdown: z.string() }),
 ])
 
 export type Proposal = z.infer<typeof proposalSchema>
@@ -250,6 +251,15 @@ export type GithubFailure =
 
 export type GithubResult<T> = { ok: true; value: T } | { ok: false; error: GithubFailure }
 
+export type DraftFailure =
+  | { kind: 'not-installed' }
+  | { kind: 'nothing-to-draft' }
+  | { kind: 'timed-out' }
+  | { kind: 'unusable'; detail: string }
+  | { kind: 'failed'; code: number; stderr: string }
+
+export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
+
 export type PtySpec = { cwd?: string; shell?: string; args?: string[]; cols: number; rows: number }
 
 export type PtySession = { id: string; pid: number }
@@ -265,6 +275,7 @@ export type ArchitectApi = {
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
   createContract(root: string): Promise<Architecture>
+  draftContract(root: string): Promise<DraftResult<string>>
   edits(root: string): Promise<EditSummary[]>
   edit(root: string, id: string): Promise<Edit>
   createEdit(root: string, architecture: Architecture): Promise<Edit>

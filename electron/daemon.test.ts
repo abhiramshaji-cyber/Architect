@@ -174,6 +174,183 @@ describe('open', () => {
   })
 })
 
+describe('drafting a first contract', () => {
+  const drafted = (root: string) =>
+    [
+      '```markdown',
+      `# ${path.basename(root)}`,
+      '',
+      'A tiny web app.',
+      '',
+      '## Components',
+      '',
+      '### api',
+      'Answers http requests.',
+      'owns: `api/**`',
+      '',
+      '### ui',
+      'Draws the pages a visitor sees.',
+      'owns: `ui/**`',
+      '',
+      '## Dependencies',
+      '',
+      '- ui -> api',
+      '',
+      '## Forbidden',
+      '',
+      '## Packages',
+      '```',
+    ].join('\n')
+
+  function repo(): string {
+    const root = fs.mkdtempSync(path.join(tmpRoot, 'draft-'))
+    fs.mkdirSync(path.join(root, 'ui'))
+    fs.mkdirSync(path.join(root, 'api'))
+    fs.writeFileSync(path.join(root, 'api', 'handler.ts'), 'export function handler() { return 1 }\n')
+    fs.writeFileSync(
+      path.join(root, 'ui', 'page.ts'),
+      "import { handler } from '../api/handler'\nexport function page() { return handler() }\n",
+    )
+    return root
+  }
+
+  it('queues the draft as a pending proposal and writes nothing before it is approved', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+
+    const result = await daemon.draftContract(root)
+
+    expect(result.ok).toBe(true)
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'missing' })
+    expect(daemon.pending().map((p) => p.proposal.kind)).toEqual(['contract'])
+  })
+
+  it('writes the draft on approval and the file parses back to what was shown', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+    await daemon.draftContract(root)
+
+    const proposal = daemon.pending()[0]
+    expect(proposal?.proposal.kind).toBe('contract')
+    if (proposal?.proposal.kind !== 'contract') return
+    await daemon.decide(proposal.id, true)
+
+    const written = fs.readFileSync(path.join(root, 'architect.md'), 'utf8')
+    expect(written).toBe(proposal.proposal.markdown)
+    const architecture = parse(written)
+    expect(architecture.components.map((c) => c.id)).toEqual(['api', 'ui'])
+    expect(architecture.edges).toEqual([{ from: 'ui', to: 'api' }])
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
+    expect(daemon.pending()).toEqual([])
+  })
+
+  it('writes nothing when the draft is rejected and leaves the project without a contract', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+    await daemon.draftContract(root)
+
+    const proposal = daemon.pending()[0]
+    await daemon.decide(proposal?.id ?? '', false, 'not how I see it')
+
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'missing' })
+    expect(daemon.pending()).toEqual([])
+  })
+
+  it('reports the agent as not installed and queues nothing', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 'missing', stdout: '', stderr: '' }) })
+    await daemon.open(root)
+
+    await expect(daemon.draftContract(root)).resolves.toEqual({ ok: false, error: { kind: 'not-installed' } })
+    expect(daemon.pending()).toEqual([])
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+  })
+
+  it('reports a reply that is not a contract and queues nothing', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: 'I had a look around.', stderr: '' }) })
+    await daemon.open(root)
+
+    const result = await daemon.draftContract(root)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.kind).toBe('unusable')
+    expect(daemon.pending()).toEqual([])
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+  })
+
+  it('reports nothing to draft from when the scan found no source folders', async () => {
+    const flat = fs.mkdtempSync(path.join(tmpRoot, 'flat-'))
+    fs.writeFileSync(path.join(flat, 'index.ts'), 'export const one = 1\n')
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(flat), stderr: '' }) })
+    await daemon.open(flat)
+
+    await expect(daemon.draftContract(flat)).resolves.toEqual({ ok: false, error: { kind: 'nothing-to-draft' } })
+    expect(daemon.pending()).toEqual([])
+  })
+
+  it('refuses to draft for a project that already has a contract', async () => {
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: '', stderr: '' }) })
+    writeArchitect(tmpRoot, fixture(component('a')))
+    await daemon.open(tmpRoot)
+
+    await expect(daemon.draftContract(tmpRoot)).rejects.toThrow(/already has an architect\.md/)
+  })
+
+  it('replaces an earlier draft rather than stacking a second one in the inbox', async () => {
+    const root = repo()
+    let call = 0
+    daemon = createDaemon({
+      socketPath,
+      claude: async () => ({ code: 0, stdout: drafted(root).replace('A tiny web app.', `Take ${++call}.`), stderr: '' }),
+    })
+    await daemon.open(root)
+
+    await daemon.draftContract(root)
+    await daemon.draftContract(root)
+
+    expect(daemon.pending().length).toBe(1)
+    const only = daemon.pending()[0]
+    expect(only?.proposal.kind === 'contract' && only.proposal.markdown).toContain('Take 2.')
+  })
+
+  it('survives a restart so a slow draft is not lost when the app reopens', async () => {
+    const root = repo()
+    const first = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await first.listen()
+    await first.open(root)
+    await first.draftContract(root)
+    const markdown = first.pending()[0]?.proposal
+    await first.close()
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    expect(daemon.pending().map((p) => p.proposal)).toEqual([markdown])
+    expect(daemon.pending()[0]?.projectRoot).toBe(root)
+  })
+
+  it('rejects an approved draft when a contract appeared while it was waiting', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+    await daemon.draftContract(root)
+
+    writeArchitect(root, fixture(component('a')))
+    const proposal = daemon.pending()[0]
+    await daemon.decide(proposal?.id ?? '', true)
+
+    expect(parse(fs.readFileSync(path.join(root, 'architect.md'), 'utf8')).components.map((c) => c.id)).toEqual(['a'])
+    expect(daemon.pending()).toEqual([])
+  })
+})
+
 describe('socket lifecycle', () => {
   it('creates the parent directory before binding', async () => {
     expect(fs.existsSync(path.dirname(socketPath))).toBe(false)

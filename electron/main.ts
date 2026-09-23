@@ -109,6 +109,7 @@ async function openRepoBranch(
 function wireIpc() {
   handle('architect:projects', () => daemon.projects())
   handle('architect:create-contract', (root: string) => daemon.createContract(root))
+  handle('architect:draft-contract', (root: string) => daemon.draftContract(root))
   handle('architect:open', (root: string) => daemon.open(root))
   handle('architect:close-project', (root: string) => daemon.closeProject(root))
   handle('architect:pending', () => daemon.pending())

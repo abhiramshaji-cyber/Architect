@@ -3,6 +3,7 @@ import type {
   Architecture,
   CodeMap,
   ContractState,
+  DraftFailure,
   Edit,
   EditSummary,
   Ownership,
@@ -24,6 +25,8 @@ export type ProjectEntry = {
   codeBusy: boolean
   codeError: string | null
   owners: Ownership | null
+  drafting: boolean
+  draftError: DraftFailure | null
 }
 
 export type ProjectState = {
@@ -43,6 +46,8 @@ export type ProjectState = {
   codeBusy: boolean
   codeError: string | null
   owners: Ownership | null
+  drafting: boolean
+  draftError: DraftFailure | null
 }
 
 function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
@@ -59,6 +64,8 @@ function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
     codeBusy: false,
     codeError: null,
     owners: null,
+    drafting: false,
+    draftError: null,
   }
 }
 
@@ -75,6 +82,8 @@ function activeView(entries: Record<string, ProjectEntry>, root: string | null) 
     codeBusy: entry?.codeBusy ?? false,
     codeError: entry?.codeError ?? null,
     owners: entry?.owners ?? null,
+    drafting: entry?.drafting ?? false,
+    draftError: entry?.draftError ?? null,
   }
 }
 
@@ -236,6 +245,24 @@ export function createContract(): void {
     patchEntry(root, { architecture, contract: { status: 'ready' } })
     loadOwners(root)
   })
+}
+
+export function draftContract(): void {
+  const root = state.currentRoot
+  if (!root || state.entries[root]?.contract?.status !== 'missing') return
+  if (state.entries[root]?.drafting) return
+
+  patchEntry(root, { drafting: true, draftError: null })
+  void window.architect
+    .draftContract(root)
+    .then((result) => {
+      if (!state.entries[root]) return
+      patchEntry(root, { drafting: false, draftError: result.ok ? null : result.error })
+    })
+    .catch((err: unknown) => {
+      if (!state.entries[root]) return
+      patchEntry(root, { drafting: false, draftError: { kind: 'failed', code: 1, stderr: errorText(err) } })
+    })
 }
 
 export function closeProject(root: string): void {
