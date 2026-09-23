@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { allRepos, auth, clone, type GhOutput, type GhRun, ghEnv, branches, pulls, rates, repos, token } from './github'
+import {
+  allRepos,
+  auth,
+  clone,
+  COMPARE_LANES,
+  compare,
+  compareAll,
+  type GhOutput,
+  type GhRun,
+  ghEnv,
+  branches,
+  pulls,
+  rates,
+  repos,
+  token,
+} from './github'
 
 function fake(handler: (args: string[]) => Partial<GhOutput>, online = true) {
   const calls: string[][] = []
@@ -468,5 +483,160 @@ describe('clone', () => {
     const out = await clone('octocat/hello', '/repos/hello', fake(() => ({ code: 1, stdout: body })).gh)
 
     expect(out).toEqual({ ok: false, error: { kind: 'not-found' } })
+  })
+})
+
+function distance(ahead: number, behind: number): string {
+  return JSON.stringify({ ahead, behind })
+}
+
+function headOf(args: string[]): string {
+  return (args[1] ?? '').split('...')[1] ?? ''
+}
+
+describe('compare', () => {
+  it('asks the compare endpoint for the two counts of one branch against the base', async () => {
+    const machine = fake(() => ({ stdout: distance(3, 1) }))
+    const out = await compare('octocat', 'hello', 'main', 'feature/login', machine.gh)
+
+    expect(out).toEqual({ ok: true, value: { ahead: 3, behind: 1 } })
+    expect(machine.calls[0]?.[1]).toBe('repos/octocat/hello/compare/main...feature/login')
+  })
+
+  it('refuses a ref that would reach outside the compare it was asked for', async () => {
+    for (const bad of ['../../user', 'main...other', '-x', 'feet/', '', 'a b', 'has#hash', 'has%25']) {
+      expect(await compare('octocat', 'hello', 'main', bad, fake(() => ({})).gh)).toEqual({
+        ok: false,
+        error: { kind: 'bad-argument', value: bad },
+      })
+    }
+  })
+
+  it('refuses an owner that is not a path segment before spawning gh', async () => {
+    const machine = fake(() => ({}))
+    expect(await compare('octocat/../evil', 'hello', 'main', 'topic', machine.gh)).toEqual({
+      ok: false,
+      error: { kind: 'bad-argument', value: 'octocat/../evil' },
+    })
+    expect(machine.calls).toEqual([])
+  })
+
+  it('reports not found for two branches with no common ancestor', async () => {
+    const body = JSON.stringify({ status: '404', message: 'No common ancestor between main and orphan.' })
+    const out = await compare('octocat', 'hello', 'main', 'orphan', fake(() => ({ code: 1, stdout: body })).gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'not-found' } })
+  })
+
+  it('reports authentication required when the account cannot read the repository', async () => {
+    const out = await compare('octocat', 'hello', 'main', 'topic', fake(() => ({ code: 4, stderr: 'gh: auth' })).gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'auth-required' } })
+  })
+
+  it('fails rather than guessing when a count is missing', async () => {
+    const out = await compare('octocat', 'hello', 'main', 'topic', fake(() => ({ stdout: '{"ahead":2}' })).gh)
+
+    expect(out).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
+  })
+})
+
+describe('compareAll', () => {
+  it('reports each branch as it resolves and never compares the base against itself', async () => {
+    const machine = fake((args) => ({ stdout: distance(headOf(args).length, 0) }))
+    const seen: string[] = []
+
+    await compareAll('octocat', 'hello', 'main', ['main', 'ab', 'abc', 'ab'], (head) => seen.push(head), undefined, machine.gh)
+
+    expect(seen).toEqual(['ab', 'abc'])
+    expect(machine.calls).toHaveLength(2)
+  })
+
+  it('keeps at most one lane per named slot in flight over a large branch list', async () => {
+    const heads = Array.from({ length: 200 }, (_value, at) => `topic-${at}`)
+    let live = 0
+    let peak = 0
+
+    const gh = {
+      reach: async () => true,
+      run: async (): Promise<GhOutput> => {
+        live += 1
+        peak = Math.max(peak, live)
+        await Promise.resolve()
+        live -= 1
+        return { code: 0, stdout: distance(1, 0), stderr: '' }
+      },
+    }
+
+    const seen: string[] = []
+    await compareAll('octocat', 'hello', 'main', heads, (head) => seen.push(head), undefined, gh)
+
+    expect(seen).toHaveLength(200)
+    expect(peak).toBeLessThanOrEqual(COMPARE_LANES)
+  })
+
+  it('stops dispatching and reports nothing more once the run is aborted', async () => {
+    const heads = Array.from({ length: 50 }, (_value, at) => `topic-${at}`)
+    const run = new AbortController()
+    const machine = fake(() => ({ stdout: distance(1, 0) }))
+    const seen: string[] = []
+
+    await compareAll(
+      'octocat',
+      'hello',
+      'main',
+      heads,
+      (head) => {
+        seen.push(head)
+        run.abort()
+      },
+      run.signal,
+      machine.gh,
+    )
+
+    expect(seen).toEqual(['topic-0'])
+    expect(machine.calls.length).toBeLessThanOrEqual(COMPARE_LANES)
+  })
+
+  it('halts the whole run when a compare comes back rate limited instead of spending the rest', async () => {
+    const spent = {
+      resources: {
+        core: { limit: 5000, remaining: 0, reset: 400 },
+        graphql: { limit: 5000, remaining: 5000, reset: 200 },
+        search: { limit: 30, remaining: 30, reset: 300 },
+      },
+    }
+    const heads = Array.from({ length: 80 }, (_value, at) => `topic-${at}`)
+    const machine = fake((args) =>
+      args[1] === 'rate_limit' ? { stdout: JSON.stringify(spent) } : { code: 1, stdout: '{"status":"403"}' },
+    )
+
+    const seen: string[] = []
+    await compareAll('octocat', 'hello', 'main', heads, (_head, result) => {
+      if (!result.ok) seen.push(result.error.kind)
+    }, undefined, machine.gh)
+
+    expect(seen[0]).toBe('rate-limited')
+    expect(seen.length).toBeLessThanOrEqual(COMPARE_LANES)
+  })
+
+  it('leaves one failing branch without counts and keeps comparing the others', async () => {
+    const machine = fake((args) =>
+      headOf(args) === 'broken' ? { code: 1, stdout: '{"status":"404"}' } : { stdout: distance(2, 0) },
+    )
+
+    const got = new Map<string, boolean>()
+    await compareAll('octocat', 'hello', 'main', ['broken', 'fine', 'other'], (head, result) => {
+      got.set(head, result.ok)
+    }, undefined, machine.gh)
+
+    expect(Object.fromEntries(got)).toEqual({ broken: false, fine: true, other: true })
+  })
+
+  it('spawns nothing when every branch given is the base', async () => {
+    const machine = fake(() => ({}))
+    await compareAll('octocat', 'hello', 'main', ['main'], () => {}, undefined, machine.gh)
+
+    expect(machine.calls).toEqual([])
   })
 })

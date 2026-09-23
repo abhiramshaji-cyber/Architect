@@ -300,6 +300,10 @@ export type GithubBranch = { name: string; commit: string; protected: boolean }
 
 export type GithubPull = { number: number; title: string; head: string }
 
+export type GithubCompare = { ahead: number; behind: number }
+
+export type GithubCompared = { repo: string; head: string; result: GithubResult<GithubCompare> }
+
 export type GithubBudget = { limit: number; remaining: number; resetAt: number }
 
 export type GithubRates = { core: GithubBudget; graphql: GithubBudget; search: GithubBudget }
@@ -391,6 +395,9 @@ export type ArchitectApi = {
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
   githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>
   githubPulls(owner: string, repo: string): Promise<GithubResult<GithubPull[]>>
+  githubCompare(owner: string, repo: string, base: string, heads: string[]): Promise<void>
+  githubCancelCompare(): Promise<void>
+  onGithubCompared(fn: (compared: GithubCompared) => void): () => void
   repoPlan(repo: string, branch: string, pr?: number): Promise<GitResult<OpenPlan>>
   repoOpen(repo: string, branch: string, choice: OpenChoice, pr?: number): Promise<OpenResult<OpenedBranch>>
   githubRates(): Promise<GithubResult<GithubRates>>
