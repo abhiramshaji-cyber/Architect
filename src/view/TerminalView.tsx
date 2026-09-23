@@ -9,16 +9,26 @@ import type { ViewProps } from '../shell/views'
 const DARK = { background: '#101014', foreground: '#e6e6e6', cursor: '#e6e6e6' }
 const LIGHT = { background: '#ffffff', foreground: '#1b1b1f', cursor: '#1b1b1f' }
 
+export function latchedRoot(held: string | null, current: string | null): string | null {
+  return held ?? current
+}
+
 export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?: boolean }) {
   const host = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | null>(null)
   const { currentRoot } = useProject()
+  const [bound, setBound] = useState<string | null>(currentRoot)
+  const [startedIn, setStartedIn] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exited, setExited] = useState<number | null>(null)
 
   useEffect(() => {
+    setBound((held) => latchedRoot(held, currentRoot))
+  }, [currentRoot])
+
+  useEffect(() => {
     const mount = host.current
-    if (!mount) return
+    if (!mount || bound === null) return
 
     setExited(null)
     setError(null)
@@ -62,13 +72,14 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
     observer.observe(mount)
 
     window.architect
-      .ptySpawn({ cwd: currentRoot ?? undefined, tmux, cols: term.cols, rows: term.rows })
+      .ptySpawn({ cwd: bound, tmux, cols: term.cols, rows: term.rows })
       .then((started) => {
         if (disposed) {
           window.architect.ptyKill(started.id)
           return
         }
         session = started.id
+        setStartedIn(started.cwd ?? bound)
         for (const event of early.splice(0)) if (event.id === session) consume(event)
         resize()
       })
@@ -83,7 +94,7 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
       term.dispose()
       terminal.current = null
     }
-  }, [currentRoot, tmux])
+  }, [bound, tmux])
 
   useEffect(() => {
     if (terminal.current) terminal.current.options.theme = theme === 'light' ? LIGHT : DARK
@@ -93,14 +104,23 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
     <>
       <header className="canvas-header">
         <h2>{tmux ? 'Terminal' : 'Shell'}</h2>
+        {startedIn && <p className="canvas-path">{startedIn}</p>}
         {exited !== null && <span className="muted">exited {exited}</span>}
       </header>
-      {error && <div className="empty-state">{error}</div>}
-      <div
-        ref={host}
-        className="terminal-host"
-        style={{ background: theme === 'light' ? LIGHT.background : DARK.background }}
-      />
+      {bound === null ? (
+        <div className="empty-state">
+          Open a project first, a terminal needs a directory to start in.
+        </div>
+      ) : (
+        <>
+          {error && <div className="empty-state">{error}</div>}
+          <div
+            ref={host}
+            className="terminal-host"
+            style={{ background: theme === 'light' ? LIGHT.background : DARK.background }}
+          />
+        </>
+      )}
     </>
   )
 }
