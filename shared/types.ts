@@ -112,7 +112,16 @@ export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] 
 
 export type CodeMap = { root: string; scannedAt: number; folders: FolderEntry[] }
 
-export type ProjectSummary = { root: string; title: string; parseError?: string }
+export type ContractState =
+  | { status: 'ready' }
+  | { status: 'missing' }
+  | { status: 'invalid'; error: string }
+
+export type ProjectSummary = { root: string; title: string; contract: ContractState }
+
+export type OpenedProject = { contract: ContractState; architecture: Architecture | null }
+
+export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export type Head =
   | { kind: 'branch'; branch: string; commit: string | null }
@@ -224,10 +233,11 @@ export type PtyEvent =
 export type ArchitectApi = {
   projects(): Promise<ProjectSummary[]>
   chooseDirectory(): Promise<string | null>
-  open(root: string): Promise<Architecture | null>
+  open(root: string): Promise<OpenedProject>
   closeProject(root: string): Promise<void>
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
+  createContract(root: string): Promise<Architecture>
   edits(root: string): Promise<EditSummary[]>
   edit(root: string, id: string): Promise<Edit>
   createEdit(root: string, architecture: Architecture): Promise<Edit>

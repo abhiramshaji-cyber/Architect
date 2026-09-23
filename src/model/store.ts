@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type {
   Architecture,
   CodeMap,
+  ContractState,
   Edit,
   EditSummary,
   Ownership,
@@ -13,6 +14,7 @@ import type { OpResult } from './edit-ops'
 export type ProjectEntry = {
   status: 'loading' | 'ready' | 'error'
   architecture: Architecture | null
+  contract: ContractState | null
   error: string | null
   edits: EditSummary[]
   draft: Edit | null
@@ -32,6 +34,7 @@ export type ProjectState = {
   reassign: Record<string, string>
   message: { text: string; error: boolean } | null
   architecture: Architecture | null
+  contract: ContractState | null
   edits: EditSummary[]
   draft: Edit | null
   dirty: boolean
@@ -46,6 +49,7 @@ function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
   return {
     status,
     architecture: null,
+    contract: null,
     error: null,
     edits: [],
     draft: null,
@@ -62,6 +66,7 @@ function activeView(entries: Record<string, ProjectEntry>, root: string | null) 
   const entry = root ? entries[root] : undefined
   return {
     architecture: entry?.architecture ?? null,
+    contract: entry?.contract ?? null,
     edits: entry?.edits ?? [],
     draft: entry?.draft ?? null,
     dirty: entry?.dirty ?? false,
@@ -118,7 +123,7 @@ export function useProject(): ProjectState {
 export { snapshot as getSnapshot }
 
 export function parseErrorOf(s: ProjectState): string | null {
-  return s.projects.find((p) => p.root === s.currentRoot)?.parseError ?? null
+  return s.contract?.status === 'invalid' ? s.contract.error : null
 }
 
 export function loadErrorOf(s: ProjectState): string | null {
@@ -177,7 +182,12 @@ export function start(): void {
 }
 
 function loadedProjects(projects: ProjectSummary[]): void {
-  set({ projects })
+  const entries = { ...state.entries }
+  for (const p of projects) {
+    const entry = entries[p.root]
+    if (entry?.status === 'ready') entries[p.root] = { ...entry, contract: p.contract }
+  }
+  set({ projects, entries })
   if (Object.keys(state.entries).length > 0) return
   for (const p of projects) openProject(p.root)
   const preferred = state.pending[0]?.projectRoot ?? projects[0]?.root
@@ -202,9 +212,9 @@ export function openProject(root: string): void {
 
   void window.architect
     .open(root)
-    .then((architecture) => {
+    .then(({ architecture, contract }) => {
       if (!state.entries[root]) return
-      patchEntry(root, { status: 'ready', architecture, error: null })
+      patchEntry(root, { status: 'ready', architecture, contract, error: null })
       if (!loaded) {
         loadEdits(root)
         loadOwners(root)
@@ -212,8 +222,20 @@ export function openProject(root: string): void {
     })
     .catch((err: unknown) => {
       if (!state.entries[root]) return
-      patchEntry(root, { status: 'error', architecture: null, error: errorText(err) })
+      patchEntry(root, { status: 'error', architecture: null, contract: null, error: errorText(err) })
     })
+}
+
+export function createContract(): void {
+  const root = state.currentRoot
+  if (!root || state.entries[root]?.contract?.status !== 'missing') return
+
+  void run(root, async () => {
+    const architecture = await window.architect.createContract(root)
+    if (!state.entries[root]) return
+    patchEntry(root, { architecture, contract: { status: 'ready' } })
+    loadOwners(root)
+  })
 }
 
 export function openFolder(): void {

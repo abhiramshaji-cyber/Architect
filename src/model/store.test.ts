@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Architecture, ArchitectApi } from '../../shared/types'
+import type { Architecture, ArchitectApi, OpenedProject } from '../../shared/types'
 
 function arch(title: string): Architecture {
   return { title, summary: 's', components: [], edges: [], forbidden: [], packages: [] }
+}
+
+function opened(title: string): OpenedProject {
+  return { contract: { status: 'ready' }, architecture: arch(title) }
 }
 
 function deferred<T>() {
@@ -19,10 +23,11 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
   return {
     projects: vi.fn().mockResolvedValue([]),
     chooseDirectory: vi.fn().mockResolvedValue(null),
-    open: vi.fn().mockResolvedValue(null),
+    open: vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null }),
     closeProject: vi.fn().mockResolvedValue(undefined),
     pending: vi.fn().mockResolvedValue([]),
     decide: vi.fn().mockResolvedValue(undefined),
+    createContract: vi.fn(),
     edits: vi.fn().mockResolvedValue([]),
     edit: vi.fn(),
     createEdit: vi.fn(),
@@ -86,7 +91,7 @@ describe('no project open', () => {
 
 describe('openProject', () => {
   it('populates the entry and activates the root', async () => {
-    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
     const { openProject, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -98,7 +103,7 @@ describe('openProject', () => {
   })
 
   it('keeps a second project loaded alongside the first', async () => {
-    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     const { openProject, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -112,7 +117,7 @@ describe('openProject', () => {
   })
 
   it('does not refetch edits or ownership when switching back to an already loaded project', async () => {
-    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     const { openProject, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -141,7 +146,7 @@ describe('openProject', () => {
   })
 
   it('opening the same project twice does not duplicate its secondary loads', async () => {
-    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
     const { openProject, getSnapshot } = await import('./store')
     openProject('/a')
     openProject('/a')
@@ -156,7 +161,7 @@ describe('openProject', () => {
 
 describe('closeProject', () => {
   it('closing the active project falls back to another open one', async () => {
-    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     const { openProject, closeProject, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -172,7 +177,7 @@ describe('closeProject', () => {
   })
 
   it('closing the last open project leaves no project open', async () => {
-    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
     const { openProject, closeProject, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -185,7 +190,7 @@ describe('closeProject', () => {
   })
 
   it('closing a non-active project leaves the active one untouched', async () => {
-    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     const { openProject, closeProject, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -203,7 +208,7 @@ describe('closeProject', () => {
   it('asks before closing a project with unsaved edits, and keeps it open on cancel', async () => {
     const confirmMock = vi.fn().mockReturnValue(false)
     ;(globalThis as unknown as { confirm: typeof confirmMock }).confirm = confirmMock
-    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
     architect.createEdit = vi.fn().mockResolvedValue({ id: 'e1', status: 'draft', architecture: arch('A') })
     const { openProject, newEdit, applyEdit, closeProject, getSnapshot } = await import('./store')
     openProject('/a')
@@ -222,7 +227,7 @@ describe('closeProject', () => {
   })
 
   it('tells the daemon to stop watching the closed root', async () => {
-    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
     const { openProject, closeProject, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -242,7 +247,7 @@ describe('closeProject', () => {
   })
 
   it('reports a daemon that refuses to close', async () => {
-    architect.open = vi.fn().mockResolvedValue(arch('A'))
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
     architect.closeProject = vi.fn().mockRejectedValue(new Error('socket gone'))
     const { openProject, closeProject, getSnapshot } = await import('./store')
     openProject('/a')
@@ -257,7 +262,7 @@ describe('closeProject', () => {
 describe('openFolder', () => {
   it('opens the chosen directory', async () => {
     architect.chooseDirectory = vi.fn().mockResolvedValue('/picked')
-    architect.open = vi.fn().mockResolvedValue(arch('Picked'))
+    architect.open = vi.fn().mockResolvedValue(opened('Picked'))
     const { openFolder, getSnapshot } = await import('./store')
 
     openFolder()
@@ -279,21 +284,71 @@ describe('openFolder', () => {
     expect(getSnapshot().message).toBeNull()
   })
 
-  it('surfaces a directory with no architect.md instead of opening nothing', async () => {
+  it('opens a directory with no architect.md as a contract-less project', async () => {
     architect.chooseDirectory = vi.fn().mockResolvedValue('/plain')
-    architect.open = vi.fn().mockRejectedValue(new Error('/plain is not an Architect project: no architect.md'))
-    const { openFolder, getSnapshot } = await import('./store')
+    architect.open = vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null })
+    const { openFolder, getSnapshot, loadErrorOf, parseErrorOf } = await import('./store')
 
     openFolder()
 
-    await vi.waitFor(() => expect(getSnapshot().entries['/plain']?.status).toBe('error'))
-    const { loadErrorOf } = await import('./store')
-    expect(loadErrorOf(getSnapshot())).toContain('no architect.md')
+    await vi.waitFor(() => expect(getSnapshot().entries['/plain']?.status).toBe('ready'))
+    const s = getSnapshot()
+    expect(s.contract).toEqual({ status: 'missing' })
+    expect(s.architecture).toBeNull()
+    expect(loadErrorOf(s)).toBeNull()
+    expect(parseErrorOf(s)).toBeNull()
+    expect(architect.edits).toHaveBeenCalledWith('/plain')
+  })
+
+  it('tells a broken contract apart from a missing one and from a load failure', async () => {
+    architect.open = vi
+      .fn()
+      .mockImplementation((root: string) =>
+        root === '/broken'
+          ? Promise.resolve({ contract: { status: 'invalid', error: 'architect.md: bad line 3' }, architecture: null })
+          : Promise.reject(new Error('EACCES')),
+      )
+    const { openProject, getSnapshot, loadErrorOf, parseErrorOf } = await import('./store')
+
+    openProject('/broken')
+    await vi.waitFor(() => expect(getSnapshot().entries['/broken']?.status).toBe('ready'))
+    expect(parseErrorOf(getSnapshot())).toBe('architect.md: bad line 3')
+    expect(loadErrorOf(getSnapshot())).toBeNull()
+
+    openProject('/gone')
+    await vi.waitFor(() => expect(getSnapshot().entries['/gone']?.status).toBe('error'))
+    expect(loadErrorOf(getSnapshot())).toBe('EACCES')
+    expect(parseErrorOf(getSnapshot())).toBeNull()
+  })
+
+  it('writes a starter contract for a project that has none', async () => {
+    architect.open = vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null })
+    architect.createContract = vi.fn().mockResolvedValue(arch('Plain'))
+    const { openProject, createContract, getSnapshot } = await import('./store')
+    openProject('/plain')
+    await vi.waitFor(() => expect(getSnapshot().entries['/plain']?.status).toBe('ready'))
+
+    createContract()
+
+    await vi.waitFor(() => expect(getSnapshot().architecture?.title).toBe('Plain'))
+    expect(getSnapshot().contract).toEqual({ status: 'ready' })
+    expect(architect.createContract).toHaveBeenCalledWith('/plain')
+  })
+
+  it('does not write a starter contract over one that already exists', async () => {
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
+    const { openProject, createContract, getSnapshot } = await import('./store')
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+
+    createContract()
+
+    expect(architect.createContract).not.toHaveBeenCalled()
   })
 
   it('focuses an already open project instead of adding a second entry', async () => {
     architect.chooseDirectory = vi.fn().mockResolvedValue('/a')
-    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     const { openProject, openFolder, getSnapshot } = await import('./store')
     openProject('/a')
     await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
@@ -319,7 +374,7 @@ describe('openFolder', () => {
 
 describe('in-flight responses', () => {
   it('discards a response for a project that was closed while it was loading', async () => {
-    const open = deferred<Architecture | null>()
+    const open = deferred<OpenedProject>()
     architect.open = vi.fn().mockReturnValue(open.promise)
     const { openProject, closeProject, getSnapshot } = await import('./store')
 
@@ -328,7 +383,7 @@ describe('in-flight responses', () => {
     closeProject('/a')
     expect(getSnapshot().entries['/a']).toBeUndefined()
 
-    open.resolve(arch('A'))
+    open.resolve(opened('A'))
     await Promise.resolve()
     await Promise.resolve()
 
@@ -338,7 +393,7 @@ describe('in-flight responses', () => {
 
   it('stores a background project response instead of dropping it for not matching the active root', async () => {
     const editsA = deferred<never[]>()
-    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     architect.edits = vi
       .fn()
       .mockImplementation((root: string) => (root === '/a' ? editsA.promise : Promise.resolve([])))
@@ -362,7 +417,7 @@ describe('in-flight responses', () => {
 
   it('drops a background response for a project closed while its edits were still loading', async () => {
     const editsA = deferred<never[]>()
-    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(arch(root)))
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     architect.edits = vi
       .fn()
       .mockImplementation((root: string) => (root === '/a' ? editsA.promise : Promise.resolve([])))
