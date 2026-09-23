@@ -14,7 +14,7 @@ export default function ProjectList() {
           const entry = entries[p.root]
           const close = `Close ${folder}`
           return (
-            <li key={p.root}>
+            <li key={p.root} className="project-row">
               <button
                 className={p.root === currentRoot ? 'project active' : 'project'}
                 onClick={() => openProject(p.root)}
@@ -25,8 +25,8 @@ export default function ProjectList() {
                 {entry?.status === 'error' && <span className="project-unavailable">unavailable</span>}
               </button>
               <button className="project-close" aria-label={close} title={close} onClick={() => closeProject(p.root)}>
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+                <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <path d="M3.25 3.25l5.5 5.5M8.75 3.25l-5.5 5.5" strokeLinecap="round" />
                 </svg>
               </button>
             </li>
