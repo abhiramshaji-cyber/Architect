@@ -50,6 +50,8 @@ function sh(cwd: string, ...args: string[]): string {
 function repo(prefix = 'git'): string {
   const root = tmp(prefix)
   sh(root, 'init', '-b', 'main')
+  sh(root, 'config', 'user.name', 'Test')
+  sh(root, 'config', 'user.email', 'test@example.com')
   return root
 }
 
@@ -655,8 +657,7 @@ function bareRemote(): string {
 }
 
 function clone(bare: string, prefix = 'clone'): string {
-  const root = tmp(prefix)
-  sh(root, 'init', '-b', 'main')
+  const root = repo(prefix)
   sh(root, 'remote', 'add', 'origin', bare)
   return root
 }
