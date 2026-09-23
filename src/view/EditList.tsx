@@ -4,9 +4,9 @@ export default function EditList() {
   const { edits, draft, currentRoot, architecture, busy } = useProject()
 
   return (
-    <div className="sidebar-section">
+    <div className="rail-section">
       <h2>Edits</h2>
-      <button className="sidebar-action" onClick={newEdit} disabled={!currentRoot || !architecture || busy}>
+      <button className="action" onClick={newEdit} disabled={!currentRoot || !architecture || busy}>
         New edit
       </button>
       <ul className="edits-list">

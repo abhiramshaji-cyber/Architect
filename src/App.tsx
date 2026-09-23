@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import CanvasArea from './view/CanvasArea'
-import EditList from './view/EditList'
-import PendingInbox from './view/PendingInbox'
-import ProjectList from './view/ProjectList'
 import StatusLine from './view/StatusLine'
 import { at } from './shell/pane-tree'
 import { usePanes } from './shell/usePanes'
@@ -25,24 +22,22 @@ export default function App() {
     setTheme(next)
   }, [theme])
 
-  const showRepos = useCallback(() => panes.showView(panes.focus, 'repos'), [panes.showView, panes.focus])
-
   const activePane = at(panes.tree, panes.focus)
   const viewLabel = activePane?.kind === 'leaf' ? views[activePane.view].label : null
 
   return (
     <div className="app">
       <div className="app-body">
-        <aside className="sidebar">
-          <ProjectList theme={theme} onFlipTheme={flipTheme} onShowRepos={showRepos} />
-          <EditList />
-          <PendingInbox />
-        </aside>
-
         <CanvasArea theme={theme} panes={panes} />
       </div>
 
-      <StatusLine project={project} parseError={parseErrorOf(project)} viewLabel={viewLabel} />
+      <StatusLine
+        project={project}
+        parseError={parseErrorOf(project)}
+        viewLabel={viewLabel}
+        theme={theme}
+        onFlipTheme={flipTheme}
+      />
     </div>
   )
 }
