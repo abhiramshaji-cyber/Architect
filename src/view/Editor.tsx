@@ -51,7 +51,7 @@ export default function Editor({ path, text, line, editable, onChange }: {
         doc: text,
         extensions: [
           ...BASE,
-          language.of(languageFor(path) ?? []),
+          language.of([]),
           writable.of(EditorView.editable.of(editable)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) change.current(update.state.doc.toString())
@@ -74,7 +74,13 @@ export default function Editor({ path, text, line, editable, onChange }: {
   }, [text])
 
   useEffect(() => {
-    view.current?.dispatch({ effects: language.reconfigure(languageFor(path) ?? []) })
+    let live = true
+    void languageFor(path).then((grammar) => {
+      if (live) view.current?.dispatch({ effects: language.reconfigure(grammar ?? []) })
+    })
+    return () => {
+      live = false
+    }
   }, [path])
 
   useEffect(() => {
