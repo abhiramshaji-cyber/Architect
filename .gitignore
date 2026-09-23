@@ -4,4 +4,3 @@ dist
 .DS_Store
 .superpowers
 shot*.png
-.architect/map.json
