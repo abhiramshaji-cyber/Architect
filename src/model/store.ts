@@ -215,19 +215,32 @@ function loadedProjects(projects: ProjectSummary[]): void {
   }
   set({ projects, entries })
   if (Object.keys(state.entries).length > 0) return
-  for (const p of projects) openProject(p.root)
+
   const preferred = state.pending[0]?.projectRoot ?? projects[0]?.root
-  if (preferred) openProject(preferred)
+  if (preferred) adoptProject(preferred)
 }
 
 function loadedPending(pending: Pending[]): void {
   set({ pending })
   if (Object.keys(state.entries).length > 0) return
   const root = pending[0]?.projectRoot
-  if (root) openProject(root)
+  if (root) adoptProject(root)
 }
 
 export function openProject(root: string): void {
+  void window.architect.claimRoot(root).then((granted) => {
+    if (granted) enterProject(root)
+    else void window.architect.focusRoot(root).catch(fail)
+  }, fail)
+}
+
+function adoptProject(root: string): void {
+  void window.architect.claimRoot(root).then((granted) => {
+    if (granted) enterProject(root)
+  }, fail)
+}
+
+function enterProject(root: string): void {
   const existing = state.entries[root]
   const loaded = !!existing && existing.status !== 'error'
   set({
@@ -288,9 +301,10 @@ export function closeProject(root: string): void {
 
   const entries = { ...state.entries }
   delete entries[root]
-  const currentRoot = state.currentRoot === root ? Object.keys(entries)[0] ?? null : state.currentRoot
-  set({ entries, currentRoot })
+  const leaving = state.currentRoot === root
+  set({ entries, currentRoot: leaving ? null : state.currentRoot })
 
+  if (leaving) void window.architect.releaseRoot().catch(fail)
   void window.architect.closeProject(root).catch(fail)
 }
 

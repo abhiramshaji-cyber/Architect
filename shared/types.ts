@@ -345,6 +345,9 @@ export type ArchitectApi = {
   projects(): Promise<ProjectSummary[]>
   open(root: string): Promise<OpenedProject>
   closeProject(root: string): Promise<void>
+  claimRoot(root: string): Promise<boolean>
+  releaseRoot(): Promise<void>
+  focusRoot(root: string): Promise<boolean>
   pending(): Promise<Pending[]>
   decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
   createContract(root: string): Promise<Architecture>

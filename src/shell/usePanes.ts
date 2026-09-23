@@ -21,6 +21,7 @@ import { DEFAULT_VIEW, isViewId, type ViewId } from './views'
 type Layout = { root: string | null; tree: Pane; focus: Path }
 
 const STORE_PREFIX = 'panes:'
+const ROOTLESS_VIEW: ViewId = 'repos'
 
 export const PANE_BINDINGS: KeyBinding[] = [
   { command: 'pane.split.right', keys: ['KeyP', 'KeyV'] },
@@ -43,7 +44,7 @@ export const PANE_COMMAND_LABELS: Record<string, string> = {
 }
 
 function load(root: string | null): Layout {
-  const fallback: Layout = { root, tree: leaf(DEFAULT_VIEW), focus: [] }
+  const fallback: Layout = { root, tree: leaf(root ? DEFAULT_VIEW : ROOTLESS_VIEW), focus: [] }
   if (!root) return fallback
 
   try {

@@ -22,6 +22,7 @@ import * as git from './git/git'
 import * as open from './git/open'
 import * as github from './github/github'
 import { createPtyHost } from './pty/pty'
+import { TAB_DIGITS, TAB_GROUP, claim, owner, tabIndex } from './tabs'
 
 const TRAY_ICON = nativeImage.createFromPath(
   path.join(import.meta.dirname, '../../assets/trayTemplate.png'),
@@ -31,22 +32,72 @@ TRAY_ICON.setTemplateImage(true)
 const daemon = createDaemon({
   socketPath: process.env.ARCHITECT_SOCKET ?? (app.isPackaged ? SOCKET_PATH : `${SOCKET_PATH}-dev`),
 })
-let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
-const ptyHost = createPtyHost(spawnPty, (event: PtyEvent) => {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('architect:pty-event', event)
-})
+const TABBED = process.platform === 'darwin'
 
-function createWindow(): BrowserWindow {
+const tabs: BrowserWindow[] = []
+const hosts = new Map<number, ReturnType<typeof createPtyHost>>()
+const claims = new Map<number, string>()
+
+function broadcast(channel: string, ...args: unknown[]): void {
+  for (const tab of tabs) if (!tab.isDestroyed()) tab.webContents.send(channel, ...args)
+}
+
+function hostOf(window: BrowserWindow) {
+  const host = hosts.get(window.id)
+  if (!host) throw new Error('this window has no terminal host')
+  return host
+}
+
+function forget(window: BrowserWindow): void {
+  hosts.get(window.id)?.killAll()
+  hosts.delete(window.id)
+  claims.delete(window.id)
+
+  const index = tabs.indexOf(window)
+  if (index >= 0) tabs.splice(index, 1)
+}
+
+function onChord(window: BrowserWindow, event: Electron.Event, input: Electron.Input): void {
+  if (input.type !== 'keyDown' || input.alt || input.shift) return
+  const command = TABBED ? input.meta && !input.control : input.control && !input.meta
+  if (!command) return
+
+  if (input.code === 'KeyT') {
+    event.preventDefault()
+    createWindow(window)
+    return
+  }
+
+  const digit = TAB_DIGITS.indexOf(input.code) + 1
+  if (digit < 1) return
+
+  event.preventDefault()
+  const index = tabIndex(digit, tabs.length)
+  if (index !== null) tabs[index]?.focus()
+}
+
+function createWindow(sibling: BrowserWindow | null): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
+    tabbingIdentifier: TABBED ? TAB_GROUP : undefined,
     webPreferences: {
       preload: path.join(import.meta.dirname, '../preload/preload.mjs'),
       sandbox: false,
     },
   })
+
+  tabs.push(window)
+  hosts.set(
+    window.id,
+    createPtyHost(spawnPty, (event: PtyEvent) => {
+      if (!window.isDestroyed()) window.webContents.send('architect:pty-event', event)
+    }),
+  )
+
+  if (TABBED && sibling && !sibling.isDestroyed()) sibling.addTabbedWindow(window)
 
   if (process.env.ELECTRON_RENDERER_URL) {
     window.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -54,11 +105,12 @@ function createWindow(): BrowserWindow {
     window.loadFile(path.join(import.meta.dirname, '../renderer/index.html'))
   }
 
-  window.on('closed', () => ptyHost.killAll())
-  window.webContents.on('render-process-gone', () => ptyHost.killAll())
+  window.on('closed', () => forget(window))
+  window.webContents.on('render-process-gone', () => hosts.get(window.id)?.killAll())
   window.webContents.on('did-start-navigation', (details) => {
-    if (details.isMainFrame && !details.isSameDocument) ptyHost.killAll()
+    if (details.isMainFrame && !details.isSameDocument) hosts.get(window.id)?.killAll()
   })
+  window.webContents.on('before-input-event', (event, input) => onChord(window, event, input))
 
   return window
 }
@@ -74,14 +126,24 @@ function createTray() {
   updateTray(daemon.pending())
 }
 
-function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) {
-  ipcMain.handle(channel, async (_event, ...args: A): Promise<IpcResult<Awaited<R>>> => {
+function handleIn<A extends unknown[], R>(
+  channel: string,
+  fn: (window: BrowserWindow, ...args: A) => R | Promise<R>,
+) {
+  ipcMain.handle(channel, async (event, ...args: A): Promise<IpcResult<Awaited<R>>> => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) return { ok: false, error: 'no window for this request' }
+
     try {
-      return { ok: true, value: await fn(...args) }
+      return { ok: true, value: await fn(window, ...args) }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
+}
+
+function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) {
+  handleIn<A, R>(channel, (_window, ...args) => fn(...args))
 }
 
 async function openRepoBranch(
@@ -141,12 +203,25 @@ function wireIpc() {
   )
   handle('architect:read-tree', (root: string, dir: string) => daemon.readTree(root, dir))
 
-  handle('architect:pty-spawn', (spec: PtySpec) => ptyHost.spawn(spec))
-  handle('architect:pty-write', (id: string, data: string) => ptyHost.write(id, data))
-  handle('architect:pty-resize', (id: string, cols: number, rows: number) =>
-    ptyHost.resize(id, cols, rows),
+  handleIn('architect:claim-root', (window, root: string) =>
+    claim(claims, (id) => tabs.some((tab) => tab.id === id), window.id, root),
   )
-  handle('architect:pty-kill', (id: string) => ptyHost.kill(id))
+  handleIn('architect:release-root', (window) => {
+    claims.delete(window.id)
+  })
+  handle('architect:focus-root', (root: string) => {
+    const held = owner(claims, root)
+    const holder = held === null ? undefined : tabs.find((tab) => tab.id === held)
+    holder?.focus()
+    return holder !== undefined
+  })
+
+  handleIn('architect:pty-spawn', (window, spec: PtySpec) => hostOf(window).spawn(spec))
+  handleIn('architect:pty-write', (window, id: string, data: string) => hostOf(window).write(id, data))
+  handleIn('architect:pty-resize', (window, id: string, cols: number, rows: number) =>
+    hostOf(window).resize(id, cols, rows),
+  )
+  handleIn('architect:pty-kill', (window, id: string) => hostOf(window).kill(id))
 
   handle('architect:git-status', (root: string) => git.status(root))
   handle('architect:git-default-branch', (root: string) => git.defaultBranch(root))
@@ -187,17 +262,17 @@ app.whenReady().then(async () => {
   createTray()
 
   daemon.onChange((architecture: Architecture) => {
-    mainWindow?.webContents.send('architect:change', architecture)
+    broadcast('architect:change', architecture)
   })
   daemon.onPending((pending: Pending[]) => {
     updateTray(pending)
-    mainWindow?.webContents.send('architect:pending-update', pending)
+    broadcast('architect:pending-update', pending)
   })
   daemon.onProjects((projects: ProjectSummary[]) => {
-    mainWindow?.webContents.send('architect:projects-update', projects)
+    broadcast('architect:projects-update', projects)
   })
   daemon.onCodeMap((root: string, map: CodeMap) => {
-    mainWindow?.webContents.send('architect:code-map-update', root, map)
+    broadcast('architect:code-map-update', root, map)
   })
 
   try {
@@ -209,15 +284,18 @@ app.whenReady().then(async () => {
   }
 
   app.setLoginItemSettings({ openAtLogin: true })
-  mainWindow = createWindow()
+  createWindow(null)
 })
 
-app.on('will-quit', () => {
-  ptyHost.killAll()
-})
+function killEveryPty(): void {
+  for (const host of hosts.values()) host.killAll()
+}
 
-process.on('exit', () => {
-  ptyHost.killAll()
+app.on('will-quit', killEveryPty)
+process.on('exit', killEveryPty)
+
+app.on('new-window-for-tab', () => {
+  createWindow(BrowserWindow.getFocusedWindow())
 })
 
 app.on('window-all-closed', () => {
@@ -225,5 +303,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()
+  if (tabs.length === 0) createWindow(null)
 })

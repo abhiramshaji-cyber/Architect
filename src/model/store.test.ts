@@ -24,6 +24,9 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     projects: vi.fn().mockResolvedValue([]),
     open: vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null }),
     closeProject: vi.fn().mockResolvedValue(undefined),
+    claimRoot: vi.fn().mockResolvedValue(true),
+    releaseRoot: vi.fn().mockResolvedValue(undefined),
+    focusRoot: vi.fn().mockResolvedValue(true),
     pending: vi.fn().mockResolvedValue([]),
     decide: vi.fn().mockResolvedValue(undefined),
     createContract: vi.fn(),
@@ -169,8 +172,51 @@ describe('openProject', () => {
   })
 })
 
+describe('one project per tab', () => {
+  it('does not open a project another tab holds, and raises that tab instead', async () => {
+    architect.claimRoot = vi.fn().mockResolvedValue(false)
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
+    const { openProject, getSnapshot } = await import('./store')
+
+    openProject('/held')
+    await vi.waitFor(() => expect(architect.focusRoot).toHaveBeenCalledWith('/held'))
+
+    expect(architect.open).not.toHaveBeenCalled()
+    expect(getSnapshot().currentRoot).toBeNull()
+    expect(getSnapshot().entries['/held']).toBeUndefined()
+  })
+
+  it('adopts a project at startup only when the claim is granted', async () => {
+    architect.claimRoot = vi.fn().mockResolvedValue(false)
+    architect.projects = vi.fn().mockResolvedValue([{ root: '/a', title: 'A', contract: { status: 'ready' } }])
+    const { start, getSnapshot } = await import('./store')
+
+    start()
+    await vi.waitFor(() => expect(architect.claimRoot).toHaveBeenCalledWith('/a'))
+    await Promise.resolve()
+
+    expect(architect.focusRoot).not.toHaveBeenCalled()
+    expect(getSnapshot().currentRoot).toBeNull()
+  })
+
+  it('claims only the preferred project, not every project the daemon knows', async () => {
+    architect.projects = vi.fn().mockResolvedValue([
+      { root: '/a', title: 'A', contract: { status: 'ready' } },
+      { root: '/b', title: 'B', contract: { status: 'ready' } },
+    ])
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
+    const { start, getSnapshot } = await import('./store')
+
+    start()
+    await vi.waitFor(() => expect(getSnapshot().currentRoot).toBe('/a'))
+
+    expect(architect.claimRoot).toHaveBeenCalledTimes(1)
+    expect(Object.keys(getSnapshot().entries)).toEqual(['/a'])
+  })
+})
+
 describe('closeProject', () => {
-  it('closing the active project falls back to another open one', async () => {
+  it('closing the active project leaves the tab on no project and releases its claim', async () => {
     architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
     const { openProject, closeProject, getSnapshot } = await import('./store')
     openProject('/a')
@@ -182,8 +228,9 @@ describe('closeProject', () => {
 
     const s = getSnapshot()
     expect(s.entries['/b']).toBeUndefined()
-    expect(s.currentRoot).toBe('/a')
-    expect(s.architecture?.title).toBe('/a')
+    expect(s.entries['/a']?.status).toBe('ready')
+    expect(s.currentRoot).toBeNull()
+    expect(architect.releaseRoot).toHaveBeenCalled()
   })
 
   it('closing the last open project leaves no project open', async () => {
@@ -394,7 +441,7 @@ describe('in-flight responses', () => {
     const { openProject, closeProject, getSnapshot } = await import('./store')
 
     openProject('/a')
-    expect(getSnapshot().entries['/a']?.status).toBe('loading')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('loading'))
     closeProject('/a')
     expect(getSnapshot().entries['/a']).toBeUndefined()
 
