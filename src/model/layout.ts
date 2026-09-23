@@ -26,6 +26,20 @@ export function heightOf(data: NodeData): number {
   return NODE_BASE_H + purpose + badges
 }
 
+const RANK_SEP = 44
+export const NODE_SEP = 30
+const NODE_TITLE_PX = 13.5
+const LEGIBLE_PX = 9
+export const MIN_ZOOM = LEGIBLE_PX / NODE_TITLE_PX
+export const FIT_PADDING = 0.14
+export const DEFAULT_STAGE_W = 1200
+
+export function columnsFor(stage: number): number {
+  const width = Number.isFinite(stage) && stage > 0 ? stage : DEFAULT_STAGE_W
+  const legible = (width * (1 - 2 * FIT_PADDING)) / MIN_ZOOM
+  return Math.max(1, Math.floor((legible + NODE_SEP) / (NODE_W + NODE_SEP)))
+}
+
 export const INSPECTOR_W = 640
 export const INSPECTOR_MIN_W = 300
 export const INSPECTOR_MAX_W = 960
@@ -192,9 +206,50 @@ function hits(a: Box, b: Box): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
-export function positions(nodes: Logical[], links: Link[], hint?: Layout): Map<string, Pt> {
+type Sized = { id: string; cx: number; cy: number; h: number }
+
+function grid(placed: Sized[], columns: number): Map<string, Pt> {
+  const bands = new Map<number, Sized[]>()
+  for (const p of placed) {
+    const band = bands.get(p.cy)
+    if (band) band.push(p)
+    else bands.set(p.cy, [p])
+  }
+
+  const ordered = [...bands].sort((a, b) => a[0] - b[0])
+  const at = new Map<string, Pt>()
+
+  // ranked
+  if (!ordered.some(([, band]) => band.length > columns)) {
+    for (const p of placed) at.set(p.id, { x: p.cx - NODE_W / 2, y: p.cy - p.h / 2 })
+    return at
+  }
+
+  // packed
+  const centre = (Math.min(...placed.map((p) => p.cx)) + Math.max(...placed.map((p) => p.cx))) / 2
+  let top = Math.min(...placed.map((p) => p.cy - p.h / 2))
+
+  for (const [, band] of ordered) {
+    band.sort((a, b) => a.cx - b.cx)
+    for (let i = 0; i < band.length; i += columns) {
+      const row = band.slice(i, i + columns)
+      const tall = Math.max(...row.map((p) => p.h))
+      const left = centre - (row.length * NODE_W + (row.length - 1) * NODE_SEP) / 2
+      for (const [j, p] of row.entries()) {
+        at.set(p.id, { x: left + j * (NODE_W + NODE_SEP), y: top + (tall - p.h) / 2 })
+      }
+      top += tall + RANK_SEP
+    }
+  }
+
+  return at
+}
+
+export function positions(nodes: Logical[], links: Link[], hint?: Layout, stage?: number): Map<string, Pt> {
+  if (nodes.length === 0) return new Map()
+
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', ranksep: 44, nodesep: 30, marginx: 40, marginy: 40 })
+  g.setGraph({ rankdir: 'TB', ranksep: RANK_SEP, nodesep: NODE_SEP, marginx: 40, marginy: 40 })
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: heightOf(n.data) })
@@ -202,13 +257,14 @@ export function positions(nodes: Logical[], links: Link[], hint?: Layout): Map<s
 
   dagre.layout(g)
 
-  const placed = nodes.map((n) => {
-    const at = g.node(n.id)
-    return { id: n.id, x: at.x - NODE_W / 2, y: at.y - heightOf(n.data) / 2 }
+  const sized = nodes.map((n) => {
+    const spot = g.node(n.id)
+    return { id: n.id, cx: spot.x, cy: spot.y, h: heightOf(n.data) }
   })
 
-  const minY = Math.min(...placed.map((p) => p.y))
-  const auto = new Map(placed.map((p) => [p.id, { x: p.x, y: p.y - minY }]))
+  const packed = grid(sized, columnsFor(stage ?? DEFAULT_STAGE_W))
+  const minY = Math.min(...[...packed.values()].map((p) => p.y))
+  const auto = new Map([...packed].map(([id, p]) => [id, { x: p.x, y: p.y - minY }]))
 
   // pin
   const at = new Map<string, Pt>()
