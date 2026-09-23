@@ -308,7 +308,7 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
   return next
 }
 
-function canonical(raw: string): string {
+export function canonical(raw: string): string {
   const parts: string[] = []
 
   for (const part of raw.replace(/\\/g, '/').split('/')) {
