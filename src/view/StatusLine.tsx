@@ -36,9 +36,14 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
     let live = true
     const read = () => {
       if (document.visibilityState === 'hidden') return
-      window.architect.gitStatus(root).then((result) => {
-        if (live) setGit(result)
-      })
+      window.architect
+        .gitStatus(root)
+        .then((result) => {
+          if (live) setGit(result)
+        })
+        .catch(() => {
+          if (live) setGit(null)
+        })
     }
 
     read()
