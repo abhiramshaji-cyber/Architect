@@ -1,7 +1,11 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import type { GitResult, GitStatus } from '../../shared/types'
 import { isDirty } from '../model/buffer'
 import { pendingHere, type ProjectState } from '../model/store'
+import { gitText } from './git-segment'
 import { registerSegment, segmentList, subscribeSegments } from './segments'
+
+const GIT_POLL_MS = 3000
 
 function projectName(root: string | null): string {
   if (!root) return 'No project'
@@ -21,6 +25,41 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
     () => registerSegment({ id: 'core.project', order: 0, text: projectName(project.currentRoot) }),
     [project.currentRoot]
   )
+
+  const root = project.currentRoot
+  const [git, setGit] = useState<GitResult<GitStatus> | null>(null)
+
+  useEffect(() => {
+    setGit(null)
+    if (!root) return
+
+    let live = true
+    const read = () => {
+      if (document.visibilityState === 'hidden') return
+      window.architect
+        .gitStatus(root)
+        .then((result) => {
+          if (live) setGit(result)
+        })
+        .catch(() => {
+          if (live) setGit(null)
+        })
+    }
+
+    read()
+    const timer = setInterval(read, GIT_POLL_MS)
+    window.addEventListener('focus', read)
+    document.addEventListener('visibilitychange', read)
+
+    return () => {
+      live = false
+      clearInterval(timer)
+      window.removeEventListener('focus', read)
+      document.removeEventListener('visibilitychange', read)
+    }
+  }, [root])
+
+  useEffect(() => registerSegment({ id: 'core.git', order: 5, text: gitText(git) }), [git])
 
   useEffect(() => registerSegment({ id: 'core.view', order: 10, text: viewLabel ?? '' }), [viewLabel])
 
