@@ -612,6 +612,11 @@ export function installMock() {
     async githubPulls() {
       return demoGithub
     },
+    async githubCompare() {},
+    async githubCancelCompare() {},
+    onGithubCompared() {
+      return () => {}
+    },
     async repoPlan(repo) {
       return demoGit(repo)
     },

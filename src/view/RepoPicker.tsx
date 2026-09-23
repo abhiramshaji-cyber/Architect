@@ -18,6 +18,7 @@ import {
 import type {
   GithubAuth,
   GithubBranch,
+  GithubCompare,
   GithubPull,
   GithubRepo,
   OpenChoice,
@@ -67,6 +68,15 @@ function pushedText(pushedAt: string | null): string {
   return `pushed ${new Date(at).toLocaleDateString()}`
 }
 
+function distanceText(distance: GithubCompare | undefined): string {
+  if (!distance) return ''
+  if (distance.ahead === 0 && distance.behind === 0) return 'in sync'
+
+  return [distance.ahead > 0 ? `${distance.ahead} ahead` : '', distance.behind > 0 ? `${distance.behind} behind` : '']
+    .filter((part) => part !== '')
+    .join(' · ')
+}
+
 function rowsOf(branches: GithubBranch[], pulls: GithubPull[]): Row[] {
   return [
     ...branches.map((branch) => ({ key: `branch:${branch.name}`, label: branch.name, branch: branch.name })),
@@ -81,6 +91,7 @@ export default function RepoPicker() {
   const [repos, setRepos] = useState<GithubRepo[]>(() => cached<GithubRepo>(REPO_CACHE))
   const [branches, setBranches] = useState<GithubBranch[]>([])
   const [pulls, setPulls] = useState<GithubPull[]>([])
+  const [distances, setDistances] = useState(new Map<string, GithubCompare>())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<OpenPlan | null>(null)
@@ -165,6 +176,28 @@ export default function RepoPicker() {
       live = false
     }
   }, [repo])
+
+  useEffect(() => {
+    const base = repo?.defaultBranch
+    if (!repo || base === null || base === undefined || branches.length === 0) return
+
+    const key = repo.nameWithOwner
+    const [owner = '', name = ''] = key.split('/')
+    setDistances(new Map())
+
+    const off = window.architect.onGithubCompared((compared) => {
+      if (compared.repo !== key || !compared.result.ok) return
+      const distance = compared.result.value
+      setDistances((seen) => new Map(seen).set(compared.head, distance))
+    })
+
+    void window.architect.githubCompare(owner, name, base, branches.map((branch) => branch.name)).catch(() => {})
+
+    return () => {
+      off()
+      void window.architect.githubCancelCompare().catch(() => {})
+    }
+  }, [repo, branches])
 
   const shownRepos = useMemo(
     () => rank(picker.query, repos, (item) => item.nameWithOwner),
@@ -304,20 +337,24 @@ export default function RepoPicker() {
               })}
 
             {repo &&
-              shownRows.map((row, at) => (
-                <li key={row.key}>
-                  <button
-                    className={at === index ? 'picker-row active' : 'picker-row'}
-                    onClick={() => {
-                      setPicker({ ...picker, index: at })
-                      void choose(row)
-                    }}
-                  >
-                    <span className="picker-name">{row.label}</span>
-                    {row.branch === repo.defaultBranch && <span className="picker-meta">default</span>}
-                  </button>
-                </li>
-              ))}
+              shownRows.map((row, at) => {
+                const meta =
+                  row.branch === repo.defaultBranch ? 'default' : distanceText(distances.get(row.branch))
+                return (
+                  <li key={row.key}>
+                    <button
+                      className={at === index ? 'picker-row active' : 'picker-row'}
+                      onClick={() => {
+                        setPicker({ ...picker, index: at })
+                        void choose(row)
+                      }}
+                    >
+                      <span className="picker-name">{row.label}</span>
+                      {meta !== '' && <span className="picker-meta">{meta}</span>}
+                    </button>
+                  </li>
+                )
+              })}
 
             {count === 0 && !loading && <li className="empty">Nothing matches</li>}
           </ul>

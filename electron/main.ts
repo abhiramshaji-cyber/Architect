@@ -7,6 +7,8 @@ import {
   type ChangedFile,
   type CodeMap,
   type DiffSection,
+  type GithubCompare,
+  type GithubResult,
   type IpcResult,
   type OpenChoice,
   type OpenResult,
@@ -39,6 +41,7 @@ const TABBED = process.platform === 'darwin'
 const tabs: BrowserWindow[] = []
 const hosts = new Map<number, ReturnType<typeof createPtyHost>>()
 const claims = new Map<number, string>()
+const compares = new Map<number, AbortController>()
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const tab of tabs) if (!tab.isDestroyed()) tab.webContents.send(channel, ...args)
@@ -50,10 +53,16 @@ function hostOf(window: BrowserWindow) {
   return host
 }
 
+function stopCompare(window: BrowserWindow): void {
+  compares.get(window.id)?.abort()
+  compares.delete(window.id)
+}
+
 function forget(window: BrowserWindow): void {
   hosts.get(window.id)?.killAll()
   hosts.delete(window.id)
   claims.delete(window.id)
+  stopCompare(window)
 
   const index = tabs.indexOf(window)
   if (index >= 0) tabs.splice(index, 1)
@@ -248,6 +257,25 @@ function wireIpc() {
   handle('architect:github-branches', (owner: string, repo: string) => github.branches(owner, repo))
   handle('architect:github-rates', () => github.rates())
   handle('architect:github-pulls', (owner: string, repo: string) => github.pulls(owner, repo))
+
+  handleIn('architect:github-compare', async (window, owner: string, repo: string, base: string, heads: string[]) => {
+    stopCompare(window)
+    const run = new AbortController()
+    compares.set(window.id, run)
+
+    const emit = (head: string, result: GithubResult<GithubCompare>) => {
+      if (!window.isDestroyed()) {
+        window.webContents.send('architect:github-compared', { repo: `${owner}/${repo}`, head, result })
+      }
+    }
+
+    try {
+      await github.compareAll(owner, repo, base, heads, emit, run.signal)
+    } finally {
+      if (compares.get(window.id) === run) compares.delete(window.id)
+    }
+  })
+  handleIn('architect:github-compare-cancel', (window) => stopCompare(window))
 
   handle('architect:repo-plan', (repo: string, branch: string, pr?: number) =>
     open.plan(open.GITHUB_DIR, repo, branch, pr),

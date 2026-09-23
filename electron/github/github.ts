@@ -4,6 +4,7 @@ import type {
   GithubAuth,
   GithubBranch,
   GithubBudget,
+  GithubCompare,
   GithubFailure,
   GithubPull,
   GithubRates,
@@ -243,6 +244,73 @@ export async function branches(owner: string, repo: string, gh: Gh = GH): Promis
   }
 
   return { ok: true, value }
+}
+
+const UNUSABLE_REF = /[\0-\x20~^:?*#%[\\\]]|@\{|\.\.|^[-./]|[./]$|\/\/|\.lock(\/|$)/
+
+function ref(value: string): boolean {
+  return value !== '' && !UNUSABLE_REF.test(value)
+}
+
+const COMPARE_QUERY = '{ahead: .ahead_by, behind: .behind_by}'
+
+export async function compare(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+  gh: Gh = GH,
+): Promise<GithubResult<GithubCompare>> {
+  for (const value of [owner, repo]) {
+    if (!SEGMENT.test(value)) return { ok: false, error: { kind: 'bad-argument', value } }
+  }
+  for (const value of [base, head]) {
+    if (!ref(value)) return { ok: false, error: { kind: 'bad-argument', value } }
+  }
+
+  const args = ['api', `repos/${owner}/${repo}/compare/${base}...${head}`, '--jq', COMPARE_QUERY]
+  const out = await gh.run(args)
+  if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
+
+  const row = record(parsed(out.stdout))
+  const ahead = count(row?.ahead)
+  const behind = count(row?.behind)
+  if (ahead === null || behind === null) return { ok: false, error: { kind: 'unreadable', args } }
+
+  return { ok: true, value: { ahead, behind } }
+}
+
+export const COMPARE_LANES = 6
+
+const WHOLE_ACCOUNT: GithubFailure['kind'][] = ['not-installed', 'auth-required', 'rate-limited', 'unreachable']
+
+export async function compareAll(
+  owner: string,
+  repo: string,
+  base: string,
+  heads: string[],
+  emit: (head: string, result: GithubResult<GithubCompare>) => void,
+  signal?: AbortSignal,
+  gh: Gh = GH,
+): Promise<void> {
+  const queue = [...new Set(heads)].filter((head) => head !== base)
+  let next = 0
+  let halted = false
+
+  const stopped = (): boolean => halted || signal?.aborted === true
+
+  const lane = async (): Promise<void> => {
+    while (next < queue.length && !stopped()) {
+      const head = queue[next++] as string
+      const result = await compare(owner, repo, base, head, gh)
+      if (stopped()) return
+
+      emit(head, result)
+      if (!result.ok && WHOLE_ACCOUNT.includes(result.error.kind)) halted = true
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(COMPARE_LANES, queue.length) }, lane))
 }
 
 const COLLAB_QUERY = [

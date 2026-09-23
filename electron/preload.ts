@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Architecture, ArchitectApi, CodeMap, IpcResult, Pending, ProjectSummary, PtyEvent } from '../shared/types'
+import type {
+  Architecture,
+  ArchitectApi,
+  CodeMap,
+  GithubCompared,
+  IpcResult,
+  Pending,
+  ProjectSummary,
+  PtyEvent,
+} from '../shared/types'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, ...args)) as IpcResult<T>
@@ -73,6 +82,13 @@ const architect: ArchitectApi = {
   githubBranches: (owner, repo) => invoke('architect:github-branches', owner, repo),
   githubRates: () => invoke('architect:github-rates'),
   githubPulls: (owner, repo) => invoke('architect:github-pulls', owner, repo),
+  githubCompare: (owner, repo, base, heads) => invoke('architect:github-compare', owner, repo, base, heads),
+  githubCancelCompare: () => invoke('architect:github-compare-cancel'),
+  onGithubCompared: (fn: (compared: GithubCompared) => void) => {
+    const listener = (_event: unknown, payload: GithubCompared) => fn(payload)
+    ipcRenderer.on('architect:github-compared', listener)
+    return () => ipcRenderer.off('architect:github-compared', listener)
+  },
   repoPlan: (repo, branch, pr) => invoke('architect:repo-plan', repo, branch, pr),
   repoOpen: (repo, branch, choice, pr) => invoke('architect:repo-open', repo, branch, choice, pr),
 }
