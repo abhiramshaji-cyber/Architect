@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   ReactFlow,
@@ -28,6 +28,8 @@ import {
   statusOf,
   HANDLE_IN,
   HANDLE_OUT,
+  FIT_PADDING,
+  MIN_ZOOM,
   NODE_W,
   type NodeData
 } from '../model/layout'
@@ -42,19 +44,19 @@ type CanvasProps = {
   onEdit?: (op: (a: Architecture) => OpResult) => boolean
 }
 
-const FIT = { padding: 0.14 }
+const FIT = { padding: FIT_PADDING }
 
-function Reveal({ count }: { count: number }) {
+function Reveal({ count, stage }: { count: number; stage: number }) {
   const flow = useReactFlow()
   const width = useStore((s) => s.width)
-  const seen = useRef({ count, width })
+  const seen = useRef({ count, width, stage })
 
   useEffect(() => {
     const grew = count > seen.current.count
-    const resized = width !== seen.current.width
-    seen.current = { count, width }
-    if (grew || resized) void flow.fitView({ ...FIT, duration: grew ? 220 : 0 })
-  }, [count, width, flow])
+    const relaid = width !== seen.current.width || stage !== seen.current.stage
+    seen.current = { count, width, stage }
+    if (grew || relaid) void flow.fitView({ ...FIT, duration: grew ? 220 : 0 })
+  }, [count, width, stage, flow])
 
   return null
 }
@@ -174,6 +176,16 @@ export default function Canvas({ architecture, ownership, pending, theme, select
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stage, setStage] = useState(0)
+
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const watch = new ResizeObserver((entries) => setStage(entries[entries.length - 1]?.contentRect.width ?? 0))
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [])
 
   const { nodes, edges, realIds } = useMemo(() => {
     const counts = new Map<string, number>()
@@ -181,7 +193,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
     for (const m of ownership?.multi ?? []) for (const id of m.owners) counts.set(id, (counts.get(id) ?? 0) + 1)
 
     const { nodes: logical, links } = build(architecture, pending)
-    const at = positions(logical, links, architecture.layout)
+    const at = positions(logical, links, architecture.layout, stage)
 
     const rfNodes: Node<NodeData>[] = logical.map((n) => ({
       id: n.id,
@@ -222,7 +234,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
     const real = new Set(links.filter((l) => l.kind === 'real').map((l) => l.id))
 
     return { nodes: rfNodes, edges: rfEdges, realIds: real }
-  }, [architecture, ownership, pending, colors, editing])
+  }, [architecture, ownership, pending, colors, editing, stage])
 
   const marked = useMemo(
     () => nodes.map((n) => ({ ...n, selected: n.id === selectedId })),
@@ -295,7 +307,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
   }, [selected, onSelect])
 
   return (
-    <div className={editing ? 'canvas-stage canvas-editing' : 'canvas-stage'}>
+    <div ref={stageRef} className={editing ? 'canvas-stage canvas-editing' : 'canvas-stage'}>
       <ReactFlow
         nodes={marked}
         edges={edges}
@@ -310,12 +322,12 @@ export default function Canvas({ architecture, ownership, pending, theme, select
         onEdgesDelete={editing ? disconnect : undefined}
         fitView
         fitViewOptions={FIT}
-        minZoom={0.2}
+        minZoom={MIN_ZOOM}
         proOptions={{ hideAttribution: true }}
         onNodeClick={(_event, node) => onSelect(node.id)}
         onPaneClick={close}
       >
-        <Reveal count={nodes.length} />
+        <Reveal count={nodes.length} stage={stage} />
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
       </ReactFlow>

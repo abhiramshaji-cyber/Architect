@@ -9,6 +9,10 @@ import {
   folderName,
   heightOf,
   positions,
+  columnsFor,
+  MIN_ZOOM,
+  NODE_SEP,
+  DEFAULT_STAGE_W,
   roleOf,
   statusOf,
   NODE_BADGES_H,
@@ -180,6 +184,83 @@ describe('ranking', () => {
     ])
 
     expect([...layout(a).entries()]).toEqual([...layout(a).entries()])
+  })
+})
+
+function ids(count: number, prefix = 'c'): string[] {
+  return Array.from({ length: count }, (_, i) => `${prefix}${i}`)
+}
+
+function span(at: Map<string, { x: number; y: number }>, axis: 'x' | 'y') {
+  const all = [...at.values()].map((p) => p[axis])
+  return { lanes: new Set(all).size, size: Math.max(...all) - Math.min(...all) }
+}
+
+describe('packing', () => {
+  it('packs a block of components with no edges at all into a grid instead of one row', () => {
+    const at = layout(architecture(ids(40), []))
+    const columns = columnsFor(DEFAULT_STAGE_W)
+
+    expect(span(at, 'x').lanes).toBe(columns)
+    expect(span(at, 'y').lanes).toBe(Math.ceil(40 / columns))
+    expect(span(at, 'x').size).toBe((columns - 1) * (NODE_W + NODE_SEP))
+  })
+
+  it('wraps a wide rank and still keeps it clear of the rank it hangs off', () => {
+    const kids = ids(24, 'k')
+    const at = layout(architecture(['root', ...kids], kids.map((k) => ['root', k] as [string, string])))
+    const root = at.get('root') as { x: number; y: number }
+    const rows = new Set(kids.map((k) => (at.get(k) as { y: number }).y))
+
+    expect(rows.size).toBe(Math.ceil(24 / columnsFor(DEFAULT_STAGE_W)))
+    for (const k of kids) expect((at.get(k) as { y: number }).y).toBeGreaterThan(root.y)
+  })
+
+  it('leaves a rank narrow enough to read exactly where the ranking put it', () => {
+    const kids = ids(columnsFor(DEFAULT_STAGE_W), 'k')
+    const at = layout(architecture(['root', ...kids], kids.map((k) => ['root', k] as [string, string])))
+
+    expect(span(at, 'y').lanes).toBe(2)
+  })
+
+  it('lays out a single component', () => {
+    const at = layout(architecture(['only'], []))
+
+    expect(at.size).toBe(1)
+    expect(at.get('only')).toEqual({ x: 40, y: 0 })
+  })
+
+  it('lays out no components at all as an empty placement', () => {
+    expect(layout(architecture([], [])).size).toBe(0)
+  })
+
+  it('keeps a deep chain in rank order beside a wide unconnected block', () => {
+    const chain = ids(6, 'd')
+    const loose = ids(30, 'u')
+    const at = layout(
+      architecture([...chain, ...loose], chain.slice(0, -1).map((c, i) => [c, chain[i + 1]] as [string, string]))
+    )
+
+    const depth = chain.map((c) => (at.get(c) as { y: number }).y)
+    expect(depth).toEqual([...depth].sort((a, b) => a - b))
+    expect(new Set(depth).size).toBe(6)
+    expect(span(at, 'x').size).toBeLessThanOrEqual((columnsFor(DEFAULT_STAGE_W) - 1) * (NODE_W + NODE_SEP))
+  })
+
+  it('fits more columns on a wider stage and never fewer than one', () => {
+    expect(columnsFor(2400)).toBeGreaterThan(columnsFor(DEFAULT_STAGE_W))
+    expect(columnsFor(1)).toBe(1)
+    expect(columnsFor(0)).toBe(columnsFor(DEFAULT_STAGE_W))
+    expect(columnsFor(Number.NaN)).toBe(columnsFor(DEFAULT_STAGE_W))
+  })
+
+  it('never packs a block wider than the stage can draw a legible card in', () => {
+    const at = positions(...(() => {
+      const { nodes, links } = build(architecture(ids(200), []), [])
+      return [nodes, links, undefined, 1600] as const
+    })())
+
+    expect(span(at, 'x').size + NODE_W).toBeLessThanOrEqual((1600 * (1 - 2 * 0.14)) / MIN_ZOOM)
   })
 })
 
