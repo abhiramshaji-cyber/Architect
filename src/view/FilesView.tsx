@@ -27,8 +27,6 @@ export default function FilesView() {
       <div className="files-pane">
         {file === null ? (
           <div className="empty-state">{fileBusy ? 'Opening…' : 'Select a file to read or edit it'}</div>
-        ) : file.error !== null ? (
-          <div className="empty-state">{refusalOf(file.error)}</div>
         ) : (
           <>
             <div className="files-bar">
@@ -36,6 +34,11 @@ export default function FilesView() {
                 {file.path}
                 {dirty && <span className="files-dot" aria-label="unsaved changes" />}
               </span>
+              {fileNotice && (
+                <span className={fileNotice.error ? 'files-notice error' : 'files-notice'} role="status">
+                  {fileNotice.text}
+                </span>
+              )}
               <div className="files-actions">
                 <button className="primary" onClick={saveFile} disabled={!dirty || fileBusy}>
                   {fileBusy ? 'Saving…' : 'Save'}
@@ -52,17 +55,17 @@ export default function FilesView() {
               </div>
             </div>
 
-            {fileNotice && (
-              <div className={fileNotice.error ? 'edit-bar-message error' : 'edit-bar-message'}>{fileNotice.text}</div>
+            {file.error !== null ? (
+              <div className="empty-state">{refusalOf(file.error)}</div>
+            ) : (
+              <Editor
+                path={file.path}
+                text={file.draft}
+                line={fileLine}
+                editable={!fileBusy}
+                onChange={editFile}
+              />
             )}
-
-            <Editor
-              path={file.path}
-              text={file.draft}
-              line={fileLine}
-              editable={!fileBusy}
-              onChange={editFile}
-            />
           </>
         )}
       </div>

@@ -143,7 +143,7 @@ function snapshot(): ProjectState {
 }
 
 export function useProject(): ProjectState {
-  return useSyncExternalStore(subscribe, snapshot)
+  return useSyncExternalStore(subscribe, snapshot, snapshot)
 }
 
 export { snapshot as getSnapshot }
