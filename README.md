@@ -55,9 +55,15 @@ claude: check_change({ from: 'ui', to: 'db' })
         -> FORBIDDEN          "the ui goes through api, it never touches the database directly"
 
 claude: check_change({ from: 'api', to: 'search' })
-        -> UNKNOWN            no such component, it has to ask you
+        -> UNKNOWN-COMPONENT  'search' is not on the canvas, it proposes the component
 
 claude: propose_change({ kind: 'component', id: 'search', ... })
+        -> blocks
+
+claude: check_change({ from: 'ui', to: 'billing' })
+        -> UNDRAWN-EDGE       both components exist, no edge between them, it proposes the edge
+
+claude: propose_change({ kind: 'edge', from: 'ui', to: 'billing', ... })
         -> blocks
 ```
 
@@ -114,15 +120,52 @@ npm install
 npm run install:local
 ```
 
-That installs the app and writes the MCP bridge to `~/.architect/bin/architect-mcp.mjs`, outside the app bundle, because Node cannot execute a file inside `app.asar`. Register it once, for every project:
+That installs the app and writes the MCP bridge to `~/.architect/bin/architect-mcp.mjs`, outside the app bundle, because Node cannot execute a file inside `app.asar`. If that file is missing, `npm run install:local` has not run yet and no client can reach Architect.
+
+Register the bridge once, with whichever client you use.
+
+Claude Code, in any terminal:
 
 ```bash
 claude mcp add --scope user architect -- node ~/.architect/bin/architect-mcp.mjs
 ```
 
+Claude Desktop, merged into `claude_desktop_config.json`, then restart it. Neither it nor Codex expands `~`, so write the absolute path:
+
+```json
+{
+  "mcpServers": {
+    "architect": {
+      "command": "node",
+      "args": ["/Users/you/.architect/bin/architect-mcp.mjs"]
+    }
+  }
+}
+```
+
+Codex, appended to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.architect]
+command = "node"
+args = ["/Users/you/.architect/bin/architect-mcp.mjs"]
+```
+
 One registration covers every repo. The bridge sends its working directory with each call, and Architect walks up from there to find `architect.md`, so the right project resolves automatically. A repo with no `architect.md` gets a clear error rather than silently passing.
 
 The app must be running for the bridge to reach it. It launches at login and lives in your tray.
+
+## Editing architect.md
+
+`npm run build` also produces a language server at `out/lsp/server.js`. Point any LSP client at it and `architect.md` gets diagnostics as you type, completion of component ids on dependency and forbidden lines, go to definition from an edge endpoint to the component that defines it, and rename across every reference including the layout hint.
+
+The server speaks stdio and needs the `--stdio` flag:
+
+```bash
+node /path/to/architect/out/lsp/server.js --stdio
+```
+
+In Neovim that is `vim.lsp.start({ cmd = { 'node', '/path/to/architect/out/lsp/server.js', '--stdio' }, filetypes = { 'markdown' } })`. In VS Code it is the `serverOptions.command` of a `LanguageClient`. The server only answers for a document named `architect.md`, so pointing it at markdown in general is safe.
 
 ## Status
 

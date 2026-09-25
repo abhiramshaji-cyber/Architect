@@ -6,7 +6,7 @@ export default defineConfig({
   main: {
     build: {
       lib: { entry: resolve('electron/main.ts') },
-      rollupOptions: { external: ['typescript'], output: { entryFileNames: 'main.js' } }
+      rollupOptions: { external: ['typescript', 'node-pty'], output: { entryFileNames: 'main.js' } }
     }
   },
   preload: {

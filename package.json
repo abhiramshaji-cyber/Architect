@@ -7,11 +7,13 @@
   "type": "module",
   "main": "out/main/main.js",
   "bin": {
-    "architect-mcp": "out/mcp/bridge.js"
+    "architect": "out/cli/main.js",
+    "architect-mcp": "out/mcp/bridge.js",
+    "architect-lsp": "out/lsp/server.js"
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build && vite build --config vite.mcp.config.ts",
+    "build": "electron-vite build && vite build --config vite.mcp.config.ts && vite build --config vite.cli.config.ts && vite build --config vite.lsp.config.ts",
     "install:local": "npm run build && node scripts/build-local-target.mjs && node scripts/install-local.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -20,12 +22,27 @@
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
     "@dagrejs/dagre": "^1.1.4",
+    "@lezer/highlight": "^1.2.3",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.0.0",
     "chokidar": "^4.0.0",
+    "node-pty": "^1.1.0",
+    "parse-diff": "^0.12.0",
     "picomatch": "^4.0.7",
     "typescript": "^5.6.0",
+    "vscode-languageserver": "^10.1.1",
+    "vscode-languageserver-textdocument": "^1.0.14",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -46,10 +63,26 @@
   "build": {
     "appId": "dev.architect.app",
     "productName": "Architect",
-    "files": ["out/**", "assets/**", "package.json"],
-    "directories": { "output": "dist" },
-    "mac": { "icon": "assets/icon.png", "category": "public.app-category.developer-tools" },
-    "win": { "icon": "assets/icon.png", "target": "nsis" },
-    "linux": { "icon": "assets/icon.png", "target": "AppImage" }
+    "files": [
+      "out/**",
+      "assets/**",
+      "package.json",
+      "node_modules/node-pty/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": "nsis"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": "AppImage"
+    }
   }
 }

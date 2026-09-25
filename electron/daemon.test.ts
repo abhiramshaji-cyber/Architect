@@ -1,12 +1,17 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Architecture, Decision, Request, Response, Verdict } from '../shared/types'
+import type { Architecture, Decision, ProjectSummary, Request, Response, Verdict } from '../shared/types'
+import { parse } from './contract/graph'
 import { createDaemon } from './daemon'
+
+function parseErrorOf(summary: ProjectSummary | undefined): string | undefined {
+  return summary?.contract.status === 'invalid' ? summary.contract.error : undefined
+}
 
 type OmitId<T> = T extends unknown ? Omit<T, 'id'> : never
 type RequestInput = OmitId<Request>
@@ -34,6 +39,7 @@ ${h2} Packages
 const component = (id: string) => `${h3} ${id}\ndoes things\nowns: \`${id}/**\`\n`
 
 let tmpRoot: string
+let tmpHome: string
 let socketPath: string
 let daemon: ReturnType<typeof createDaemon>
 
@@ -89,12 +95,263 @@ async function client(path: string) {
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-daemon-'))
-  socketPath = path.join(tmpRoot, 'sock-dir', 'nested', 'sock')
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-home-'))
+  socketPath = path.join(tmpHome, 'sock-dir', 'nested', 'sock')
 })
 
 afterEach(async () => {
   await daemon?.close()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
+  fs.rmSync(tmpHome, { recursive: true, force: true })
+})
+
+describe('open', () => {
+  it('opens a directory that has no contract and registers it as missing one', async () => {
+    daemon = createDaemon({ socketPath })
+    const plain = fs.mkdtempSync(path.join(tmpRoot, 'plain-'))
+    fs.writeFileSync(path.join(plain, 'index.ts'), 'export function go() {}\n')
+
+    await expect(daemon.open(plain)).resolves.toEqual({ contract: { status: 'missing' }, architecture: null })
+    expect(daemon.projects()).toEqual([
+      { root: plain, title: path.basename(plain), contract: { status: 'missing' } },
+    ])
+  })
+
+  it('refuses every agent call for a root that has no contract', async () => {
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+    const plain = fs.mkdtempSync(path.join(tmpRoot, 'plain-'))
+    await daemon.open(plain)
+
+    const c = await client(socketPath)
+    const architecture = await c.request({ op: 'get_architecture', cwd: plain })
+    const changed = await c.request({ op: 'check_change', cwd: plain, from: 'a', to: 'b' })
+    c.close()
+
+    expect(architecture.ok).toBe(false)
+    if (!architecture.ok) expect(architecture.error).toMatch(/no architecture defined for/)
+    expect(changed.ok).toBe(false)
+    if (!changed.ok) expect(changed.error).toMatch(/no architecture defined for/)
+  })
+
+  it('scaffolds a starter contract from the folders it scanned', async () => {
+    daemon = createDaemon({ socketPath })
+    const plain = fs.mkdtempSync(path.join(tmpRoot, 'plain-'))
+    fs.mkdirSync(path.join(plain, 'src'))
+    fs.mkdirSync(path.join(plain, 'server'))
+    fs.writeFileSync(path.join(plain, 'src', 'app.ts'), 'export function app() {}\n')
+    fs.writeFileSync(path.join(plain, 'server', 'api.ts'), 'export function api() {}\n')
+    fs.writeFileSync(path.join(plain, 'readme.ts'), 'export const readme = 1\n')
+    fs.mkdirSync(path.join(plain, 'web app'))
+    fs.writeFileSync(path.join(plain, 'web app', 'page.ts'), 'export function page() {}\n')
+    await daemon.open(plain)
+
+    const architecture = await daemon.createContract(plain)
+
+    expect(architecture.components.map((c) => c.id)).toEqual(['server', 'src', 'web-app'])
+    expect(architecture.components.map((c) => c.owns)).toEqual([['server/**'], ['src/**'], ['web app/**']])
+    expect(parse(fs.readFileSync(path.join(plain, 'architect.md'), 'utf8'))).toEqual(architecture)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
+    await expect(daemon.createContract(plain)).rejects.toThrow(/already has an architect\.md/)
+  })
+
+  it('writes a contract with no components for a project that has no source folders', async () => {
+    daemon = createDaemon({ socketPath })
+    const flat = fs.mkdtempSync(path.join(tmpRoot, 'flat-'))
+    fs.writeFileSync(path.join(flat, 'index.ts'), 'export const one = 1\n')
+    await daemon.open(flat)
+
+    const architecture = await daemon.createContract(flat)
+
+    expect(architecture.components).toEqual([])
+    expect(parse(fs.readFileSync(path.join(flat, 'architect.md'), 'utf8'))).toEqual(architecture)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
+  })
+
+  it('opens a directory that holds a contract', async () => {
+    daemon = createDaemon({ socketPath })
+    writeArchitect(tmpRoot, fixture(component('a')))
+
+    await expect(daemon.open(tmpRoot)).resolves.toMatchObject({ architecture: { title: 'Test' } })
+    expect(daemon.projects().map((p) => p.root)).toEqual([tmpRoot])
+  })
+})
+
+describe('drafting a first contract', () => {
+  const drafted = (root: string) =>
+    [
+      '```markdown',
+      `# ${path.basename(root)}`,
+      '',
+      'A tiny web app.',
+      '',
+      '## Components',
+      '',
+      '### api',
+      'Answers http requests.',
+      'owns: `api/**`',
+      '',
+      '### ui',
+      'Draws the pages a visitor sees.',
+      'owns: `ui/**`',
+      '',
+      '## Dependencies',
+      '',
+      '- ui -> api',
+      '',
+      '## Forbidden',
+      '',
+      '## Packages',
+      '```',
+    ].join('\n')
+
+  function repo(): string {
+    const root = fs.mkdtempSync(path.join(tmpRoot, 'draft-'))
+    fs.mkdirSync(path.join(root, 'ui'))
+    fs.mkdirSync(path.join(root, 'api'))
+    fs.writeFileSync(path.join(root, 'api', 'handler.ts'), 'export function handler() { return 1 }\n')
+    fs.writeFileSync(
+      path.join(root, 'ui', 'page.ts'),
+      "import { handler } from '../api/handler'\nexport function page() { return handler() }\n",
+    )
+    return root
+  }
+
+  it('queues the draft as a pending proposal and writes nothing before it is approved', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+
+    const result = await daemon.draftContract(root)
+
+    expect(result.ok).toBe(true)
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'missing' })
+    expect(daemon.pending().map((p) => p.proposal.kind)).toEqual(['contract'])
+  })
+
+  it('writes the draft on approval and the file parses back to what was shown', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+    await daemon.draftContract(root)
+
+    const proposal = daemon.pending()[0]
+    expect(proposal?.proposal.kind).toBe('contract')
+    if (proposal?.proposal.kind !== 'contract') return
+    await daemon.decide(proposal.id, true)
+
+    const written = fs.readFileSync(path.join(root, 'architect.md'), 'utf8')
+    expect(written).toBe(proposal.proposal.markdown)
+    const architecture = parse(written)
+    expect(architecture.components.map((c) => c.id)).toEqual(['api', 'ui'])
+    expect(architecture.edges).toEqual([{ from: 'ui', to: 'api' }])
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
+    expect(daemon.pending()).toEqual([])
+  })
+
+  it('writes nothing when the draft is rejected and leaves the project without a contract', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+    await daemon.draftContract(root)
+
+    const proposal = daemon.pending()[0]
+    await daemon.decide(proposal?.id ?? '', false, 'not how I see it')
+
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'missing' })
+    expect(daemon.pending()).toEqual([])
+  })
+
+  it('reports the agent as not installed and queues nothing', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 'missing', stdout: '', stderr: '' }) })
+    await daemon.open(root)
+
+    await expect(daemon.draftContract(root)).resolves.toEqual({ ok: false, error: { kind: 'not-installed' } })
+    expect(daemon.pending()).toEqual([])
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+  })
+
+  it('reports a reply that is not a contract and queues nothing', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: 'I had a look around.', stderr: '' }) })
+    await daemon.open(root)
+
+    const result = await daemon.draftContract(root)
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.kind).toBe('unusable')
+    expect(daemon.pending()).toEqual([])
+    expect(fs.existsSync(path.join(root, 'architect.md'))).toBe(false)
+  })
+
+  it('reports nothing to draft from when the scan found no source folders', async () => {
+    const flat = fs.mkdtempSync(path.join(tmpRoot, 'flat-'))
+    fs.writeFileSync(path.join(flat, 'index.ts'), 'export const one = 1\n')
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(flat), stderr: '' }) })
+    await daemon.open(flat)
+
+    await expect(daemon.draftContract(flat)).resolves.toEqual({ ok: false, error: { kind: 'nothing-to-draft' } })
+    expect(daemon.pending()).toEqual([])
+  })
+
+  it('refuses to draft for a project that already has a contract', async () => {
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: '', stderr: '' }) })
+    writeArchitect(tmpRoot, fixture(component('a')))
+    await daemon.open(tmpRoot)
+
+    await expect(daemon.draftContract(tmpRoot)).rejects.toThrow(/already has an architect\.md/)
+  })
+
+  it('replaces an earlier draft rather than stacking a second one in the inbox', async () => {
+    const root = repo()
+    let call = 0
+    daemon = createDaemon({
+      socketPath,
+      claude: async () => ({ code: 0, stdout: drafted(root).replace('A tiny web app.', `Take ${++call}.`), stderr: '' }),
+    })
+    await daemon.open(root)
+
+    await daemon.draftContract(root)
+    await daemon.draftContract(root)
+
+    expect(daemon.pending().length).toBe(1)
+    const only = daemon.pending()[0]
+    expect(only?.proposal.kind === 'contract' && only.proposal.markdown).toContain('Take 2.')
+  })
+
+  it('survives a restart so a slow draft is not lost when the app reopens', async () => {
+    const root = repo()
+    const first = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await first.listen()
+    await first.open(root)
+    await first.draftContract(root)
+    const markdown = first.pending()[0]?.proposal
+    await first.close()
+
+    daemon = createDaemon({ socketPath })
+    await daemon.listen()
+
+    expect(daemon.pending().map((p) => p.proposal)).toEqual([markdown])
+    expect(daemon.pending()[0]?.projectRoot).toBe(root)
+  })
+
+  it('rejects an approved draft when a contract appeared while it was waiting', async () => {
+    const root = repo()
+    daemon = createDaemon({ socketPath, claude: async () => ({ code: 0, stdout: drafted(root), stderr: '' }) })
+    await daemon.open(root)
+    await daemon.draftContract(root)
+
+    writeArchitect(root, fixture(component('a')))
+    const proposal = daemon.pending()[0]
+    await daemon.decide(proposal?.id ?? '', true)
+
+    expect(parse(fs.readFileSync(path.join(root, 'architect.md'), 'utf8')).components.map((c) => c.id)).toEqual(['a'])
+    expect(daemon.pending()).toEqual([])
+  })
 })
 
 describe('socket lifecycle', () => {
@@ -171,7 +428,7 @@ describe('project resolution', () => {
   it('notifies subscribers when an mcp call registers a project', async () => {
     writeArchitect(tmpRoot, fixture(component('api')))
     daemon = createDaemon({ socketPath })
-    const seen: { root: string; title: string }[][] = []
+    const seen: ProjectSummary[][] = []
     daemon.onProjects((p) => seen.push(p))
     await daemon.listen()
 
@@ -181,7 +438,7 @@ describe('project resolution', () => {
     await c.request({ op: 'get_architecture', cwd: tmpRoot })
     c.close()
 
-    expect(seen.at(-1)).toEqual([{ root: tmpRoot, title: 'Test' }])
+    expect(seen.at(-1)).toEqual([{ root: tmpRoot, title: 'Test', contract: { status: 'ready' } }])
   })
 
   it('remembers registered projects across a restart', async () => {
@@ -195,10 +452,10 @@ describe('project resolution', () => {
 
     daemon = createDaemon({ socketPath })
     await daemon.listen()
-    expect(daemon.projects()).toEqual([{ root: tmpRoot, title: 'Test' }])
+    expect(daemon.projects()).toEqual([{ root: tmpRoot, title: 'Test', contract: { status: 'ready' } }])
   })
 
-  it('drops a remembered project whose architect.md is gone or malformed', async () => {
+  it('keeps a remembered project whose architect.md is gone and says the contract is missing', async () => {
     writeArchitect(tmpRoot, fixture(component('api')))
     daemon = createDaemon({ socketPath })
     await daemon.listen()
@@ -211,7 +468,9 @@ describe('project resolution', () => {
 
     daemon = createDaemon({ socketPath })
     await daemon.listen()
-    expect(daemon.projects()).toEqual([])
+    expect(daemon.projects()).toEqual([
+      { root: tmpRoot, title: path.basename(tmpRoot), contract: { status: 'missing' } },
+    ])
   })
 
   it('does not notify again for an already registered project', async () => {
@@ -249,7 +508,7 @@ describe('correctness requirements', () => {
 
     const checkRes = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'api', to: 'db' })
     expect(checkRes.ok).toBe(true)
-    if (checkRes.ok) expect(checkRes.result).toEqual({ status: 'unknown' })
+    if (checkRes.ok) expect(checkRes.result).toEqual({ status: 'undrawn-edge' })
 
     const pending = daemon.pending()
     expect(pending).toHaveLength(1)
@@ -368,7 +627,7 @@ describe('correctness requirements', () => {
 
     const stale = await c.request({ op: 'check_change', cwd: tmpRoot, from: 'api', to: 'db' })
     expect(stale.ok && (stale.result as Verdict).status).toBe('unknown')
-    expect(daemon.projects()[0]?.title).toBe(good!.title)
+    expect(daemon.projects()[0]?.title).toBe(good.architecture!.title)
     expect(changeCount).toBe(0)
     c.close()
   })
@@ -450,7 +709,7 @@ describe('correctness requirements', () => {
     expect(res.ok).toBe(true)
     if (res.ok) expect((res.result as Decision).status).toBe('approved')
 
-    const architecture = (await daemon.open(tmpRoot))!
+    const architecture = (await daemon.open(tmpRoot)).architecture!
     const api = architecture.components.find((comp) => comp.id === 'api')!
     const db = architecture.components.find((comp) => comp.id === 'db')!
     expect(api.owns).not.toContain('shared.ts')
@@ -516,7 +775,7 @@ describe('correctness requirements', () => {
     expect(componentRes.ok).toBe(true)
     if (componentRes.ok) expect((componentRes.result as Decision).status).toBe('approved')
 
-    const architecture = (await daemon.open(tmpRoot))!
+    const architecture = (await daemon.open(tmpRoot)).architecture!
     expect(architecture.components.some((comp) => comp.id === 'worker')).toBe(true)
     c.close()
   })
@@ -776,14 +1035,92 @@ describe('code map storage', () => {
 
   it('returns the scanned map even when it cannot be persisted', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
-    fs.writeFileSync(path.join(tmpRoot, '.architect'), 'not a directory')
+    fs.mkdirSync(path.dirname(socketPath), { recursive: true })
+    fs.writeFileSync(path.join(path.dirname(socketPath), 'maps'), 'not a directory')
     daemon = createDaemon({ socketPath })
 
     const map = await daemon.rescan(tmpRoot)
 
     expect(map.root).toBe(tmpRoot)
     expect(map.folders[0]?.files.map((f) => f.path)).toContain('a.ts')
-    expect(fs.existsSync(path.join(tmpRoot, '.architect', 'map.json'))).toBe(false)
+    expect(daemon.codeMap(tmpRoot)).toBeNull()
+  })
+
+  it('writes nothing into the project it scans', async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    const before = fs.readdirSync(tmpRoot).sort()
+    daemon = createDaemon({ socketPath })
+
+    await daemon.open(tmpRoot)
+    await daemon.rescan(tmpRoot)
+
+    expect(fs.readdirSync(tmpRoot).sort()).toEqual(before)
+  })
+
+  it('keeps one cache entry for a project scanned twice', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+
+    await daemon.rescan(tmpRoot)
+    await daemon.rescan(tmpRoot)
+
+    expect(fs.readdirSync(path.join(path.dirname(socketPath), 'maps'))).toHaveLength(1)
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+  })
+
+  it('shares one cache entry between two paths that reach the same project', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    const link = path.join(tmpHome, 'link')
+    fs.symlinkSync(tmpRoot, link)
+    daemon = createDaemon({ socketPath })
+
+    await daemon.rescan(tmpRoot)
+    await daemon.rescan(link)
+
+    expect(fs.readdirSync(path.join(path.dirname(socketPath), 'maps'))).toHaveLength(1)
+    expect(daemon.codeMap(link)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+  })
+
+  it('gives two projects separate cache entries', async () => {
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-other-'))
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    fs.writeFileSync(path.join(other, 'b.ts'), 'export function b() {}\n')
+    daemon = createDaemon({ socketPath })
+
+    await daemon.rescan(tmpRoot)
+    await daemon.rescan(other)
+
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files.map((f) => f.path)).toEqual(['a.ts'])
+    expect(daemon.codeMap(other)?.folders[0]?.files.map((f) => f.path)).toEqual(['b.ts'])
+    fs.rmSync(other, { recursive: true, force: true })
+  })
+
+  it('refuses a cache entry stored for another root', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+    await daemon.rescan(tmpRoot)
+
+    const maps = path.join(path.dirname(socketPath), 'maps')
+    const file = path.join(maps, fs.readdirSync(maps)[0] as string)
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8')) as { root: string }
+    fs.writeFileSync(file, JSON.stringify({ ...stored, root: 'somewhere else' }))
+
+    expect(daemon.codeMap(tmpRoot)).toBeNull()
+  })
+
+  it('starts with a cache holding an entry for a root that is gone', async () => {
+    const gone = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-gone-'))
+    fs.writeFileSync(path.join(gone, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+    await daemon.rescan(gone)
+    await daemon.close()
+    fs.rmSync(gone, { recursive: true, force: true })
+
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(gone)).toBeNull()
+    expect((await daemon.rescan(tmpRoot)).root).toBe(tmpRoot)
   })
 
   it('refuses a stored map whose folders are malformed', async () => {
@@ -835,6 +1172,66 @@ describe('code map migration', () => {
       }),
     )
   }
+
+  function writeCurrentMap() {
+    fs.mkdirSync(path.join(tmpRoot, '.architect'), { recursive: true })
+    fs.writeFileSync(
+      path.join(tmpRoot, '.architect', 'map.json'),
+      JSON.stringify({
+        version: 3,
+        map: {
+          root: tmpRoot,
+          scannedAt: 1,
+          folders: [
+            {
+              path: '',
+              folders: [],
+              files: [{ path: 'a.ts', functions: [{ name: 'a', line: 1, endLine: 1, description: 'stored', calls: [] }] }],
+            },
+          ],
+        },
+        cache: {},
+      }),
+    )
+  }
+
+  it('moves a map left inside the project out of it', async () => {
+    writeCurrentMap()
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files[0]?.functions[0]?.description).toBe('stored')
+    expect(fs.existsSync(path.join(tmpRoot, '.architect'))).toBe(false)
+    expect(fs.readdirSync(path.join(path.dirname(socketPath), 'maps'))).toHaveLength(1)
+  })
+
+  it('removes a map that reappears in a project it already caches', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    daemon = createDaemon({ socketPath })
+    await daemon.rescan(tmpRoot)
+    writeCurrentMap()
+
+    expect(daemon.codeMap(tmpRoot)?.folders[0]?.files[0]?.functions[0]?.description).not.toBe('stored')
+    expect(fs.existsSync(path.join(tmpRoot, '.architect'))).toBe(false)
+  })
+
+  it('leaves an .architect directory that holds something else', async () => {
+    writeCurrentMap()
+    fs.writeFileSync(path.join(tmpRoot, '.architect', 'notes.md'), 'mine\n')
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)).not.toBeNull()
+    expect(fs.readdirSync(path.join(tmpRoot, '.architect'))).toEqual(['notes.md'])
+  })
+
+  it('leaves a map the project tracks in git', async () => {
+    writeCurrentMap()
+    execFileSync('git', ['init', '-q', tmpRoot])
+    execFileSync('git', ['-C', tmpRoot, 'add', '.architect/map.json'])
+    daemon = createDaemon({ socketPath })
+
+    expect(daemon.codeMap(tmpRoot)).not.toBeNull()
+    expect(fs.existsSync(path.join(tmpRoot, '.architect', 'map.json'))).toBe(true)
+  })
 
   it('treats a map stored before the call graph as never scanned', async () => {
     writeOldMap({})
@@ -890,19 +1287,30 @@ describe('readSource', () => {
     fs.writeFileSync(inParent, 'secret\n')
 
     try {
-      expect(await daemon.readSource(parent, path.basename(inParent), 1, 1)).toBe('')
-      expect(await daemon.readSource(parent, `${path.basename(tmpRoot)}/a.ts`, 1, 1)).toBe('')
-      expect(await daemon.readSource(path.parse(tmpRoot).root, path.relative(path.parse(tmpRoot).root, inParent), 1, 1)).toBe('')
-      expect(await daemon.readSource(path.join(tmpRoot, 'sub'), 'a.ts', 1, 1)).toBe('')
+      expect(await daemon.readSource(parent, path.basename(inParent), 1, 1)).toMatchObject({
+        lines: [],
+        total: 0,
+        error: 'closed'
+      })
+      expect(await daemon.readSource(parent, `${path.basename(tmpRoot)}/a.ts`, 1, 1)).toMatchObject({ error: 'closed' })
+      expect(
+        await daemon.readSource(path.parse(tmpRoot).root, path.relative(path.parse(tmpRoot).root, inParent), 1, 1)
+      ).toMatchObject({ error: 'closed' })
+      expect(await daemon.readSource(path.join(tmpRoot, 'sub'), 'a.ts', 1, 1)).toMatchObject({ error: 'closed' })
     } finally {
       fs.rmSync(inParent, { force: true })
     }
   })
 
-  it('returns the requested inclusive line range', async () => {
+  it('returns the requested window and the true total', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\ntwo\nthree\nfour\n')
 
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 3)).toBe('two\nthree')
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 2)).toEqual({
+      from: 2,
+      lines: ['two', 'three'],
+      total: 4,
+      error: null
+    })
   })
 
   it('refuses a path that escapes the root', async () => {
@@ -910,8 +1318,11 @@ describe('readSource', () => {
     fs.writeFileSync(outside, 'secret\n')
 
     try {
-      expect(await daemon.readSource(tmpRoot, `../${path.basename(outside)}`, 1, 1)).toBe('')
-      expect(await daemon.readSource(tmpRoot, outside, 1, 1)).toBe('')
+      expect(await daemon.readSource(tmpRoot, `../${path.basename(outside)}`, 1, 1)).toMatchObject({
+        lines: [],
+        error: 'outside'
+      })
+      expect(await daemon.readSource(tmpRoot, outside, 1, 1)).toMatchObject({ lines: [], error: 'outside' })
     } finally {
       fs.rmSync(outside, { force: true })
     }
@@ -923,33 +1334,101 @@ describe('readSource', () => {
     fs.symlinkSync(outside, path.join(tmpRoot, 'link.ts'))
 
     try {
-      expect(await daemon.readSource(tmpRoot, 'link.ts', 1, 1)).toBe('')
+      expect(await daemon.readSource(tmpRoot, 'link.ts', 1, 1)).toMatchObject({ lines: [], error: 'outside' })
     } finally {
       fs.rmSync(outside, { force: true })
     }
   })
 
-  it('returns empty for a missing file', async () => {
-    expect(await daemon.readSource(tmpRoot, 'nope.ts', 1, 5)).toBe('')
+  it('refuses a missing file', async () => {
+    expect(await daemon.readSource(tmpRoot, 'nope.ts', 1, 5)).toMatchObject({ lines: [], error: 'unreadable' })
   })
 
-  it('clamps a range that runs past the end of the file', async () => {
+  it('refuses a file that is not readable text', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'bin.ts'), Buffer.from([0x68, 0x69, 0x00, 0x68, 0x69]))
+    fs.writeFileSync(path.join(tmpRoot, 'bad.ts'), Buffer.from([0x68, 0x69, 0xff, 0xfe]))
+
+    expect(await daemon.readSource(tmpRoot, 'bin.ts', 1, 5)).toMatchObject({ lines: [], error: 'binary' })
+    expect(await daemon.readSource(tmpRoot, 'bad.ts', 1, 5)).toMatchObject({ lines: [], error: 'binary' })
+  })
+
+  it('reports an empty file as zero lines', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'empty.ts'), '')
+
+    expect(await daemon.readSource(tmpRoot, 'empty.ts', 1, 10)).toEqual({
+      from: 1,
+      lines: [],
+      total: 0,
+      error: null
+    })
+  })
+
+  it('returns an empty window when the file is shorter than the request', async () => {
     fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\ntwo\n')
 
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 900)).toBe('two\n')
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 0, 1)).toBe('one')
-    expect(await daemon.readSource(tmpRoot, 'a.ts', 40, 90)).toBe('')
-    expect(await daemon.readSource(tmpRoot, 'a.ts', Number.NaN, 2)).toBe('')
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 2, 900)).toEqual({
+      from: 2,
+      lines: ['two'],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 0, 1)).toEqual({
+      from: 1,
+      lines: ['one'],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 40, 90)).toEqual({
+      from: 40,
+      lines: [],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 1, 0)).toEqual({
+      from: 1,
+      lines: [],
+      total: 2,
+      error: null
+    })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', Number.NaN, 2)).toMatchObject({ lines: [], error: 'range' })
+    expect(await daemon.readSource(tmpRoot, 'a.ts', 1, Number.POSITIVE_INFINITY)).toMatchObject({ error: 'range' })
   })
 
-  it('caps the returned span', async () => {
+  it('caps the window but still reports the whole file', async () => {
     const lines = Array.from({ length: 900 }, (_, n) => `line${n + 1}`)
     fs.writeFileSync(path.join(tmpRoot, 'big.ts'), lines.join('\n'))
 
-    const span = await daemon.readSource(tmpRoot, 'big.ts', 1, 900)
+    const window = await daemon.readSource(tmpRoot, 'big.ts', 1, 900)
 
-    expect(span.split('\n')).toHaveLength(400)
-    expect(span.split('\n').at(-1)).toBe('line400')
+    expect(window.lines).toHaveLength(400)
+    expect(window.lines.at(-1)).toBe('line400')
+    expect(window.total).toBe(900)
+  })
+
+  it('windows across the old 400 line limit', async () => {
+    const lines = Array.from({ length: 402 }, (_, n) => `line${n + 1}`)
+    fs.writeFileSync(path.join(tmpRoot, 'edge.ts'), `${lines.join('\n')}\n`)
+
+    expect(await daemon.readSource(tmpRoot, 'edge.ts', 399, 1)).toMatchObject({ lines: ['line399'], total: 402 })
+    expect(await daemon.readSource(tmpRoot, 'edge.ts', 400, 1)).toMatchObject({ lines: ['line400'], total: 402 })
+    expect(await daemon.readSource(tmpRoot, 'edge.ts', 401, 2)).toMatchObject({
+      lines: ['line401', 'line402'],
+      total: 402
+    })
+  })
+
+  it('sees a file that grew between calls', async () => {
+    const file = path.join(tmpRoot, 'grow.ts')
+    fs.writeFileSync(file, 'one\n')
+
+    expect(await daemon.readSource(tmpRoot, 'grow.ts', 1, 10)).toMatchObject({ lines: ['one'], total: 1 })
+
+    fs.appendFileSync(file, 'two\nthree\n')
+
+    expect(await daemon.readSource(tmpRoot, 'grow.ts', 1, 10)).toMatchObject({
+      lines: ['one', 'two', 'three'],
+      total: 3
+    })
   })
 })
 
@@ -1077,15 +1556,15 @@ ${h2} Packages
     writeArchitect(tmpRoot, good)
     await daemonOn(tmpRoot)
 
-    const seen: { root: string; parseError?: string }[][] = []
+    const seen: ProjectSummary[][] = []
     daemon.onProjects((p) => seen.push(p))
 
     writeArchitect(tmpRoot, broken)
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toMatch(new RegExp(`malformed dependency on line ${badLine}: <<<<<<< HEAD`))
-    expect(daemon.projects()[0]?.parseError).toContain(path.join(tmpRoot, 'architect.md'))
-    expect(seen.at(-1)?.[0]?.parseError).toBe(daemon.projects()[0]?.parseError)
+    expect(parseErrorOf(daemon.projects()[0])).toMatch(new RegExp(`malformed dependency on line ${badLine}: <<<<<<< HEAD`))
+    expect(parseErrorOf(daemon.projects()[0])).toContain(path.join(tmpRoot, 'architect.md'))
+    expect(parseErrorOf(seen.at(-1)?.[0])).toBe(parseErrorOf(daemon.projects()[0]))
   })
 
   it('clears the error and pushes the architecture again once the file is fixed', async () => {
@@ -1094,7 +1573,7 @@ ${h2} Packages
 
     writeArchitect(tmpRoot, broken)
     await settle()
-    expect(daemon.projects()[0]?.parseError).toBeDefined()
+    expect(parseErrorOf(daemon.projects()[0])).toBeDefined()
 
     const changes: Architecture[] = []
     daemon.onChange((a) => changes.push(a))
@@ -1102,7 +1581,7 @@ ${h2} Packages
     writeArchitect(tmpRoot, good.replace('- api -> db', '- api -> db\n- db -> db'))
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toBeUndefined()
+    expect(parseErrorOf(daemon.projects()[0])).toBeUndefined()
     expect(changes.at(-1)?.edges).toContainEqual({ from: 'db', to: 'db' })
   })
 
@@ -1153,9 +1632,13 @@ ${h2} Packages
     writeArchitect(tmpRoot, broken)
     await daemonOn(tmpRoot)
 
-    expect(await daemon.open(tmpRoot)).toBeNull()
+    expect((await daemon.open(tmpRoot)).architecture).toBeNull()
     expect(daemon.projects()).toEqual([
-      { root: tmpRoot, title: path.basename(tmpRoot), parseError: expect.stringContaining(`line ${badLine}`) },
+      {
+        root: tmpRoot,
+        title: path.basename(tmpRoot),
+        contract: { status: 'invalid', error: expect.stringContaining(`line ${badLine}`) },
+      },
     ])
 
     const c = await client(socketPath)
@@ -1169,18 +1652,20 @@ ${h2} Packages
     c.close()
   })
 
-  it('reports a deleted architect.md and keeps the last good architecture', async () => {
+  it('turns a deleted architect.md back into a project waiting for a contract', async () => {
     writeArchitect(tmpRoot, good)
     await daemonOn(tmpRoot)
 
     fs.rmSync(path.join(tmpRoot, 'architect.md'))
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toMatch(/could not read .*architect\.md/)
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'missing' })
+    expect((await daemon.open(tmpRoot)).architecture).toBeNull()
 
     writeArchitect(tmpRoot, good)
     await settle()
-    expect(daemon.projects()[0]?.parseError).toBeUndefined()
+    expect(daemon.projects()[0]?.contract).toEqual({ status: 'ready' })
+    expect((await daemon.open(tmpRoot)).architecture?.edges).toEqual([{ from: 'api', to: 'db' }])
   })
 
   it('survives rapid successive bad saves and reports the last one', async () => {
@@ -1192,7 +1677,7 @@ ${h2} Packages
     }
     await settle()
 
-    expect(daemon.projects()[0]?.parseError).toContain('unknown component in dependency: ghost')
+    expect(parseErrorOf(daemon.projects()[0])).toContain('unknown component in dependency: ghost')
   })
 
   it('marks only the broken project when two are open', async () => {
@@ -1205,17 +1690,17 @@ ${h2} Packages
     writeArchitect(tmpRoot, broken)
     await settle()
 
-    const byRoot = Object.fromEntries(daemon.projects().map((p) => [p.root, p.parseError]))
+    const byRoot = Object.fromEntries(daemon.projects().map((p) => [p.root, parseErrorOf(p)]))
     expect(byRoot[tmpRoot]).toContain(`line ${badLine}`)
     expect(byRoot[other]).toBeUndefined()
 
-    expect(await daemon.open(other)).not.toBeNull()
-    expect((await daemon.open(tmpRoot))?.edges).toEqual([{ from: 'api', to: 'db' }])
-    expect(daemon.projects().find((p) => p.root === tmpRoot)?.parseError).toContain(`line ${badLine}`)
+    expect((await daemon.open(other)).architecture).not.toBeNull()
+    expect((await daemon.open(tmpRoot)).architecture?.edges).toEqual([{ from: 'api', to: 'db' }])
+    expect(parseErrorOf(daemon.projects().find((p) => p.root === tmpRoot))).toContain(`line ${badLine}`)
 
     writeArchitect(tmpRoot, good)
     await settle()
-    expect(daemon.projects().find((p) => p.root === tmpRoot)?.parseError).toBeUndefined()
+    expect(parseErrorOf(daemon.projects().find((p) => p.root === tmpRoot))).toBeUndefined()
   })
 
   it('refuses to approve a proposal against a broken file', async () => {
@@ -1245,5 +1730,352 @@ ${h2} Packages
     }
     expect(fs.readFileSync(path.join(tmpRoot, 'architect.md'), 'utf8')).toBe(broken)
     c.close()
+  })
+})
+
+describe('source watcher', () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY
+
+  const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  function pushes() {
+    const seen: { root: string; files: string[] }[] = []
+    daemon.onCodeMap((root, map) => {
+      seen.push({ root, files: map.folders.flatMap((folder) => folder.files.map((file) => file.path)) })
+    })
+    return seen
+  }
+
+  async function watching(root: string, rescanDebounceMs = 60) {
+    writeArchitect(root, fixture(component('api')))
+    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000, rescanDebounceMs })
+    await daemon.listen()
+    await daemon.open(root)
+    await pause(200)
+  }
+
+  beforeEach(() => {
+    delete process.env.ANTHROPIC_API_KEY
+  })
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY
+    else process.env.ANTHROPIC_API_KEY = originalKey
+  })
+
+  it('pushes a code map holding a source file written after the project opened', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    await pause(900)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.root).toBe(tmpRoot)
+    expect(seen[0]?.files).toContain('a.ts')
+  })
+
+  it('collapses a burst of writes into a single rescan', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    for (let at = 0; at < 40; at += 1) {
+      fs.writeFileSync(path.join(tmpRoot, `f${at}.ts`), `export function f${at}() {}\n`)
+    }
+    await pause(1200)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.files).toContain('f39.ts')
+  })
+
+  it('does not rescan for writes inside ignored directories', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    for (const dir of ['node_modules', '.git', 'dist', 'out']) {
+      fs.mkdirSync(path.join(tmpRoot, dir, 'deep'), { recursive: true })
+      fs.writeFileSync(path.join(tmpRoot, dir, 'deep', 'noise.ts'), 'export function noise() {}\n')
+    }
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('does not rescan for the map it writes outside the project', async () => {
+    await watching(tmpRoot)
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'export function a() {}\n')
+    await pause(900)
+
+    const seen = pushes()
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('still produces a map when a changed file is deleted before the rescan reads it', async () => {
+    await watching(tmpRoot, 400)
+    const seen = pushes()
+
+    fs.writeFileSync(path.join(tmpRoot, 'keep.ts'), 'export function keep() {}\n')
+    const gone = path.join(tmpRoot, 'gone.ts')
+    fs.writeFileSync(gone, 'export function gone() {}\n')
+    await pause(150)
+    fs.rmSync(gone)
+    await pause(1500)
+
+    expect(seen.at(-1)?.files).toContain('keep.ts')
+    expect(seen.at(-1)?.files).not.toContain('gone.ts')
+  })
+
+  it('stops watching a project that is closed', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    daemon.closeProject(tmpRoot)
+    expect(daemon.projects()).toEqual([])
+
+    fs.writeFileSync(path.join(tmpRoot, 'after.ts'), 'export function after() {}\n')
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('drops a pending debounced rescan when the project closes inside the window', async () => {
+    await watching(tmpRoot)
+    const seen = pushes()
+
+    fs.writeFileSync(path.join(tmpRoot, 'racing.ts'), 'export function racing() {}\n')
+    await pause(30)
+    daemon.closeProject(tmpRoot)
+    await pause(900)
+
+    expect(seen).toEqual([])
+  })
+
+  it('watches a project again after it is closed and reopened', async () => {
+    await watching(tmpRoot)
+    daemon.closeProject(tmpRoot)
+    await daemon.open(tmpRoot)
+    await pause(200)
+
+    const seen = pushes()
+    fs.writeFileSync(path.join(tmpRoot, 'again.ts'), 'export function again() {}\n')
+    await pause(900)
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.files).toContain('again.ts')
+  })
+})
+
+describe('openSource', () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.open(tmpRoot)
+  })
+
+  it('returns the whole file and a hash of its bytes', async () => {
+    const text = 'one\ntwo\nthree\n'
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), text)
+
+    expect(await daemon.openSource(tmpRoot, 'a.ts')).toEqual({
+      text,
+      hash: createHash('sha256').update(text).digest('hex'),
+      error: null,
+    })
+  })
+
+  it('refuses a root that is not an open project', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\n')
+
+    expect(await daemon.openSource(path.dirname(tmpRoot), `${path.basename(tmpRoot)}/a.ts`)).toMatchObject({
+      text: '',
+      error: 'closed',
+    })
+  })
+
+  it('refuses a path that escapes the root', async () => {
+    const outside = path.join(tmpRoot, '..', `escape-${randomUUID()}.ts`)
+    fs.writeFileSync(outside, 'secret\n')
+
+    try {
+      expect(await daemon.openSource(tmpRoot, `../${path.basename(outside)}`)).toMatchObject({ error: 'outside' })
+      expect(await daemon.openSource(tmpRoot, outside)).toMatchObject({ error: 'outside' })
+    } finally {
+      fs.rmSync(outside, { force: true })
+    }
+  })
+
+  it('refuses a directory, a missing file and a binary file', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'sub'), { recursive: true })
+    fs.writeFileSync(path.join(tmpRoot, 'bin.ts'), Buffer.from([0x68, 0x69, 0x00]))
+
+    expect(await daemon.openSource(tmpRoot, 'sub')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.openSource(tmpRoot, 'nope.ts')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.openSource(tmpRoot, 'bin.ts')).toMatchObject({ error: 'binary' })
+  })
+
+  it('refuses a file past the byte cap', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'huge.ts'), 'x'.repeat(4 * 1024 * 1024 + 1))
+
+    expect(await daemon.openSource(tmpRoot, 'huge.ts')).toMatchObject({ text: '', error: 'large' })
+  })
+})
+
+describe('writeSource', () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.open(tmpRoot)
+  })
+
+  async function opened(file: string, text: string) {
+    fs.writeFileSync(path.join(tmpRoot, file), text)
+    return daemon.openSource(tmpRoot, file)
+  }
+
+  it('round trips a change and hands back the hash of what it wrote', async () => {
+    const before = await opened('a.ts', 'one\ntwo\n')
+    const next = 'one\nTWO\n'
+
+    const written = await daemon.writeSource(tmpRoot, 'a.ts', next, before.hash)
+
+    expect(written.error).toBeNull()
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe(next)
+    expect(await daemon.openSource(tmpRoot, 'a.ts')).toEqual({ text: next, hash: written.hash, error: null })
+  })
+
+  it('accepts a second save against the hash the first one returned', async () => {
+    const before = await opened('a.ts', 'one\n')
+    const first = await daemon.writeSource(tmpRoot, 'a.ts', 'two\n', before.hash)
+    const second = await daemon.writeSource(tmpRoot, 'a.ts', 'three\n', first.hash)
+
+    expect(second.error).toBeNull()
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('three\n')
+  })
+
+  it('refuses a root that is not an open project', async () => {
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'one\n')
+
+    expect(await daemon.writeSource(path.dirname(tmpRoot), `${path.basename(tmpRoot)}/a.ts`, 'two\n', '')).toEqual({
+      hash: '',
+      error: 'closed',
+    })
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('one\n')
+  })
+
+  it('refuses a path outside the root, by traversal, by absolute path and through a symlink', async () => {
+    const outside = path.join(tmpRoot, '..', `escape-${randomUUID()}.ts`)
+    fs.writeFileSync(outside, 'secret\n')
+    fs.symlinkSync(outside, path.join(tmpRoot, 'link.ts'))
+
+    try {
+      expect(await daemon.writeSource(tmpRoot, `../${path.basename(outside)}`, 'hacked\n', '')).toEqual({
+        hash: '',
+        error: 'outside',
+      })
+      expect(await daemon.writeSource(tmpRoot, outside, 'hacked\n', '')).toMatchObject({ error: 'outside' })
+      expect(await daemon.writeSource(tmpRoot, 'link.ts', 'hacked\n', '')).toMatchObject({ error: 'outside' })
+      expect(fs.readFileSync(outside, 'utf8')).toBe('secret\n')
+    } finally {
+      fs.rmSync(outside, { force: true })
+    }
+  })
+
+  it('refuses to write over a binary file', async () => {
+    const raw = Buffer.from([0x68, 0x69, 0x00, 0x68])
+    fs.writeFileSync(path.join(tmpRoot, 'bin.ts'), raw)
+
+    expect(await daemon.writeSource(tmpRoot, 'bin.ts', 'text\n', '')).toEqual({ hash: '', error: 'binary' })
+    expect(fs.readFileSync(path.join(tmpRoot, 'bin.ts'))).toEqual(raw)
+  })
+
+  it('refuses a file that changed on disk since it was read', async () => {
+    const before = await opened('a.ts', 'one\n')
+    fs.writeFileSync(path.join(tmpRoot, 'a.ts'), 'somebody else\n')
+
+    expect(await daemon.writeSource(tmpRoot, 'a.ts', 'mine\n', before.hash)).toEqual({ hash: '', error: 'stale' })
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('somebody else\n')
+  })
+
+  it('refuses a read only file and leaves it untouched', async () => {
+    const before = await opened('ro.ts', 'one\n')
+    const target = path.join(tmpRoot, 'ro.ts')
+    fs.chmodSync(target, 0o444)
+
+    try {
+      expect(await daemon.writeSource(tmpRoot, 'ro.ts', 'two\n', before.hash)).toEqual({ hash: '', error: 'denied' })
+      expect(fs.readFileSync(target, 'utf8')).toBe('one\n')
+    } finally {
+      fs.chmodSync(target, 0o644)
+    }
+  })
+
+  it('refuses a missing file, a directory and text past the byte cap', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'sub'), { recursive: true })
+    const before = await opened('a.ts', 'one\n')
+
+    expect(await daemon.writeSource(tmpRoot, 'nope.ts', 'two\n', '')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.writeSource(tmpRoot, 'sub', 'two\n', '')).toMatchObject({ error: 'unreadable' })
+    expect(await daemon.writeSource(tmpRoot, 'a.ts', 'x'.repeat(4 * 1024 * 1024 + 1), before.hash)).toMatchObject({
+      error: 'large',
+    })
+    expect(fs.readFileSync(path.join(tmpRoot, 'a.ts'), 'utf8')).toBe('one\n')
+  })
+
+  it('keeps the file mode and leaves no temporary file behind', async () => {
+    const before = await opened('bin.sh', '#!/bin/sh\n')
+    const target = path.join(tmpRoot, 'bin.sh')
+    fs.chmodSync(target, 0o755)
+
+    expect((await daemon.writeSource(tmpRoot, 'bin.sh', '#!/bin/sh\necho hi\n', before.hash)).error).toBeNull()
+    expect(fs.statSync(target).mode & 0o777).toBe(0o755)
+    expect(fs.readdirSync(tmpRoot).filter((name) => name.includes('architect-'))).toEqual([])
+  })
+})
+
+describe('readTree', () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component('api')))
+    daemon = createDaemon({ socketPath })
+    await daemon.open(tmpRoot)
+  })
+
+  it('lists folders before files, each sorted by name, and never the ignored directories', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'node_modules'), { recursive: true })
+    fs.mkdirSync(path.join(tmpRoot, '.git'), { recursive: true })
+    fs.mkdirSync(path.join(tmpRoot, 'api'), { recursive: true })
+    fs.writeFileSync(path.join(tmpRoot, 'node_modules', 'dep.ts'), 'x\n')
+    fs.writeFileSync(path.join(tmpRoot, 'zed.ts'), 'x\n')
+    fs.writeFileSync(path.join(tmpRoot, 'abc.ts'), 'x\n')
+
+    const listed = await daemon.readTree(tmpRoot, '')
+    const names = listed.entries.map((entry) => entry.name).filter((name) => name !== 'sock-dir')
+
+    expect(listed.error).toBeNull()
+    expect(names).toEqual(['api', 'abc.ts', 'architect.md', 'zed.ts'])
+    expect(names.filter((name) => listed.entries.find((entry) => entry.name === name)?.dir)).toEqual(['api'])
+  })
+
+  it('tags each file with the components that own it', async () => {
+    fs.mkdirSync(path.join(tmpRoot, 'api'), { recursive: true })
+    fs.writeFileSync(path.join(tmpRoot, 'api', 'routes.ts'), 'x\n')
+    fs.writeFileSync(path.join(tmpRoot, 'api', 'loose.txt'), 'x\n')
+
+    const listed = await daemon.readTree(tmpRoot, 'api')
+
+    expect(listed.entries).toEqual([
+      { name: 'loose.txt', dir: false, owners: ['api'] },
+      { name: 'routes.ts', dir: false, owners: ['api'] },
+    ])
+    expect((await daemon.readTree(tmpRoot, '')).entries.find((entry) => entry.name === 'architect.md')?.owners).toEqual(
+      []
+    )
+  })
+
+  it('refuses a closed project, a folder outside the root and a folder that is not there', async () => {
+    expect(await daemon.readTree(path.dirname(tmpRoot), '')).toEqual({ dir: '', entries: [], error: 'closed' })
+    expect(await daemon.readTree(tmpRoot, '..')).toMatchObject({ error: 'outside' })
+    expect(await daemon.readTree(tmpRoot, 'nope')).toMatchObject({ error: 'unreadable' })
   })
 })
