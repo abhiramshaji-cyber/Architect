@@ -576,6 +576,12 @@ export function installMock() {
     async gitFetch(root) {
       return demoGit(root)
     },
+    async gitDistance(root) {
+      return demoGit(root)
+    },
+    async claudeWorktrees() {
+      return []
+    },
     async gitCreateWorktree(root) {
       return demoGit(root)
     },

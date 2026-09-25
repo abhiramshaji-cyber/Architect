@@ -3,6 +3,9 @@ import ProjectList from './ProjectList'
 import { openProject, useProject } from '../model/store'
 import {
   authNote,
+  cache,
+  cached,
+  distanceText,
   entered,
   escaped,
   gitMessage,
@@ -33,22 +36,6 @@ const SHOWN_REPOS = 200
 const REPO_CACHE = 'github:repos'
 const BRANCH_CACHE = 'github:branches:'
 
-function cached<T>(key: string): T[] {
-  try {
-    const stored = localStorage.getItem(key)
-    const rows: unknown = stored ? JSON.parse(stored) : null
-    return Array.isArray(rows) ? (rows as T[]) : []
-  } catch {
-    return []
-  }
-}
-
-function cache(key: string, rows: unknown[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(rows))
-  } catch {}
-}
-
 function basename(target: string): string {
   return target.split('/').filter(Boolean).pop() ?? target
 }
@@ -69,15 +56,6 @@ function pushedText(pushedAt: string | null): string {
   if (days < 30) return `pushed ${days} days ago`
 
   return `pushed ${new Date(at).toLocaleDateString()}`
-}
-
-function distanceText(distance: GithubCompare | undefined): string {
-  if (!distance) return ''
-  if (distance.ahead === 0 && distance.behind === 0) return 'in sync'
-
-  return [distance.ahead > 0 ? `${distance.ahead} ahead` : '', distance.behind > 0 ? `${distance.behind} behind` : '']
-    .filter((part) => part !== '')
-    .join(' · ')
 }
 
 function rowsOf(branches: GithubBranch[], pulls: GithubPull[]): Row[] {

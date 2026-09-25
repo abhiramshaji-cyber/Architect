@@ -163,6 +163,20 @@ export type Worktree = {
   exists: boolean
 }
 
+export type WorktreeBroken = 'missing' | 'not-git' | 'unregistered' | 'unlisted' | 'unreadable'
+
+export type ClaudeWorktree = {
+  repo: string
+  name: string
+  path: string
+  branch: string | null
+  dirty: boolean
+  changedAt: number | null
+  broken: WorktreeBroken | null
+}
+
+export type BaseDistance = { base: string; ahead: number; behind: number }
+
 export type LocalBranch = { name: string; commit: string; upstream: string | null; current: boolean }
 
 export type RemoteBranch = { name: string; commit: string }
@@ -406,6 +420,8 @@ export type ArchitectApi = {
   gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
   gitWorktrees(root: string): Promise<GitResult<Worktree[]>>
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
+  gitDistance(root: string): Promise<GitResult<BaseDistance>>
+  claudeWorktrees(repos: string[], scan: boolean): Promise<ClaudeWorktree[]>
   gitCreateWorktree(root: string, path: string, name: string, base?: string): Promise<GitResult<WorktreeCreated>>
   gitRemoveWorktree(root: string, path: string): Promise<GitResult<{ path: string }>>
   gitPruneWorktrees(root: string): Promise<GitResult<Worktree[]>>

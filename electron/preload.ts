@@ -69,6 +69,8 @@ const architect: ArchitectApi = {
   gitRemoteBranches: (root) => invoke('architect:git-remote-branches', root),
   gitWorktrees: (root) => invoke('architect:git-worktrees', root),
   gitFetch: (root) => invoke('architect:git-fetch', root),
+  gitDistance: (root) => invoke('architect:git-distance', root),
+  claudeWorktrees: (repos, scan) => invoke('architect:claude-worktrees', repos, scan),
   gitCreateWorktree: (root, path, name, base) =>
     invoke('architect:git-create-worktree', root, path, name, base),
   gitRemoveWorktree: (root, path) => invoke('architect:git-remove-worktree', root, path),

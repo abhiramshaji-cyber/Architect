@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import net from 'node:net'
 import { promisify } from 'node:util'
 import type {
+  BaseDistance,
   Committed,
   DefaultBranch,
   GitFailure,
@@ -259,6 +260,18 @@ export async function defaultBranch(root: string): Promise<GitResult<DefaultBran
   return branch
     ? { ok: true, value: { remote: remote.value, branch } }
     : { ok: false, error: { kind: 'no-default-branch', remote: remote.value } }
+}
+
+export async function distance(root: string): Promise<GitResult<BaseDistance>> {
+  const found = await defaultBranch(root)
+  if (!found.ok) return found
+
+  const base = `${found.value.remote}/${found.value.branch}`
+  const counted = await git(root, ['rev-list', '--left-right', '--count', `${base}...HEAD`])
+  if (!counted.ok) return counted
+
+  const [behind, ahead] = counted.value.trim().split(/\s+/).map((part) => Number.parseInt(part, 10) || 0)
+  return { ok: true, value: { base, ahead: ahead ?? 0, behind: behind ?? 0 } }
 }
 
 export async function fetch(root: string): Promise<GitResult<{ remote: string }>> {
