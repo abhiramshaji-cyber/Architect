@@ -1,5 +1,7 @@
 import fs from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   allRepos,
   auth,
@@ -10,6 +12,7 @@ import {
   createPull,
   type GhOutput,
   type GhRun,
+  runGh,
   ghEnv,
   branches,
   pullFor,
@@ -838,5 +841,48 @@ describe('createPull', () => {
     const out = await createPull('/work/tree', 'main', 'fix/thing', 'title', 'body', fake(() => ({ stdout: 'done\n' })).gh)
 
     expect(out).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
+  })
+})
+
+describe('runGh', () => {
+  const inherited = process.env.PATH
+
+  afterEach(() => {
+    process.env.PATH = inherited
+  })
+
+  function onPath(script: string | null, mode = 0o755): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-gh-'))
+    if (script !== null) fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/sh\n${script}\n`, { mode })
+    process.env.PATH = `${dir}:/usr/bin:/bin`
+    return dir
+  }
+
+  it('reports missing only when gh is not on the path', async () => {
+    onPath(null)
+    expect((await runGh(['--version'])).code).toBe('missing')
+  })
+
+  it('passes a clean exit through', async () => {
+    onPath('echo gh version 2')
+    expect(await runGh(['--version'])).toEqual({ code: 0, stdout: 'gh version 2\n', stderr: '' })
+  })
+
+  it('keeps the exit code and stderr of a failing gh', async () => {
+    onPath('echo "not logged in" >&2; exit 4')
+    expect(await runGh(['auth', 'status'])).toEqual({ code: 4, stdout: '', stderr: 'not logged in\n' })
+  })
+
+  it('reports a hung gh as a timeout', async () => {
+    onPath('exec sleep 5')
+    expect((await runGh(['api', 'user'], 200)).code).toBe('timeout')
+  })
+
+  it('reports a gh that cannot run as a failure with its reason, not as missing', async () => {
+    onPath('exit 0', 0o644)
+    const out = await runGh(['--version'])
+
+    expect(out.code).toBe(1)
+    expect(out.stderr).toContain('EACCES')
   })
 })
