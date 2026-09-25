@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   allRepos,
@@ -6,10 +7,12 @@ import {
   COMPARE_LANES,
   compare,
   compareAll,
+  createPull,
   type GhOutput,
   type GhRun,
   ghEnv,
   branches,
+  pullFor,
   pulls,
   rates,
   REPO_PAGE,
@@ -18,10 +21,12 @@ import {
 
 function fake(handler: (args: string[]) => Partial<GhOutput>, online = true) {
   const calls: string[][] = []
+  const cwds: (string | undefined)[] = []
   let reached = 0
 
-  const run: GhRun = async (args) => {
+  const run: GhRun = async (args, _timeoutMs, cwd) => {
     calls.push(args)
+    cwds.push(cwd)
     return { code: 0, stdout: '', stderr: '', ...handler(args) }
   }
 
@@ -34,8 +39,13 @@ function fake(handler: (args: string[]) => Partial<GhOutput>, online = true) {
       },
     },
     calls,
+    cwds,
     reaches: () => reached,
   }
+}
+
+function valueOf(args: string[], flag: string): string {
+  return args[args.indexOf(flag) + 1] ?? ''
 }
 
 function hosts(entries: unknown[]): string {
@@ -503,11 +513,12 @@ describe('rates', () => {
 })
 
 describe('pulls', () => {
-  it('reads the number, title and head branch of each open pull request', async () => {
-    const rows = JSON.stringify([{ number: 7, title: 'a fix', headRefName: 'fix/thing' }])
+  it('reads the number, title, head branch and url of each open pull request', async () => {
+    const url = 'https://github.com/cli/cli/pull/7'
+    const rows = JSON.stringify([{ number: 7, title: 'a fix', headRefName: 'fix/thing', url }])
     const out = await pulls('cli', 'cli', fake(() => ({ stdout: rows })).gh)
 
-    expect(out).toEqual({ ok: true, value: [{ number: 7, title: 'a fix', head: 'fix/thing' }] })
+    expect(out).toEqual({ ok: true, value: [{ number: 7, title: 'a fix', head: 'fix/thing', url }] })
   })
 
   it('fails rather than dropping a row missing its head branch', async () => {
@@ -712,5 +723,120 @@ describe('compareAll', () => {
     await compareAll('octocat', 'hello', 'main', ['main'], () => {}, undefined, machine.gh)
 
     expect(machine.calls).toEqual([])
+  })
+})
+
+describe('pullFor', () => {
+  it('asks gh in the worktree for the open pull request on one branch', async () => {
+    const url = 'https://github.com/cli/cli/pull/9'
+    const rows = JSON.stringify([{ number: 9, title: 'a fix', headRefName: 'fix/thing', url }])
+    const listing = fake(() => ({ stdout: rows }))
+
+    const out = await pullFor('/work/tree', 'fix/thing', listing.gh)
+
+    expect(out).toEqual({ ok: true, value: { number: 9, title: 'a fix', head: 'fix/thing', url } })
+    expect(listing.cwds).toEqual(['/work/tree'])
+    expect(valueOf(listing.calls[0] ?? [], '--head')).toBe('fix/thing')
+    expect(valueOf(listing.calls[0] ?? [], '--state')).toBe('open')
+  })
+
+  it('reports no pull request rather than failing when the branch has none', async () => {
+    const out = await pullFor('/work/tree', 'fix/thing', fake(() => ({ stdout: '[]' })).gh)
+
+    expect(out).toEqual({ ok: true, value: null })
+  })
+
+  it('refuses a head that is not a usable ref', async () => {
+    const listing = fake(() => ({ stdout: '[]' }))
+    const out = await pullFor('/work/tree', 'fix/..thing', listing.gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'bad-argument', value: 'fix/..thing' } })
+    expect(listing.calls).toEqual([])
+  })
+
+  it('reports gh being logged out through the exit 4 mapping', async () => {
+    const out = await pullFor('/work/tree', 'fix/thing', fake(() => ({ code: 4 })).gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'auth-required' } })
+  })
+})
+
+describe('createPull', () => {
+  it('passes the base, the head and the title in argv and the body through a file', async () => {
+    const body = '-- a leading dash\n\n`backticks` and "quotes"\n\nlast line'
+    let sent = ''
+    const creating = fake((args) => {
+      sent = fs.readFileSync(valueOf(args, '--body-file'), 'utf8')
+      return { stdout: 'https://github.com/cli/cli/pull/12\n' }
+    })
+
+    const out = await createPull('/work/tree', 'main', 'fix/thing', 'fix: the thing', body, creating.gh)
+
+    expect(out).toEqual({
+      ok: true,
+      value: { number: 12, title: 'fix: the thing', head: 'fix/thing', url: 'https://github.com/cli/cli/pull/12' },
+    })
+    expect(sent).toBe(body)
+
+    const args = creating.calls[0] ?? []
+    expect(valueOf(args, '--base')).toBe('main')
+    expect(valueOf(args, '--head')).toBe('fix/thing')
+    expect(valueOf(args, '--title')).toBe('fix: the thing')
+    expect(args).not.toContain('--body')
+    expect(creating.cwds).toEqual(['/work/tree'])
+  })
+
+  it('removes the body file once gh has read it', async () => {
+    let file = ''
+    const creating = fake((args) => {
+      file = valueOf(args, '--body-file')
+      return { stdout: 'https://github.com/cli/cli/pull/12\n' }
+    })
+
+    await createPull('/work/tree', 'main', 'fix/thing', 'title', 'body', creating.gh)
+
+    expect(fs.existsSync(file)).toBe(false)
+  })
+
+  it('refuses an empty title without running gh', async () => {
+    const creating = fake(() => ({ stdout: '' }))
+    const out = await createPull('/work/tree', 'main', 'fix/thing', '   ', 'body', creating.gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'bad-argument', value: '   ' } })
+    expect(creating.calls).toEqual([])
+  })
+
+  it('refuses a base that is not a usable ref without running gh', async () => {
+    const creating = fake(() => ({ stdout: '' }))
+    const out = await createPull('/work/tree', 'main..x', 'fix/thing', 'title', 'body', creating.gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'bad-argument', value: 'main..x' } })
+    expect(creating.calls).toEqual([])
+  })
+
+  it('refuses a title or body carrying a NUL byte without running gh', async () => {
+    const creating = fake(() => ({ stdout: '' }))
+
+    expect(await createPull('/work/tree', 'main', 'fix/thing', 'a\0b', 'body', creating.gh)).toEqual({
+      ok: false,
+      error: { kind: 'bad-argument', value: 'a\0b' },
+    })
+    expect(await createPull('/work/tree', 'main', 'fix/thing', 'title', 'a\0b', creating.gh)).toEqual({
+      ok: false,
+      error: { kind: 'bad-argument', value: 'a\0b' },
+    })
+    expect(creating.calls).toEqual([])
+  })
+
+  it('reports gh being logged out through the exit 4 mapping', async () => {
+    const out = await createPull('/work/tree', 'main', 'fix/thing', 'title', 'body', fake(() => ({ code: 4 })).gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'auth-required' } })
+  })
+
+  it('reports an answer with no pull request url as unreadable', async () => {
+    const out = await createPull('/work/tree', 'main', 'fix/thing', 'title', 'body', fake(() => ({ stdout: 'done\n' })).gh)
+
+    expect(out).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
   })
 })

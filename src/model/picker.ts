@@ -1,4 +1,4 @@
-import type { GitFailure, GithubAuth, GithubFailure, GithubRepo, OpenFailure, OpenRisk } from '../../shared/types'
+import type { DraftFailure, GitFailure, GithubAuth, GithubFailure, GithubRepo, OpenFailure, OpenRisk } from '../../shared/types'
 
 export type Stage = { kind: 'repos' } | { kind: 'branches'; repo: GithubRepo }
 
@@ -119,8 +119,27 @@ export function gitMessage(error: GitFailure): string {
   if (error.kind === 'clone-dirs-taken') return `Every clone dir for ${error.repo} is taken by another repo`
   if (error.kind === 'no-tracking') return `No ${error.tracking} to reset onto: left the branch untouched`
   if (error.kind === 'worktree-stuck') return `Could not remove ${error.path}. Clear it by hand, then reopen.`
+  if (error.kind === 'nothing-staged') return 'Nothing is staged, so there is nothing to commit'
+  if (error.kind === 'detached-head') return 'HEAD is detached, so there is no branch to push'
+  if (error.kind === 'no-upstream') return `${error.branch} has no upstream yet, so push it first`
+  if (error.kind === 'non-fast-forward') return `${error.branch} moved on the remote, so pull before you push again`
+  if (error.kind === 'auth-failed') return `${error.remote} refused the credentials: gh auth login`
+  if (error.kind === 'unreachable') return `${error.remote} cannot be reached from here`
+  if (error.kind === 'diverged') return `The branch is ${error.ahead} ahead and ${error.behind} behind, so it cannot fast forward`
+  if (error.kind === 'conflicted') return `${error.files} file${error.files === 1 ? '' : 's'} still has a merge conflict`
 
   return `git ${error.args.join(' ')} failed: ${error.stderr}`
+}
+
+export function draftMessage(error: DraftFailure): string {
+  if (error.kind === 'not-installed') return 'Claude Code is not on your PATH, so there is nobody to ask'
+  if (error.kind === 'nothing-to-draft') return 'There is nothing here to write about yet'
+  if (error.kind === 'timed-out') return 'Claude took too long, so nothing was written'
+  if (error.kind === 'unusable') return `Claude replied with something unusable (${error.detail}), so the fields were left alone`
+  if (error.kind === 'no-skill') return `No ${error.name} instructions were found in .claude, so there is nothing to follow`
+  if (error.kind === 'git') return gitMessage(error.error)
+
+  return `claude exited ${error.code}: ${error.stderr}`
 }
 
 export function openMessage(failure: OpenFailure): string {

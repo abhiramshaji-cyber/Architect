@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import process from 'node:process'
 import type {
   GithubAuth,
@@ -22,7 +25,7 @@ const EXTRA_ORGS = ['iolotech', 'botpress', 'webarts', 'The-Blue-Space-Australia
 
 export type GhOutput = { code: number | 'missing' | 'timeout'; stdout: string; stderr: string }
 
-export type GhRun = (args: string[], timeoutMs?: number) => Promise<GhOutput>
+export type GhRun = (args: string[], timeoutMs?: number, cwd?: string) => Promise<GhOutput>
 
 export type Gh = { run: GhRun; reach: () => Promise<boolean> }
 
@@ -32,9 +35,9 @@ export function ghEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return scrubbed
 }
 
-export const runGh: GhRun = (args, timeoutMs = TIMEOUT_MS) =>
+export const runGh: GhRun = (args, timeoutMs = TIMEOUT_MS, cwd) =>
   new Promise((resolve) => {
-    const options = { env: ghEnv(process.env), maxBuffer: MAX_OUTPUT, timeout: timeoutMs, windowsHide: true }
+    const options = { cwd, env: ghEnv(process.env), maxBuffer: MAX_OUTPUT, timeout: timeoutMs, windowsHide: true }
 
     execFile('gh', args, options, (error, stdout, stderr) => {
       if (!error) return resolve({ code: 0, stdout, stderr })
@@ -364,12 +367,23 @@ export function allRepos(limit = REPO_PAGE, gh: Gh = GH): Promise<GithubResult<G
   return next
 }
 
+const PULL_FIELDS = 'number,title,headRefName,url'
+
+function pullOf(row: Record<string, unknown> | null): GithubPull | null {
+  const number = count(row?.number)
+  const head = text(row?.headRefName)
+  const url = text(row?.url)
+  if (number === null || head === '' || url === '') return null
+
+  return { number, title: text(row?.title), head, url }
+}
+
 export async function pulls(owner: string, repo: string, gh: Gh = GH): Promise<GithubResult<GithubPull[]>> {
   for (const value of [owner, repo]) {
     if (!SEGMENT.test(value)) return { ok: false, error: { kind: 'bad-argument', value } }
   }
 
-  const args = ['pr', 'list', '--repo', `${owner}/${repo}`, '--json', 'number,title,headRefName', '--limit', '100']
+  const args = ['pr', 'list', '--repo', `${owner}/${repo}`, '--json', PULL_FIELDS, '--limit', '100']
   const out = await gh.run(args)
   if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
 
@@ -379,14 +393,63 @@ export async function pulls(owner: string, repo: string, gh: Gh = GH): Promise<G
   const value: GithubPull[] = []
   for (const entry of listed) {
     const row = record(entry)
-    const number = count(row?.number)
-    const head = text(row?.headRefName)
-    if (number === null || head === '') return { ok: false, error: { kind: 'unreadable', args } }
+    const pull = pullOf(row)
+    if (pull === null) return { ok: false, error: { kind: 'unreadable', args } }
 
-    value.push({ number, title: text(row?.title), head })
+    value.push(pull)
   }
 
   return { ok: true, value }
+}
+
+export async function pullFor(root: string, head: string, gh: Gh = GH): Promise<GithubResult<GithubPull | null>> {
+  if (!ref(head)) return { ok: false, error: { kind: 'bad-argument', value: head } }
+
+  const args = ['pr', 'list', '--head', head, '--state', 'open', '--json', PULL_FIELDS, '--limit', '1']
+  const out = await gh.run(args, TIMEOUT_MS, root)
+  if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
+
+  const listed = parsed(out.stdout)
+  if (!Array.isArray(listed)) return { ok: false, error: { kind: 'unreadable', args } }
+  if (listed.length === 0) return { ok: true, value: null }
+
+  const pull = pullOf(record(listed[0]))
+  return pull === null ? { ok: false, error: { kind: 'unreadable', args } } : { ok: true, value: pull }
+}
+
+export async function createPull(
+  root: string,
+  base: string,
+  head: string,
+  title: string,
+  body: string,
+  gh: Gh = GH,
+): Promise<GithubResult<GithubPull>> {
+  for (const value of [base, head]) {
+    if (!ref(value)) return { ok: false, error: { kind: 'bad-argument', value } }
+  }
+
+  const subject = title.trim()
+  if (subject === '' || subject.includes('\0')) return { ok: false, error: { kind: 'bad-argument', value: title } }
+  if (body.includes('\0')) return { ok: false, error: { kind: 'bad-argument', value: body } }
+
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'architect-pr-'))
+  const file = path.join(folder, 'body.md')
+  const args = ['pr', 'create', '--base', base, '--head', head, '--title', subject, '--body-file', file]
+
+  try {
+    await fs.writeFile(file, body, 'utf8')
+    const out = await gh.run(args, TIMEOUT_MS, root)
+    if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
+
+    const url = out.stdout.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('https://')).pop() ?? ''
+    const number = Number.parseInt(url.slice(url.lastIndexOf('/') + 1), 10)
+    if (url === '' || !Number.isFinite(number)) return { ok: false, error: { kind: 'unreadable', args } }
+
+    return { ok: true, value: { number, title: subject, head, url } }
+  } finally {
+    await fs.rm(folder, { recursive: true, force: true })
+  }
 }
 
 export async function clone(nameWithOwner: string, target: string, gh: Gh = GH): Promise<GithubResult<{ path: string }>> {

@@ -597,6 +597,21 @@ export function installMock() {
     async gitUnstageFile(root) {
       return demoGit(root)
     },
+    async gitCommit(root) {
+      return demoGit(root)
+    },
+    async gitPush(root) {
+      return demoGit(root)
+    },
+    async gitPull(root) {
+      return demoGit(root)
+    },
+    async draftCommitMessage() {
+      return { ok: false, error: { kind: 'not-installed' } }
+    },
+    async draftPullRequest() {
+      return { ok: false, error: { kind: 'not-installed' } }
+    },
     async githubAuth() {
       return { ok: true, value: { kind: 'not-installed' } }
     },
@@ -610,6 +625,12 @@ export function installMock() {
       return demoGithub
     },
     async githubPulls() {
+      return demoGithub
+    },
+    async githubPullFor() {
+      return demoGithub
+    },
+    async githubCreatePull() {
       return demoGithub
     },
     async githubCompare() {},

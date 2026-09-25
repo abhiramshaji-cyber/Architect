@@ -21,7 +21,7 @@ Shells out to the gh CLI for the GitHub credential, reads the account's repos, a
 owns: `electron/github/**`
 
 ### draft
-Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its generated function descriptions, and candidate edges aggregated from real call refs. The reply is parsed and validated before it is offered, and the ids and globs stay mechanical.
+Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its generated function descriptions, and candidate edges aggregated from real call refs. Also asks it for a commit title and description from a staged diff, and for a pull request title and body from the account's own `pr` instructions read off disk. Every reply is a JSON object that is parsed, scrubbed of attribution and validated before it is offered, and nothing it writes is ever submitted on its own.
 owns: `electron/draft/**`
 
 ### daemon
@@ -62,6 +62,7 @@ owns: `lsp/**`
 - draft -> graph
 - app -> types
 - app -> daemon
+- app -> draft
 - app -> pty
 - app -> git
 - app -> github

@@ -4,9 +4,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
+  commit,
   createBranch,
   createWorktree,
   defaultBranch,
+  endpoint,
   fetch,
   fileAtRef,
   head,
@@ -14,6 +16,8 @@ import {
   parseStatus,
   parseWorktrees,
   pruneWorktrees,
+  pull,
+  push,
   remoteBranches,
   removeWorktree,
   status,
@@ -46,6 +50,8 @@ function sh(cwd: string, ...args: string[]): string {
 function repo(prefix = 'git'): string {
   const root = tmp(prefix)
   sh(root, 'init', '-b', 'main')
+  sh(root, 'config', 'user.name', 'Test')
+  sh(root, 'config', 'user.email', 'test@example.com')
   return root
 }
 
@@ -641,5 +647,317 @@ describe('parseStatus', () => {
     const fixture = ['# branch.oid 5555555555555555555555555555555555555555', '# branch.head (detached)', ''].join('\0')
 
     expect(parseStatus(fixture).head).toEqual({ kind: 'detached', commit: '5'.repeat(40) })
+  })
+})
+
+function bareRemote(): string {
+  const bare = tmp('bare')
+  sh(bare, 'init', '--bare', '-b', 'main')
+  return bare
+}
+
+function clone(bare: string, prefix = 'clone'): string {
+  const root = repo(prefix)
+  sh(root, 'remote', 'add', 'origin', bare)
+  return root
+}
+
+function write(root: string, file: string, text: string): void {
+  fs.writeFileSync(path.join(root, file), text)
+  sh(root, 'add', '--', file)
+}
+
+function rawMessage(root: string): string {
+  const object = sh(root, 'cat-file', 'commit', 'HEAD')
+  return object.slice(object.indexOf('\n\n') + 2)
+}
+
+describe('commit', () => {
+  it('records the staged file and reports the new commit and branch', async () => {
+    const root = repo('commit')
+    write(root, 'a.txt', 'one\n')
+
+    const out = await commit(root, 'add a', '')
+
+    expect(out.ok).toBe(true)
+    expect(out.ok && out.value.branch).toBe('main')
+    expect(out.ok && out.value.commit).toBe(sh(root, 'rev-parse', 'HEAD').trim())
+    expect(sh(root, 'status', '--porcelain')).toBe('')
+  })
+
+  it('round trips a message with newlines, a quote, a hash and a leading dash', async () => {
+    const root = repo('commit-awkward')
+    write(root, 'a.txt', 'one\n')
+
+    const description = '-not a flag\n\n# not a comment\ntwo spaces follow this  \nshe said "ok"'
+    const out = await commit(root, '-fix the "thing"', description)
+
+    expect(out.ok).toBe(true)
+    expect(rawMessage(root)).toBe(`-fix the "thing"\n\n${description}\n`)
+  })
+
+  it('reports nothing staged rather than failing, and writes no commit', async () => {
+    const root = committed('commit-empty')
+    const before = sh(root, 'rev-parse', 'HEAD').trim()
+
+    const out = await commit(root, 'nothing here', '')
+
+    expect(out).toEqual({ ok: false, error: { kind: 'nothing-staged', root } })
+    expect(sh(root, 'rev-parse', 'HEAD').trim()).toBe(before)
+  })
+
+  it('refuses an empty title without touching the index', async () => {
+    const root = repo('commit-blank')
+    write(root, 'a.txt', 'one\n')
+
+    const out = await commit(root, '   ', 'body')
+
+    expect(out).toEqual({ ok: false, error: { kind: 'bad-argument', value: '   ' } })
+    expect(sh(root, 'diff', '--cached', '--name-only')).toBe('a.txt\n')
+  })
+
+  it('refuses to commit over an unresolved merge conflict', async () => {
+    const root = committed('commit-conflict')
+    sh(root, 'checkout', '-q', '-b', 'other')
+    fs.writeFileSync(path.join(root, 'a.txt'), 'theirs\n')
+    sh(root, 'commit', '-a', '-m', 'theirs')
+    sh(root, 'checkout', '-q', 'main')
+    fs.writeFileSync(path.join(root, 'a.txt'), 'mine\n')
+    sh(root, 'commit', '-a', '-m', 'mine')
+    expect(() => sh(root, 'merge', 'other')).toThrow()
+
+    const out = await commit(root, 'paper over it', '')
+
+    expect(out).toEqual({ ok: false, error: { kind: 'conflicted', files: 1 } })
+  })
+
+  it('refuses a message carrying a NUL byte', async () => {
+    const root = repo('commit-nul')
+    write(root, 'a.txt', 'one\n')
+
+    expect(await commit(root, 'a\0b', '')).toEqual({ ok: false, error: { kind: 'bad-argument', value: 'a\0b' } })
+    expect(await commit(root, 'fine', 'a\0b')).toEqual({ ok: false, error: { kind: 'bad-argument', value: 'a\0b' } })
+  })
+
+  it('reports no commits yet rather than a stderr blob when pushing an unborn branch', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'push-unborn')
+
+    expect(await push(root)).toEqual({ ok: false, error: { kind: 'no-commits', root } })
+  })
+
+  it('commits on a detached HEAD', async () => {
+    const root = committed('commit-detached')
+    sh(root, 'checkout', '--detach')
+    write(root, 'b.txt', 'two\n')
+
+    const out = await commit(root, 'add b', '')
+
+    expect(out.ok).toBe(true)
+    expect(out.ok && out.value.branch).toBe(null)
+  })
+})
+
+describe('push', () => {
+  it('sets the upstream on the first push of a branch that has none', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'push-first')
+    write(root, 'a.txt', 'one\n')
+    sh(root, 'commit', '-m', 'first')
+
+    const out = await push(root)
+
+    expect(out).toEqual({ ok: true, value: { remote: 'origin', branch: 'main', setUpstream: true } })
+    expect(sh(root, 'rev-parse', '--abbrev-ref', 'main@{u}').trim()).toBe('origin/main')
+  })
+
+  it('pushes plainly once the branch already has an upstream', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'push-later')
+    write(root, 'a.txt', 'one\n')
+    sh(root, 'commit', '-m', 'first')
+    await push(root)
+
+    write(root, 'b.txt', 'two\n')
+    sh(root, 'commit', '-m', 'second')
+    const out = await push(root)
+
+    expect(out).toEqual({ ok: true, value: { remote: 'origin', branch: 'main', setUpstream: false } })
+    expect(sh(bare, 'rev-parse', 'main').trim()).toBe(sh(root, 'rev-parse', 'HEAD').trim())
+  })
+
+  it('reports a non fast forward rejection as exactly that', async () => {
+    const bare = bareRemote()
+    const first = clone(bare, 'push-ff-a')
+    write(first, 'a.txt', 'one\n')
+    sh(first, 'commit', '-m', 'first')
+    await push(first)
+
+    const second = clone(bare, 'push-ff-b')
+    sh(second, 'fetch', 'origin', 'main')
+    sh(second, 'checkout', '-B', 'main', 'origin/main')
+    sh(second, 'branch', '--set-upstream-to=origin/main', 'main')
+    write(second, 'c.txt', 'three\n')
+    sh(second, 'commit', '-m', 'theirs')
+    await push(second)
+
+    write(first, 'b.txt', 'two\n')
+    sh(first, 'commit', '-m', 'mine')
+    const out = await push(first)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'non-fast-forward', branch: 'main' } })
+  })
+
+  it('reports a detached HEAD before it attempts to push', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'push-detached')
+    write(root, 'a.txt', 'one\n')
+    sh(root, 'commit', '-m', 'first')
+    sh(root, 'checkout', '--detach')
+
+    const out = await push(root)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'detached-head', root } })
+    expect(sh(bare, 'branch', '--list')).toBe('')
+  })
+
+  it('reports a remote it cannot reach rather than blaming the credentials', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'push-gone')
+    write(root, 'a.txt', 'one\n')
+    sh(root, 'commit', '-m', 'first')
+    fs.rmSync(bare, { recursive: true, force: true })
+
+    const out = await push(root)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'unreachable', remote: 'origin' } })
+  })
+})
+
+describe('pull', () => {
+  it('fast forwards and says the branch moved', async () => {
+    const bare = bareRemote()
+    const first = clone(bare, 'pull-a')
+    write(first, 'a.txt', 'one\n')
+    sh(first, 'commit', '-m', 'first')
+    await push(first)
+
+    const second = clone(bare, 'pull-b')
+    sh(second, 'fetch', 'origin', 'main')
+    sh(second, 'checkout', '-B', 'main', 'origin/main')
+    sh(second, 'branch', '--set-upstream-to=origin/main', 'main')
+
+    write(first, 'b.txt', 'two\n')
+    sh(first, 'commit', '-m', 'second')
+    await push(first)
+
+    const out = await pull(second)
+
+    expect(out).toEqual({ ok: true, value: { remote: 'origin', branch: 'main', changed: true } })
+    expect(fs.existsSync(path.join(second, 'b.txt'))).toBe(true)
+  })
+
+  it('says already up to date when nothing moved', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'pull-same')
+    write(root, 'a.txt', 'one\n')
+    sh(root, 'commit', '-m', 'first')
+    await push(root)
+
+    const out = await pull(root)
+
+    expect(out).toEqual({ ok: true, value: { remote: 'origin', branch: 'main', changed: false } })
+  })
+
+  it('refuses to pull a branch with no upstream', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'pull-no-upstream')
+    write(root, 'a.txt', 'one\n')
+    sh(root, 'commit', '-m', 'first')
+
+    const out = await pull(root)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'no-upstream', branch: 'main' } })
+  })
+
+  it('reports a divergence rather than making a merge commit', async () => {
+    const bare = bareRemote()
+    const first = clone(bare, 'pull-div-a')
+    write(first, 'a.txt', 'one\n')
+    sh(first, 'commit', '-m', 'first')
+    await push(first)
+
+    const second = clone(bare, 'pull-div-b')
+    sh(second, 'fetch', 'origin', 'main')
+    sh(second, 'checkout', '-B', 'main', 'origin/main')
+    sh(second, 'branch', '--set-upstream-to=origin/main', 'main')
+
+    write(first, 'b.txt', 'theirs\n')
+    sh(first, 'commit', '-m', 'theirs')
+    await push(first)
+
+    write(second, 'c.txt', 'mine\n')
+    sh(second, 'commit', '-m', 'mine')
+    const mine = sh(second, 'rev-parse', 'HEAD').trim()
+
+    const out = await pull(second)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'diverged', ahead: 1, behind: 1 } })
+    expect(sh(second, 'rev-parse', 'HEAD').trim()).toBe(mine)
+  })
+
+  it('reports local changes in the way as a dirty tree, not as a stderr blob', async () => {
+    const bare = bareRemote()
+    const first = clone(bare, 'pull-dirty-a')
+    write(first, 'a.txt', 'one\n')
+    sh(first, 'commit', '-m', 'first')
+    await push(first)
+
+    const second = clone(bare, 'pull-dirty-b')
+    sh(second, 'fetch', 'origin', 'main')
+    sh(second, 'checkout', '-B', 'main', 'origin/main')
+    sh(second, 'branch', '--set-upstream-to=origin/main', 'main')
+
+    write(first, 'a.txt', 'theirs\n')
+    sh(first, 'commit', '-m', 'theirs')
+    await push(first)
+
+    fs.writeFileSync(path.join(second, 'a.txt'), 'my uncommitted edit\n')
+
+    const out = await pull(second)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'dirty', root: second } })
+    expect(fs.readFileSync(path.join(second, 'a.txt'), 'utf8')).toBe('my uncommitted edit\n')
+  })
+
+  it('reports a remote it cannot reach', async () => {
+    const bare = bareRemote()
+    const root = clone(bare, 'pull-gone')
+    write(root, 'a.txt', 'one\n')
+    sh(root, 'commit', '-m', 'first')
+    await push(root)
+    fs.rmSync(bare, { recursive: true, force: true })
+
+    const out = await pull(root)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'unreachable', remote: 'origin' } })
+  })
+})
+
+describe('endpoint', () => {
+  it('reads the host and port of an scp style ssh remote', () => {
+    expect(endpoint('git@github.com:cli/cli.git')).toEqual({ host: 'github.com', port: 22 })
+  })
+
+  it('reads the host and the default port of an https remote', () => {
+    expect(endpoint('https://github.com/cli/cli.git')).toEqual({ host: 'github.com', port: 443 })
+  })
+
+  it('keeps an explicit port', () => {
+    expect(endpoint('ssh://git@example.com:2222/cli/cli.git')).toEqual({ host: 'example.com', port: 2222 })
+  })
+
+  it('has no endpoint for a local path remote', () => {
+    expect(endpoint('/tmp/bare.git')).toBe(null)
   })
 })
