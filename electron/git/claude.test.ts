@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { ClaudeWorktree } from '../../shared/types'
-import { byRecency, changedPaths, classify, discover, findRepos } from './claude'
+import { byRecency, changedPaths, classify, discover, findRepos, remove, survey, within } from './claude'
 import { parseWorktrees } from './git'
 
 const roots: string[] = []
@@ -201,5 +201,238 @@ describe('discover', () => {
 
   it('returns nothing when there are no worktrees anywhere', async () => {
     expect(await discover([], true, tmp('empty'))).toEqual([])
+  })
+})
+
+function worktree(repo: string, name: string, ...args: string[]): string {
+  const target = path.join(repo, '.claude', 'worktrees', name)
+  sh(repo, 'worktree', 'add', ...args, target)
+  return target
+}
+
+function listed(repo: string): string {
+  return sh(repo, 'worktree', 'list', '--porcelain')
+}
+
+function published(root: string): string {
+  const remote = path.join(tmp('remote'), 'origin.git')
+  sh(root, 'init', '--bare', '-b', 'main', remote)
+  sh(root, 'remote', 'add', 'origin', remote)
+  sh(root, 'push', '-q', 'origin', 'main')
+  sh(root, 'remote', 'set-head', 'origin', 'main')
+  return root
+}
+
+const KEEP = { force: false, branch: false }
+const NO_TRASH = async (): Promise<void> => {
+  throw new Error('trash must not be used')
+}
+
+describe('within', () => {
+  it('treats the folder and anything under it as inside, and siblings as outside', () => {
+    expect(within('/r/.claude/worktrees/a', '/r/.claude/worktrees/a')).toBe(true)
+    expect(within('/r/.claude/worktrees/a/src', '/r/.claude/worktrees/a')).toBe(true)
+    expect(within('/r/.claude/worktrees/ab', '/r/.claude/worktrees/a')).toBe(false)
+    expect(within('/r/.claude/worktrees/..a', '/r/.claude/worktrees/a')).toBe(false)
+    expect(within('/r', '/r/.claude/worktrees/a')).toBe(false)
+  })
+})
+
+describe('remove', () => {
+  it('removes a clean worktree with git and keeps its branch', async () => {
+    const repo = committed(tmp('rm-clean'))
+    const target = worktree(repo, 'clean', '-b', 'claude/clean')
+
+    expect(await survey(repo, target, [])).toEqual({
+      ok: true,
+      value: { kind: 'remove', dirty: 0, unpushed: 0, branch: 'claude/clean', base: 'main', merged: true },
+    })
+    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+      ok: true,
+      value: { how: 'remove', branch: null, branchError: null },
+    })
+    expect(fs.existsSync(target)).toBe(false)
+    expect(listed(repo)).not.toContain(target)
+    expect(sh(repo, 'branch', '--list', 'claude/clean')).toContain('claude/clean')
+  })
+
+  it('deletes a merged branch with branch -d only when asked', async () => {
+    const repo = committed(tmp('rm-branch'))
+    const target = worktree(repo, 'merged', '-b', 'claude/merged')
+
+    expect(await remove(repo, target, { force: false, branch: true }, [], NO_TRASH)).toEqual({
+      ok: true,
+      value: { how: 'remove', branch: 'claude/merged', branchError: null },
+    })
+    expect(sh(repo, 'branch', '--list', 'claude/merged')).toBe('')
+  })
+
+  it('refuses a dirty worktree without force, then removes it with force', async () => {
+    const repo = committed(tmp('rm-dirty'))
+    const target = worktree(repo, 'dirty', '-b', 'claude/dirty')
+    fs.writeFileSync(path.join(target, 'a.txt'), 'changed\n')
+    fs.writeFileSync(path.join(target, 'new.txt'), 'new\n')
+
+    const surveyed = await survey(repo, target, [])
+    expect(surveyed.ok && surveyed.value.kind === 'remove' && surveyed.value.dirty).toBe(2)
+
+    const refused = await remove(repo, target, KEEP, [], NO_TRASH)
+    expect(refused.ok).toBe(false)
+    if (refused.ok || refused.error.kind !== 'git') throw new Error('expected a git failure')
+    expect(refused.error.left).toBe('both')
+    expect(refused.error.error.kind === 'failed' && refused.error.error.stderr).toMatch(/--force/)
+    expect(fs.readFileSync(path.join(target, 'new.txt'), 'utf8')).toBe('new\n')
+
+    expect((await remove(repo, target, { force: true, branch: false }, [], NO_TRASH)).ok).toBe(true)
+    expect(fs.existsSync(target)).toBe(false)
+  })
+
+  it('counts commits on no remote and not in the default branch, and keeps that branch even when asked', async () => {
+    const repo = published(committed(tmp('rm-unpushed')))
+    const target = worktree(repo, 'ahead', '-b', 'claude/ahead')
+    fs.writeFileSync(path.join(target, 'b.txt'), 'two\n')
+    sh(target, 'add', 'b.txt')
+    sh(target, 'commit', '-m', 'second')
+
+    expect(await survey(repo, target, [])).toEqual({
+      ok: true,
+      value: { kind: 'remove', dirty: 0, unpushed: 1, branch: 'claude/ahead', base: 'origin/main', merged: false },
+    })
+
+    sh(target, 'push', '-q', 'origin', 'claude/ahead')
+    const pushed = await survey(repo, target, [])
+    expect(pushed.ok && pushed.value.kind === 'remove' && [pushed.value.unpushed, pushed.value.merged]).toEqual([0, false])
+
+    expect(await remove(repo, target, { force: false, branch: true }, [], NO_TRASH)).toEqual({
+      ok: true,
+      value: { how: 'remove', branch: null, branchError: null },
+    })
+    expect(sh(repo, 'branch', '--list', 'claude/ahead')).toContain('claude/ahead')
+  })
+
+  it('counts commits on a detached head that no branch or remote holds', async () => {
+    const repo = published(committed(tmp('rm-detached')))
+    const target = worktree(repo, 'loose', '--detach')
+    fs.writeFileSync(path.join(target, 'b.txt'), 'two\n')
+    sh(target, 'add', 'b.txt')
+    sh(target, 'commit', '-m', 'loose')
+
+    expect(await survey(repo, target, [])).toEqual({
+      ok: true,
+      value: { kind: 'remove', dirty: 0, unpushed: 1, branch: null, base: 'origin/main', merged: false },
+    })
+  })
+
+  it('shows git refusing a locked worktree and leaves it in place', async () => {
+    const repo = committed(tmp('rm-locked'))
+    const target = worktree(repo, 'locked', '-b', 'claude/locked')
+    sh(repo, 'worktree', 'lock', target)
+
+    const refused = await remove(repo, target, { force: true, branch: false }, [], NO_TRASH)
+    if (refused.ok || refused.error.kind !== 'git') throw new Error('expected a git failure')
+    expect(refused.error.left).toBe('both')
+    expect(refused.error.error.kind === 'failed' && refused.error.error.stderr).toMatch(/locked/)
+    expect(fs.existsSync(target)).toBe(true)
+  })
+
+  it('prunes a registered worktree whose folder is gone', async () => {
+    const repo = committed(tmp('rm-missing'))
+    const target = worktree(repo, 'gone', '-b', 'claude/gone')
+    fs.rmSync(target, { recursive: true, force: true })
+
+    expect(await survey(repo, target, [])).toEqual({ ok: true, value: { kind: 'prune' } })
+    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+      ok: true,
+      value: { how: 'prune', branch: null, branchError: null },
+    })
+    expect(listed(repo)).not.toContain(target)
+  })
+
+  it('reports a locked missing worktree that prune leaves registered', async () => {
+    const repo = committed(tmp('rm-missing-locked'))
+    const target = worktree(repo, 'gone', '-b', 'claude/gone')
+    sh(repo, 'worktree', 'lock', target)
+    fs.rmSync(target, { recursive: true, force: true })
+
+    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+      ok: false,
+      error: { kind: 'git', error: { kind: 'locked-worktree', path: target }, left: 'registration' },
+    })
+  })
+
+  it('moves a plain folder git does not know to the trash, and reports a trash failure', async () => {
+    const repo = committed(tmp('rm-plain'))
+    const target = path.join(repo, '.claude', 'worktrees', 'plain')
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(target, 'notes.txt'), 'x\n')
+    const trashed: string[] = []
+
+    expect(await survey(repo, target, [])).toEqual({ ok: true, value: { kind: 'trash' } })
+    expect(
+      await remove(repo, target, KEEP, [], async (item) => {
+        trashed.push(item)
+      }),
+    ).toEqual({ ok: true, value: { how: 'trash', branch: null, branchError: null } })
+    expect(trashed).toEqual([target])
+
+    expect(
+      await remove(repo, target, KEEP, [], async () => {
+        throw new Error('Operation not permitted')
+      }),
+    ).toEqual({ ok: false, error: { kind: 'trash-failed', path: target, message: 'Operation not permitted' } })
+    expect(fs.existsSync(path.join(target, 'notes.txt'))).toBe(true)
+  })
+
+  it('leaves a folder with its own git alone when the repo does not list it', async () => {
+    const repo = committed(tmp('rm-unregistered'))
+    const target = committed(path.join(repo, '.claude', 'worktrees', 'clone'))
+
+    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+      ok: false,
+      error: { kind: 'unregistered', path: target, repo },
+    })
+    expect(fs.existsSync(path.join(target, 'a.txt'))).toBe(true)
+  })
+
+  it('refuses a worktree open in any window, including a folder inside it', async () => {
+    const repo = committed(tmp('rm-open'))
+    const target = worktree(repo, 'open', '-b', 'claude/open')
+    fs.mkdirSync(path.join(target, 'src'))
+
+    for (const open of [[target], ['/elsewhere', path.join(target, 'src')]]) {
+      expect(await remove(repo, target, KEEP, open, NO_TRASH)).toEqual({ ok: false, error: { kind: 'open', path: target } })
+    }
+    expect(fs.existsSync(target)).toBe(true)
+    expect((await survey(repo, target, [repo])).ok).toBe(true)
+  })
+
+  it('refuses anything that is not directly inside the claude worktrees folder', async () => {
+    const repo = committed(tmp('rm-outside'))
+    const holder = path.join(repo, '.claude', 'worktrees')
+    fs.mkdirSync(holder, { recursive: true })
+    const elsewhere = tmp('rm-elsewhere')
+    fs.symlinkSync(elsewhere, path.join(holder, 'link'))
+    fs.writeFileSync(path.join(holder, 'file'), 'x\n')
+
+    for (const target of [repo, holder, path.join(holder, 'link'), path.join(holder, 'file'), path.join(holder, 'a', 'b'), elsewhere]) {
+      const refused = await remove(repo, target, KEEP, [], NO_TRASH)
+      expect(refused.ok ? null : refused.error.kind).toBe('outside')
+    }
+    expect(fs.existsSync(elsewhere)).toBe(true)
+  })
+
+  it('reports a worktree that is already gone and a repo git cannot read', async () => {
+    const repo = committed(tmp('rm-nothing'))
+    const target = path.join(repo, '.claude', 'worktrees', 'never')
+    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+      ok: false,
+      error: { kind: 'git', error: { kind: 'no-worktree', path: target }, left: 'neither' },
+    })
+
+    const bare = tmp('rm-not-repo')
+    const inside = path.join(bare, '.claude', 'worktrees', 'x')
+    fs.mkdirSync(inside, { recursive: true })
+    const refused = await remove(bare, inside, KEEP, [], NO_TRASH)
+    expect(refused.ok ? null : refused.error.kind === 'git' && refused.error.error.kind).toBe('not-a-repo')
   })
 })

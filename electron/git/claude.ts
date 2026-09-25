@@ -2,8 +2,17 @@ import type { Dirent } from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { ClaudeWorktree, Worktree } from '../../shared/types'
-import { git, parseStatus, parseWorktrees } from './git'
+import type {
+  ClaudeWorktree,
+  GitFailure,
+  RemovalChoice,
+  RemovalLeft,
+  RemovalResult,
+  Worktree,
+  WorktreeRemoval,
+  WorktreeRemoved,
+} from '../../shared/types'
+import { defaultBranch, git, parseStatus, parseWorktrees, succeeds } from './git'
 
 const HOLDER = path.join('.claude', 'worktrees')
 const SCAN_DEPTH = 6
@@ -185,4 +194,139 @@ export async function discover(roots: string[], scan: boolean, home = os.homedir
   const repos = [...new Set(real.filter((repo): repo is string => repo !== null))]
   const entries = (await pooled(repos, entriesOf)).flat()
   return (await pooled(entries, inspect)).sort(byRecency)
+}
+
+type GitFailed = { ok: false; error: { kind: 'git'; error: GitFailure; left: RemovalLeft } }
+
+function gitFailed(error: GitFailure, left: RemovalLeft = 'both'): GitFailed {
+  return { ok: false, error: { kind: 'git', error, left } }
+}
+
+function real(target: string): Promise<string> {
+  return fs.realpath(target).catch(() => path.resolve(target))
+}
+
+export function within(root: string, target: string): boolean {
+  const relative = path.relative(target, root)
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
+
+async function listedIn(repo: string): Promise<{ ok: true; value: Listed[] } | { ok: false; error: GitFailure }> {
+  const listed = await git(repo, ['worktree', 'list', '--porcelain'])
+  return listed.ok ? { ok: true, value: parseWorktrees(listed.value) } : listed
+}
+
+async function leftAt(repo: string, spot: string): Promise<RemovalLeft> {
+  const [listed, stat] = await Promise.all([listedIn(repo), fs.lstat(spot).catch(() => null)])
+  const registered = !listed.ok || listed.value.some((worktree) => worktree.path === spot)
+  if (registered) return stat ? 'both' : 'registration'
+  return stat ? 'folder' : 'neither'
+}
+
+async function baseOf(repo: string, main: Listed | undefined): Promise<{ ref: string; branch: string } | null> {
+  const found = await defaultBranch(repo)
+  if (found.ok) return { ref: `${found.value.remote}/${found.value.branch}`, branch: found.value.branch }
+  return main?.branch ? { ref: main.branch, branch: main.branch } : null
+}
+
+async function risk(repo: string, entry: Listed, main: Listed | undefined): Promise<RemovalResult<WorktreeRemoval>> {
+  const status = await git(entry.path, [LEAVE_INDEX_ALONE, 'status', '--porcelain=v2', '-z'])
+  if (!status.ok) return gitFailed(status.error)
+
+  const base = await baseOf(repo, main)
+  const keep = entry.branch ? (base ? [base.ref] : []) : ['--branches']
+  const counted = await git(entry.path, ['rev-list', '--count', 'HEAD', '--not', '--remotes', ...keep])
+  if (!counted.ok && counted.error.kind !== 'no-commits') return gitFailed(counted.error)
+
+  const merged =
+    entry.branch !== null &&
+    base !== null &&
+    entry.branch !== base.branch &&
+    (await succeeds(repo, ['merge-base', '--is-ancestor', `refs/heads/${entry.branch}`, base.ref]))
+
+  return {
+    ok: true,
+    value: {
+      kind: 'remove',
+      dirty: changedPaths(status.value).length,
+      unpushed: counted.ok ? Number.parseInt(counted.value, 10) || 0 : 0,
+      branch: entry.branch,
+      base: base?.ref ?? null,
+      merged,
+    },
+  }
+}
+
+export async function survey(repo: string, target: string, open: string[]): Promise<RemovalResult<WorktreeRemoval>> {
+  const home = await real(repo)
+  const spot = path.resolve(target)
+  const name = path.basename(spot)
+  if (path.dirname(spot) !== path.join(home, HOLDER) || name === '' || name === '.' || name === '..') {
+    return { ok: false, error: { kind: 'outside', path: spot } }
+  }
+
+  const roots = await Promise.all(open.map(real))
+  if (roots.some((root) => within(root, spot))) return { ok: false, error: { kind: 'open', path: spot } }
+
+  const [listed, stat] = await Promise.all([listedIn(home), fs.lstat(spot).catch(() => null)])
+  if (!listed.ok) return gitFailed(listed.error)
+
+  const entry = listed.value.find((worktree) => worktree.path === spot)
+  if (!stat) return entry ? { ok: true, value: { kind: 'prune' } } : gitFailed({ kind: 'no-worktree', path: spot }, 'neither')
+  if (!stat.isDirectory() || (await real(spot)) !== spot) return { ok: false, error: { kind: 'outside', path: spot } }
+  if (entry) return risk(home, entry, listed.value[0])
+
+  const hasGit = Number.isFinite(await mtime(path.join(spot, '.git')))
+  return hasGit ? { ok: false, error: { kind: 'unregistered', path: spot, repo: home } } : { ok: true, value: { kind: 'trash' } }
+}
+
+async function removeListed(
+  repo: string,
+  spot: string,
+  plan: Extract<WorktreeRemoval, { kind: 'remove' }>,
+  choice: RemovalChoice,
+): Promise<RemovalResult<WorktreeRemoved>> {
+  const force = choice.force && plan.dirty > 0 ? ['--force'] : []
+  const removed = await git(repo, ['worktree', 'remove', ...force, spot])
+  if (!removed.ok) return gitFailed(removed.error, await leftAt(repo, spot))
+
+  const branch = choice.branch && plan.merged ? plan.branch : null
+  const dropped = branch ? await git(repo, ['branch', '-d', branch]) : null
+  return {
+    ok: true,
+    value: { how: 'remove', branch: dropped?.ok ? branch : null, branchError: dropped && !dropped.ok ? dropped.error : null },
+  }
+}
+
+export async function remove(
+  repo: string,
+  target: string,
+  choice: RemovalChoice,
+  open: string[],
+  trash: (target: string) => Promise<void>,
+): Promise<RemovalResult<WorktreeRemoved>> {
+  const surveyed = await survey(repo, target, open)
+  if (!surveyed.ok) return surveyed
+
+  const home = await real(repo)
+  const spot = path.resolve(target)
+  const plan = surveyed.value
+  if (plan.kind === 'remove') return removeListed(home, spot, plan, choice)
+
+  if (plan.kind === 'trash') {
+    try {
+      await trash(spot)
+    } catch (error) {
+      return { ok: false, error: { kind: 'trash-failed', path: spot, message: error instanceof Error ? error.message : String(error) } }
+    }
+    return { ok: true, value: { how: 'trash', branch: null, branchError: null } }
+  }
+
+  const pruned = await git(home, ['worktree', 'prune'])
+  if (!pruned.ok) return gitFailed(pruned.error, await leftAt(home, spot))
+
+  const left = await leftAt(home, spot)
+  if (left === 'registration') return gitFailed({ kind: 'locked-worktree', path: spot }, left)
+
+  return { ok: true, value: { how: 'prune', branch: null, branchError: null } }
 }

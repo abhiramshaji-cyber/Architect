@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  dirtyPrompt,
+  removalMessage,
+  removalPrompt,
+  removedText,
   agoText,
   authNote,
   distanceText,
@@ -188,5 +192,40 @@ describe('worktree text', () => {
     expect(distanceText({ ahead: 2, behind: 0 })).toBe('2 ahead')
     expect(distanceText({ ahead: 0, behind: 0 })).toBe('in sync')
     expect([worktree, null, { repo: 1 }, 'x'].filter(isClaudeWorktree)).toEqual([worktree])
+  })
+})
+
+describe('removal text', () => {
+  const worktree: ClaudeWorktree = {
+    repo: '/code/app',
+    name: 'feat',
+    path: '/code/app/.claude/worktrees/feat',
+    branch: 'claude/feat',
+    dirty: true,
+    changedAt: null,
+    broken: null,
+  }
+
+  it('names the repo, the worktree and the path, and warns about unpushed commits', () => {
+    const plan = { kind: 'remove', dirty: 0, unpushed: 2, branch: 'claude/feat', base: 'origin/main', merged: false } as const
+    const text = removalPrompt(worktree, plan)
+    for (const part of ['feat', '/code/app', worktree.path, 'claude/feat is kept', '2 commits', 'origin/main']) expect(text).toContain(part)
+    expect(removalPrompt(worktree, { ...plan, branch: null, unpushed: 1 })).toContain('reflog')
+    expect(removalPrompt(worktree, { ...plan, unpushed: 0 })).not.toContain('WARNING')
+    expect(removalPrompt(worktree, { kind: 'prune' })).toContain('git worktree prune')
+    expect(removalPrompt(worktree, { kind: 'trash' })).toContain('Trash')
+  })
+
+  it('counts dirty files and says what a failure left behind', () => {
+    expect(dirtyPrompt(worktree, 1)).toContain('1 file in feat has')
+    expect(dirtyPrompt(worktree, 3)).toContain('3 files in feat have')
+    expect(removalMessage({ kind: 'open', path: worktree.path })).toContain('Close it first')
+    expect(
+      removalMessage({ kind: 'git', error: { kind: 'failed', args: ['worktree', 'remove'], code: 128, stderr: 'Permission denied' }, left: 'folder' }),
+    ).toBe('git worktree remove failed: Permission denied. Now git no longer lists it, but its folder is still there.')
+    expect(removedText(worktree, { how: 'remove', branch: null, branchError: { kind: 'failed', args: ['branch', '-d'], code: 1, stderr: 'not fully merged' } })).toBe(
+      'Deleted app / feat, but kept its branch: git branch -d failed: not fully merged',
+    )
+    expect(removedText(worktree, { how: 'remove', branch: 'claude/feat', branchError: null })).toBe('Deleted app / feat and its branch claude/feat')
   })
 })

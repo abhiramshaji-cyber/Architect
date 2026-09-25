@@ -3,13 +3,18 @@ import { folderName } from '../model/layout'
 import {
   BROKEN_TEXT,
   agoText,
+  branchPrompt,
   cache,
   cached,
+  dirtyPrompt,
   distanceText,
   gitMessage,
   isClaudeWorktree,
   moved,
   rank,
+  removalMessage,
+  removalPrompt,
+  removedText,
   START,
   typed,
   worktreeText,
@@ -34,12 +39,14 @@ export default function WorktreePicker() {
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [distance, setDistance] = useState<GitResult<BaseDistance> | null>(null)
+  const [outcome, setOutcome] = useState<{ text: string; failed: boolean } | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const known = useRef(worktrees)
   const latest = useRef(0)
   const busy = useRef(false)
 
-  const load = useCallback((scan: boolean) => {
-    if (!scan && busy.current) return
+  const load = useCallback((scan: boolean, urgent = false) => {
+    if (!scan && !urgent && busy.current) return
 
     const run = ++latest.current
     busy.current = true
@@ -111,6 +118,34 @@ export default function WorktreePicker() {
     if (!worktree.broken) openProject(worktree.path)
   }
 
+  async function deleteWorktree(worktree: ClaudeWorktree): Promise<void> {
+    setOutcome(null)
+    const surveyed = await window.architect.claudeWorktreeSurvey(worktree.repo, worktree.path)
+    if (!surveyed.ok) return setOutcome({ text: removalMessage(surveyed.error), failed: true })
+
+    const plan = surveyed.value
+    if (!confirm(removalPrompt(worktree, plan))) return
+    const force = plan.kind === 'remove' && plan.dirty > 0
+    if (force && !confirm(dirtyPrompt(worktree, plan.dirty))) return
+    const branch = plan.kind === 'remove' && plan.merged && plan.branch !== null && plan.base !== null && confirm(branchPrompt(plan.branch, plan.base))
+
+    const removed = await window.architect.claudeWorktreeRemove(worktree.repo, worktree.path, { force, branch })
+    if (removed.ok) {
+      known.current = known.current.filter((row) => row.path !== worktree.path)
+      setWorktrees(known.current)
+    }
+
+    setOutcome(removed.ok ? { text: removedText(worktree, removed.value), failed: false } : { text: removalMessage(removed.error), failed: true })
+    load(false, true)
+  }
+
+  function onDelete(worktree: ClaudeWorktree): void {
+    setDeleting(true)
+    deleteWorktree(worktree)
+      .catch((err: unknown) => setOutcome({ text: String(err), failed: true }))
+      .finally(() => setDeleting(false))
+  }
+
   function onKey(event: React.KeyboardEvent): void {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
@@ -146,6 +181,7 @@ export default function WorktreePicker() {
           />
 
           {error && <p className="picker-error">{error}</p>}
+          {outcome && <p className={outcome.failed ? 'picker-error' : 'goto-hint'}>{outcome.text}</p>}
 
           <ul className="picker-list">
             {shown.map((worktree, at) => (
@@ -192,6 +228,9 @@ export default function WorktreePicker() {
                   </p>
                 </>
               )}
+              <button className="action danger" onClick={() => onDelete(highlight)} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete worktree…'}
+              </button>
             </>
           )}
         </aside>

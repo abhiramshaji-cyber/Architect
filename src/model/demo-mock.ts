@@ -582,6 +582,12 @@ export function installMock() {
     async claudeWorktrees() {
       return []
     },
+    async claudeWorktreeSurvey(repo) {
+      return { ok: false, error: { kind: 'git', error: demoGit(repo).error, left: 'both' } }
+    },
+    async claudeWorktreeRemove(repo) {
+      return { ok: false, error: { kind: 'git', error: demoGit(repo).error, left: 'both' } }
+    },
     async gitCreateWorktree(root) {
       return demoGit(root)
     },

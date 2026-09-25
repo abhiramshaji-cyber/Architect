@@ -175,6 +175,26 @@ export type ClaudeWorktree = {
   broken: WorktreeBroken | null
 }
 
+export type WorktreeRemoval =
+  | { kind: 'remove'; dirty: number; unpushed: number; branch: string | null; base: string | null; merged: boolean }
+  | { kind: 'prune' }
+  | { kind: 'trash' }
+
+export type RemovalChoice = { force: boolean; branch: boolean }
+
+export type RemovalLeft = 'both' | 'folder' | 'registration' | 'neither'
+
+export type RemovalFailure =
+  | { kind: 'open'; path: string }
+  | { kind: 'outside'; path: string }
+  | { kind: 'unregistered'; path: string; repo: string }
+  | { kind: 'trash-failed'; path: string; message: string }
+  | { kind: 'git'; error: GitFailure; left: RemovalLeft }
+
+export type WorktreeRemoved = { how: WorktreeRemoval['kind']; branch: string | null; branchError: GitFailure | null }
+
+export type RemovalResult<T> = { ok: true; value: T } | { ok: false; error: RemovalFailure }
+
 export type BaseDistance = { base: string; ahead: number; behind: number }
 
 export type LocalBranch = { name: string; commit: string; upstream: string | null; current: boolean }
@@ -422,6 +442,8 @@ export type ArchitectApi = {
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
   gitDistance(root: string): Promise<GitResult<BaseDistance>>
   claudeWorktrees(repos: string[], scan: boolean): Promise<ClaudeWorktree[]>
+  claudeWorktreeSurvey(repo: string, path: string): Promise<RemovalResult<WorktreeRemoval>>
+  claudeWorktreeRemove(repo: string, path: string, choice: RemovalChoice): Promise<RemovalResult<WorktreeRemoved>>
   gitCreateWorktree(root: string, path: string, name: string, base?: string): Promise<GitResult<WorktreeCreated>>
   gitRemoveWorktree(root: string, path: string): Promise<GitResult<{ path: string }>>
   gitPruneWorktrees(root: string): Promise<GitResult<Worktree[]>>
