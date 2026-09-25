@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agoText,
   authNote,
+  distanceText,
+  isClaudeWorktree,
+  worktreeText,
   entered,
   escaped,
   gitMessage,
@@ -13,7 +17,7 @@ import {
   START,
   typed,
 } from './picker'
-import type { GithubRepo, OpenRisk } from '../../shared/types'
+import type { ClaudeWorktree, GithubRepo, OpenRisk } from '../../shared/types'
 
 function repo(nameWithOwner: string): GithubRepo {
   const [owner = '', name = ''] = nameWithOwner.split('/')
@@ -147,5 +151,37 @@ describe('failure text', () => {
     expect(openMessage({ source: 'github', error: { kind: 'not-installed' } })).toBe('The gh CLI is not installed')
     expect(openMessage({ source: 'git', error: { kind: 'no-tracking', tracking: 'origin/x' } })).toContain('origin/x')
     expect(githubMessage({ kind: 'auth-required' })).toContain('gh auth login')
+  })
+})
+
+describe('worktree text', () => {
+  const now = Date.UTC(2026, 0, 31)
+  const worktree: ClaudeWorktree = {
+    repo: '/r',
+    name: 'w',
+    path: '/r/.claude/worktrees/w',
+    branch: null,
+    dirty: true,
+    changedAt: now - 5 * 60_000,
+    broken: null,
+  }
+
+  it('says how long ago a worktree changed', () => {
+    expect(agoText(null, now)).toBe('never changed')
+    expect(agoText(now - 10_000, now)).toBe('changed just now')
+    expect(agoText(now - 3 * 3_600_000, now)).toBe('changed 3h ago')
+    expect(agoText(now - 86_400_000, now)).toBe('changed yesterday')
+    expect(agoText(now - 5 * 86_400_000, now)).toBe('changed 5 days ago')
+  })
+
+  it('shows a detached, dirty worktree and a broken one', () => {
+    expect(worktreeText(worktree, now)).toBe('detached · uncommitted changes · changed 5 min ago')
+    expect(worktreeText({ ...worktree, broken: 'missing' }, now)).toBe('broken · its folder is gone')
+  })
+
+  it('counts distance and rejects cached rows of the wrong shape', () => {
+    expect(distanceText({ ahead: 2, behind: 0 })).toBe('2 ahead')
+    expect(distanceText({ ahead: 0, behind: 0 })).toBe('in sync')
+    expect([worktree, null, { repo: 1 }, 'x'].filter(isClaudeWorktree)).toEqual([worktree])
   })
 })

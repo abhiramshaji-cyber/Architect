@@ -1,4 +1,14 @@
-import type { DraftFailure, GitFailure, GithubAuth, GithubFailure, GithubRepo, OpenFailure, OpenRisk } from '../../shared/types'
+import type {
+  ClaudeWorktree,
+  DraftFailure,
+  GitFailure,
+  GithubAuth,
+  GithubFailure,
+  GithubRepo,
+  OpenFailure,
+  OpenRisk,
+  WorktreeBroken,
+} from '../../shared/types'
 
 export type Stage = { kind: 'repos' } | { kind: 'branches'; repo: GithubRepo }
 
@@ -144,4 +154,63 @@ export function draftMessage(error: DraftFailure): string {
 
 export function openMessage(failure: OpenFailure): string {
   return failure.source === 'git' ? gitMessage(failure.error) : githubMessage(failure.error)
+}
+
+export function cached<T>(key: string): T[] {
+  try {
+    const stored = localStorage.getItem(key)
+    const rows: unknown = stored ? JSON.parse(stored) : null
+    return Array.isArray(rows) ? (rows as T[]) : []
+  } catch {
+    return []
+  }
+}
+
+export function cache(key: string, rows: unknown[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(rows))
+  } catch {}
+}
+
+export function distanceText(distance: { ahead: number; behind: number } | undefined): string {
+  if (!distance) return ''
+  if (distance.ahead === 0 && distance.behind === 0) return 'in sync'
+
+  return [distance.ahead > 0 ? `${distance.ahead} ahead` : '', distance.behind > 0 ? `${distance.behind} behind` : '']
+    .filter((part) => part !== '')
+    .join(' · ')
+}
+
+export function agoText(at: number | null, now: number): string {
+  if (at === null) return 'never changed'
+
+  const minutes = Math.floor((now - at) / 60_000)
+  if (minutes < 1) return 'changed just now'
+  if (minutes < 60) return `changed ${minutes} min ago`
+  if (minutes < 1440) return `changed ${Math.floor(minutes / 60)}h ago`
+
+  const days = Math.floor(minutes / 1440)
+  if (days === 1) return 'changed yesterday'
+  if (days < 30) return `changed ${days} days ago`
+
+  return `changed ${new Date(at).toLocaleDateString()}`
+}
+
+export const BROKEN_TEXT: Record<WorktreeBroken, string> = {
+  missing: 'its folder is gone',
+  'not-git': 'the folder has no git checkout',
+  unregistered: 'the repo does not list it as a worktree',
+  unlisted: 'the repo could not list its worktrees',
+  unreadable: 'git cannot read it',
+}
+
+export function worktreeText(worktree: ClaudeWorktree, now: number): string {
+  if (worktree.broken) return `broken · ${BROKEN_TEXT[worktree.broken]}`
+
+  return [worktree.branch ?? 'detached', worktree.dirty ? 'uncommitted changes' : 'clean', agoText(worktree.changedAt, now)].join(' · ')
+}
+
+export function isClaudeWorktree(value: unknown): value is ClaudeWorktree {
+  const row = value as Partial<ClaudeWorktree> | null
+  return typeof row?.repo === 'string' && typeof row.name === 'string' && typeof row.path === 'string'
 }

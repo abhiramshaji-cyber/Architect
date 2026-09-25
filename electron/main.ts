@@ -23,6 +23,7 @@ import {
 } from '../shared/types'
 import { createDaemon } from './daemon'
 import * as message from './draft/message'
+import * as claude from './git/claude'
 import * as diff from './git/diff'
 import * as git from './git/git'
 import * as open from './git/open'
@@ -242,6 +243,10 @@ function wireIpc() {
   handle('architect:git-remote-branches', (root: string) => git.remoteBranches(root))
   handle('architect:git-worktrees', (root: string) => git.worktrees(root))
   handle('architect:git-fetch', (root: string) => git.fetch(root))
+  handle('architect:git-distance', (root: string) => git.distance(root))
+  handle('architect:claude-worktrees', (repos: string[], scan: boolean) =>
+    claude.discover([...repos, ...daemon.projects().map((project) => project.root)], scan),
+  )
   handle('architect:git-create-worktree', (root: string, target: string, name: string, base?: string) =>
     git.createWorktree(root, target, name, base),
   )

@@ -8,6 +8,7 @@ import {
   createBranch,
   createWorktree,
   defaultBranch,
+  distance,
   endpoint,
   fetch,
   fileAtRef,
@@ -228,6 +229,32 @@ describe('defaultBranch', () => {
     sh(root, 'remote', 'add', 'origin', tmp('bare'))
 
     expect(await defaultBranch(root)).toEqual({ ok: false, error: { kind: 'no-default-branch', remote: 'origin' } })
+  })
+})
+
+describe('distance', () => {
+  it('counts a worktree branch against the default branch', async () => {
+    const origin = tmp('origin')
+    sh(origin, 'init', '--bare', '-b', 'main')
+    const source = committed()
+    sh(source, 'remote', 'add', 'origin', origin)
+    sh(source, 'push', '-u', 'origin', 'main')
+    const clone = path.join(tmp('clone'), 'work')
+    sh(path.dirname(clone), 'clone', origin, 'work')
+    const extra = path.join(clone, '.claude', 'worktrees', 'side one')
+    sh(clone, 'worktree', 'add', '-b', 'side', extra)
+    fs.writeFileSync(path.join(extra, 'b.txt'), 'two\n')
+    sh(extra, 'add', 'b.txt')
+    sh(extra, 'commit', '-m', 'second')
+
+    expect(await distance(extra)).toEqual({ ok: true, value: { base: 'origin/main', ahead: 1, behind: 0 } })
+  })
+
+  it('reports a repo without a default branch', async () => {
+    const root = committed()
+    sh(root, 'remote', 'add', 'origin', tmp('bare'))
+
+    expect(await distance(root)).toEqual({ ok: false, error: { kind: 'no-default-branch', remote: 'origin' } })
   })
 })
 
