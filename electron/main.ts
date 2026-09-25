@@ -1,3 +1,4 @@
+import os from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { spawn as spawnPty } from 'node-pty'
@@ -44,6 +45,7 @@ const daemon = createDaemon({
 let tray: Tray | null = null
 
 const TABBED = process.platform === 'darwin'
+const SETTINGS = path.join(os.homedir(), '.architect', 'settings.json')
 
 const tabs: BrowserWindow[] = []
 const hosts = new Map<number, ReturnType<typeof createPtyHost>>()
@@ -246,18 +248,25 @@ function wireIpc() {
   handle('architect:git-worktrees', (root: string) => git.worktrees(root))
   handle('architect:git-fetch', (root: string) => git.fetch(root))
   handle('architect:git-distance', (root: string) => git.distance(root))
-  handle('architect:claude-worktrees', (repos: string[], scan: boolean) =>
-    claude.discover([...repos, ...daemon.projects().map((project) => project.root)], scan),
+  handle('architect:claude-worktrees', async (repos: string[], scan: boolean) =>
+    claude.discover([...repos, ...daemon.projects().map((project) => project.root)], scan, await claude.readSettings(SETTINGS)),
   )
-  handle('architect:claude-worktree-survey', (repo: string, target: string) =>
-    claude.survey(repo, target, [...claims.values()]),
+  handle('architect:claude-worktree-survey', async (repo: string, target: string) =>
+    claude.survey(repo, target, [...claims.values()], (await claude.readSettings(SETTINGS)).worktreeFolders),
   )
   handle('architect:claude-worktree-remove', async (repo: string, target: string, choice: RemovalChoice) => {
-    const removed = await claude.remove(repo, target, choice, [...claims.values()], (item) => shell.trashItem(item))
+    const { worktreeFolders } = await claude.readSettings(SETTINGS)
+    const removed = await claude.remove(repo, target, choice, [...claims.values()], worktreeFolders, (item: string) => shell.trashItem(item))
     if (removed.ok) {
       for (const project of daemon.projects()) if (claude.within(project.root, target)) daemon.closeProject(project.root)
     }
     return removed
+  })
+  handle('architect:worktree-settings', () => claude.readSettings(SETTINGS))
+  handle('architect:worktree-settings-save', (settings: unknown) => claude.saveSettings(SETTINGS, settings))
+  handleIn('architect:pick-folder', async (window) => {
+    const picked = await dialog.showOpenDialog(window, { properties: ['openDirectory'] })
+    return picked.canceled ? null : (picked.filePaths[0] ?? null)
   })
   handle('architect:git-create-worktree', (root: string, target: string, name: string, base?: string) =>
     git.createWorktree(root, target, name, base),

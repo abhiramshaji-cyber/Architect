@@ -73,6 +73,9 @@ const architect: ArchitectApi = {
   claudeWorktrees: (repos, scan) => invoke('architect:claude-worktrees', repos, scan),
   claudeWorktreeSurvey: (repo, path) => invoke('architect:claude-worktree-survey', repo, path),
   claudeWorktreeRemove: (repo, path, choice) => invoke('architect:claude-worktree-remove', repo, path, choice),
+  worktreeSettings: () => invoke('architect:worktree-settings'),
+  saveWorktreeSettings: (settings) => invoke('architect:worktree-settings-save', settings),
+  pickFolder: () => invoke('architect:pick-folder'),
   gitCreateWorktree: (root, path, name, base) =>
     invoke('architect:git-create-worktree', root, path, name, base),
   gitRemoveWorktree: (root, path) => invoke('architect:git-remove-worktree', root, path),

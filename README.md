@@ -167,6 +167,22 @@ node /path/to/architect/out/lsp/server.js --stdio
 
 In Neovim that is `vim.lsp.start({ cmd = { 'node', '/path/to/architect/out/lsp/server.js', '--stdio' }, filetypes = { 'markdown' } })`. In VS Code it is the `serverOptions.command` of a `LanguageClient`. The server only answers for a document named `architect.md`, so pointing it at markdown in general is safe.
 
+## Worktrees
+
+The Worktrees tab lists the git worktrees on your machine so you can open one or delete it. Git decides what a worktree is: Architect finds your repos, asks each one for `git worktree list`, and shows every linked worktree it reports, wherever it lives. The main checkout of a repo is never listed.
+
+By default the tab shows only Claude worktrees, meaning the ones inside a worktree folder. Switch the header button to All worktrees to see the rest, such as a sibling folder made with `git worktree add ../app-feature`.
+
+Open Locations in the tab header to change where Architect looks. Changes are saved to `~/.architect/settings.json` and trigger a full rescan.
+
+- Scan folders (`worktreeRoots`) are the folders searched for repos. The default is your home folder. Add one with the native folder picker, for example a drive outside your home. With no scan folders, only projects you have open are checked.
+- Depth (`worktreeScanDepth`) is how many folders deep the scan goes below each scan folder. The default is 6.
+- Worktree folders (`worktreeFolders`) mark where Claude worktrees live. The default is `.claude/worktrees`, which is where Claude Code creates them. A relative folder is taken inside each repo and may not point outside it. An absolute folder, such as `~/worktrees` expanded to its full path, counts for every repo.
+
+A plain folder inside a relative worktree folder that git does not know about is still listed as broken, so you can clear it out. Heavy folders such as `node_modules`, `Library` and `AppData` are always skipped, and symlinks are not followed.
+
+Deleting follows git too. Any linked worktree git reports for the repo can be deleted with `git worktree remove`, after the same confirmations for uncommitted files, unpushed commits and merged branches. The main worktree, a folder that holds it or another worktree, and a project open in any window are always refused. A plain folder git does not know moves to the Trash only when it sits directly inside a relative worktree folder of that repo.
+
 ## Status
 
 V1 is in active development. It is deliberately small:

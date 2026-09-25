@@ -588,6 +588,15 @@ export function installMock() {
     async claudeWorktreeRemove(repo) {
       return { ok: false, error: { kind: 'git', error: demoGit(repo).error, left: 'both' } }
     },
+    async worktreeSettings() {
+      return { worktreeRoots: [], worktreeScanDepth: 6, worktreeFolders: ['.claude/worktrees'] }
+    },
+    async saveWorktreeSettings(settings) {
+      return { ok: true, value: settings }
+    },
+    async pickFolder() {
+      return null
+    },
     async gitCreateWorktree(root) {
       return demoGit(root)
     },
