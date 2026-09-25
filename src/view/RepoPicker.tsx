@@ -27,6 +27,9 @@ import type {
 
 type Row = { key: string; label: string; branch: string; pr?: number }
 
+const REPO_PAGE = 100
+const SHOWN_REPOS = 200
+
 const REPO_CACHE = 'github:repos'
 const BRANCH_CACHE = 'github:branches:'
 
@@ -93,6 +96,7 @@ export default function RepoPicker() {
   const [pulls, setPulls] = useState<GithubPull[]>([])
   const [distances, setDistances] = useState(new Map<string, GithubCompare>())
   const [loading, setLoading] = useState(false)
+  const [listing, setListing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<OpenPlan | null>(null)
   const [prompt, setPrompt] = useState<{ row: Row; plan: Extract<OpenPlan, { kind: 'existing' }> } | null>(null)
@@ -119,31 +123,39 @@ export default function RepoPicker() {
   }, [])
 
   useEffect(() => {
-    if (repo) return
-
     let live = true
-    setLoading(true)
-    window.architect
-      .githubRepos()
-      .then((result) => {
-        if (!live) return
-        setLoading(false)
-        if (!result.ok) return setError(githubMessage(result.error))
-        setError(null)
-        setRepos(result.value)
-        cache(REPO_CACHE, result.value)
-      })
-      .catch((err: unknown) => {
-        if (live) {
-          setLoading(false)
-          setError(String(err))
+    setListing(true)
+
+    void (async () => {
+      let have = 0
+
+      try {
+        while (live) {
+          const result = await window.architect.githubRepos(have + REPO_PAGE)
+          if (!live) return
+          if (!result.ok) {
+            setError(githubMessage(result.error))
+            break
+          }
+
+          setError(null)
+          setRepos(result.value)
+          cache(REPO_CACHE, result.value)
+          if (result.value.length <= have) break
+
+          have = result.value.length
         }
-      })
+      } catch (err: unknown) {
+        if (live) setError(String(err))
+      }
+
+      if (live) setListing(false)
+    })()
 
     return () => {
       live = false
     }
-  }, [repo])
+  }, [])
 
   useEffect(() => {
     if (!repo) return
@@ -199,15 +211,14 @@ export default function RepoPicker() {
     }
   }, [repo, branches])
 
-  const shownRepos = useMemo(
-    () => rank(picker.query, repos, (item) => item.nameWithOwner),
-    [picker.query, repos],
-  )
+  const ranked = useMemo(() => rank(picker.query, repos, (item) => item.nameWithOwner), [picker.query, repos])
+  const shownRepos = useMemo(() => ranked.slice(0, SHOWN_REPOS), [ranked])
   const shownRows = useMemo(
     () => rank(picker.query, rowsOf(branches, pulls), (item) => item.label),
     [picker.query, branches, pulls],
   )
 
+  const waiting = repo ? loading : listing
   const count = repo ? shownRows.length : shownRepos.length
   const index = Math.min(picker.index, Math.max(count - 1, 0))
   const highlight = repo ? shownRows[index] : undefined
@@ -287,7 +298,9 @@ export default function RepoPicker() {
     <>
       <header className="canvas-header">
         <h2>{repo ? repo.nameWithOwner : 'Repos'}</h2>
-        {loading && <span className="muted">Loading…</span>}
+        {waiting && (
+          <span className="muted">{!repo && repos.length > 0 ? `Loading more… ${repos.length} repos` : 'Loading…'}</span>
+        )}
         {busy && <span className="muted">{busy}</span>}
       </header>
 
@@ -356,7 +369,11 @@ export default function RepoPicker() {
                 )
               })}
 
-            {count === 0 && !loading && <li className="empty">Nothing matches</li>}
+            {!repo && ranked.length > shownRepos.length && (
+              <li className="empty">{ranked.length - shownRepos.length} more match. Keep typing to narrow.</li>
+            )}
+
+            {count === 0 && !waiting && <li className="empty">Nothing matches</li>}
           </ul>
         </div>
 
