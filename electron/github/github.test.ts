@@ -15,7 +15,7 @@ import {
   pullFor,
   pulls,
   rates,
-  repos,
+  REPO_PAGE,
   token,
 } from './github'
 
@@ -46,10 +46,6 @@ function fake(handler: (args: string[]) => Partial<GhOutput>, online = true) {
 
 function valueOf(args: string[], flag: string): string {
   return args[args.indexOf(flag) + 1] ?? ''
-}
-
-function limits(calls: string[][]): (string | undefined)[] {
-  return calls.map((args) => args[args.indexOf('--limit') + 1])
 }
 
 function hosts(entries: unknown[]): string {
@@ -193,9 +189,41 @@ const REPO_ROW = {
   primaryLanguage: { name: 'TypeScript' },
 }
 
-describe('repos', () => {
-  it('flattens the narrow field set gh returns', async () => {
-    const out = await repos(30, fake(() => ({ stdout: JSON.stringify([REPO_ROW]) })).gh)
+function asked(args: string[]): { path: string; page: number; size: number } {
+  const url = new URL(`https://api.github.com/${args[1]}`)
+
+  return {
+    path: url.pathname,
+    page: Number(url.searchParams.get('page')),
+    size: Number(url.searchParams.get('per_page')),
+  }
+}
+
+function rows(names: string[]): string {
+  return names.map((name) => JSON.stringify({ nameWithOwner: name })).join('\n')
+}
+
+function account(pages: Record<string, string[][]>, over?: (args: string[]) => Partial<GhOutput> | undefined) {
+  return fake((args) => {
+    const wanted = over?.(args)
+    if (wanted) return wanted
+
+    const { path, page } = asked(args)
+
+    return { stdout: rows(pages[path]?.[page - 1] ?? []) }
+  })
+}
+
+const MINE = '/user/repos'
+const ORGS = ['/orgs/iolotech/repos', '/orgs/botpress/repos', '/orgs/webarts/repos', '/orgs/The-Blue-Space-Australia/repos']
+
+function many(count: number, prefix = 'me/repo'): string[] {
+  return Array.from({ length: count }, (_, at) => `${prefix}-${String(at).padStart(4, '0')}`)
+}
+
+describe('allRepos', () => {
+  it('flattens the row fields the picker renders', async () => {
+    const out = await allRepos(REPO_PAGE, fake((args) => ({ stdout: asked(args).path === MINE ? JSON.stringify(REPO_ROW) : '' })).gh)
 
     expect(out).toEqual({
       ok: true,
@@ -217,84 +245,183 @@ describe('repos', () => {
     })
   })
 
-  it('asks for more than the thirty gh lists by default', async () => {
-    const machine = fake(() => ({ stdout: '[]' }))
-    await repos(undefined, machine.gh)
+  it('asks the account endpoint for one hundred at a time rather than a capped single call', async () => {
+    const listing = account({})
+    await allRepos(REPO_PAGE, listing.gh)
 
-    expect(machine.calls[0]).toContain('--limit')
-    expect(limits(machine.calls)).toEqual(['200'])
+    expect(listing.calls[0]?.[0]).toBe('api')
+    expect(asked(listing.calls[0] as string[])).toEqual({ path: MINE, page: 1, size: REPO_PAGE })
+    expect(listing.calls.every((args) => !args.includes('--limit'))).toBe(true)
   })
 
-  it('clamps a limit that cannot be paged', async () => {
-    const machine = fake(() => ({ stdout: '[]' }))
-    await repos(0, machine.gh)
-    await repos(50_000, machine.gh)
-    await repos(Number.NaN, machine.gh)
+  it('treats a limit it cannot page as a request for the first page', async () => {
+    const listing = account({ [MINE]: [['me/one']] })
+    for (const limit of [0, -5, Number.NaN, 1]) {
+      await allRepos(limit, listing.gh)
+      expect(asked(listing.calls.at(-1) as string[]).size).toBe(REPO_PAGE)
+    }
 
-    expect(limits(machine.calls)).toEqual(['1', '1000', '1'])
+    expect(listing.calls.filter((args) => asked(args).path === MINE)).toHaveLength(4)
   })
 
-  it('keeps a repo missing its optional fields and drops one without a full name', async () => {
-    const rows = JSON.stringify([{ nameWithOwner: 'octocat/bare' }, { name: 'nameless' }])
-    const out = await repos(10, fake(() => ({ stdout: rows })).gh)
+  it('leaves a source that never runs out rather than walking it forever', async () => {
+    const endless = account({}, (args) => (asked(args).path === MINE ? { stdout: rows(many(REPO_PAGE)) } : undefined))
+    await allRepos(REPO_PAGE, endless.gh)
+    const out = await allRepos(1_000_000, endless.gh)
 
-    expect(out).toEqual({
-      ok: true,
-      value: [
-        {
-          nameWithOwner: 'octocat/bare',
-          name: 'bare',
-          owner: 'octocat',
-          description: '',
-          isPrivate: false,
-          isFork: false,
-          isArchived: false,
-          defaultBranch: null,
-          pushedAt: null,
-          url: '',
-          language: null,
-        },
-      ],
-    })
+    expect(out).toMatchObject({ ok: true })
+    expect(endless.calls.filter((args) => asked(args).path === MINE)).toHaveLength(100)
+    expect(endless.calls.map((args) => asked(args).path)).toContain(ORGS[3])
+  })
+
+  it('returns the empty account as an empty listing rather than a failure', async () => {
+    const out = await allRepos(REPO_PAGE, account({}).gh)
+
+    expect(out).toEqual({ ok: true, value: [] })
+  })
+
+  it('stops at the first full page and reaches the rest only when asked for more', async () => {
+    const all = many(250)
+    const listing = account({ [MINE]: [all.slice(0, 100), all.slice(100, 200), all.slice(200)] })
+
+    const first = await allRepos(REPO_PAGE, listing.gh)
+    expect(first.ok && first.value.length).toBe(100)
+    expect(listing.calls.length).toBe(1)
+
+    const second = await allRepos(200, listing.gh)
+    expect(second.ok && second.value.length).toBe(200)
+    expect(listing.calls.length).toBe(2)
+
+    const third = await allRepos(300, listing.gh)
+    expect(third.ok && third.value).toEqual(all.map((name) => expect.objectContaining({ nameWithOwner: name })))
+  })
+
+  it('never reads a page twice while walking a multi page account', async () => {
+    const all = many(250)
+    const listing = account({ [MINE]: [all.slice(0, 100), all.slice(100, 200), all.slice(200)] })
+
+    await allRepos(REPO_PAGE, listing.gh)
+    await allRepos(200, listing.gh)
+    await allRepos(300, listing.gh)
+
+    const walked = listing.calls.map((args) => `${asked(args).path}#${asked(args).page}`)
+
+    expect(walked.length).toBe(new Set(walked).size)
+    expect(walked.filter((step) => step.startsWith(MINE))).toEqual([`${MINE}#1`, `${MINE}#2`, `${MINE}#3`])
+  })
+
+  it('spends nothing once the account is exhausted', async () => {
+    const listing = account({ [MINE]: [['me/one']] })
+    await allRepos(REPO_PAGE, listing.gh)
+    const spent = listing.calls.length
+
+    const again = await allRepos(1000, listing.gh)
+
+    expect(again.ok && again.value.map((repo) => repo.nameWithOwner)).toEqual(['me/one'])
+    expect(listing.calls.length).toBe(spent)
+  })
+
+  it('restarts the listing when the first page is asked for again', async () => {
+    const listing = account({ [MINE]: [['me/one']] })
+    await allRepos(REPO_PAGE, listing.gh)
+    const spent = listing.calls.length
+
+    const out = await allRepos(REPO_PAGE, listing.gh)
+
+    expect(out.ok && out.value.map((repo) => repo.nameWithOwner)).toEqual(['me/one'])
+    expect(listing.calls.length).toBe(spent * 2)
+  })
+
+  it('walks every organisation the account never joined but works in', async () => {
+    const listing = account(Object.fromEntries([MINE, ...ORGS].map((path) => [path, [[`${path.split('/')[2] ?? 'me'}/thing`]]])))
+    const out = await allRepos(REPO_PAGE, listing.gh)
+
+    expect(listing.calls.map((args) => asked(args).path)).toEqual([MINE, ...ORGS])
+    expect(out.ok && out.value.length).toBe(5)
+  })
+
+  it('keeps one copy of a repo the account sees twice', async () => {
+    const listing = account({ [MINE]: [['shared/thing']], [ORGS[0] as string]: [['shared/thing', 'iolotech/other']] })
+    const out = await allRepos(REPO_PAGE, listing.gh)
+
+    expect(out.ok && out.value.map((repo) => repo.nameWithOwner)).toEqual(['shared/thing', 'iolotech/other'])
+  })
+
+  it('keeps the listing when one organisation refuses', async () => {
+    const listing = account({ [MINE]: [['me/own']] }, (args) =>
+      asked(args).path === ORGS[0] ? { code: 1, stdout: '{"message":"Not Found","status":"404"}' } : undefined,
+    )
+    const out = await allRepos(REPO_PAGE, listing.gh)
+
+    expect(out).toMatchObject({ ok: true })
+    expect(out.ok && out.value.map((repo) => repo.nameWithOwner)).toEqual(['me/own'])
+    expect(listing.calls.map((args) => asked(args).path)).toEqual([MINE, ...ORGS])
+  })
+
+  it('stops the walk when an organisation fails for a reason the whole account shares', async () => {
+    const listing = account({ [MINE]: [['me/own']] }, (args) => (asked(args).path === ORGS[0] ? { code: 4 } : undefined))
+    const out = await allRepos(REPO_PAGE, listing.gh)
+
+    expect(out).toEqual({ ok: false, error: { kind: 'auth-required' } })
+    expect(listing.calls.map((args) => asked(args).path)).toEqual([MINE, ORGS[0]])
   })
 
   it('reports authentication required on exit code four', async () => {
-    const out = await repos(10, fake(() => ({ code: 4, stderr: 'gh: To use GitHub CLI in a GitHub Actions workflow' })).gh)
+    const out = await allRepos(REPO_PAGE, fake(() => ({ code: 4 })).gh)
 
     expect(out).toEqual({ ok: false, error: { kind: 'auth-required' } })
   })
 
   it('reports unreachable rather than a generic failure when the network is down', async () => {
-    const machine = fake(() => ({ code: 1, stderr: 'Post "https://api.github.com/graphql": connection refused' }), false)
-    const out = await repos(10, machine.gh)
+    const machine = fake(() => ({ code: 1, stderr: 'connection refused' }), false)
+    const out = await allRepos(REPO_PAGE, machine.gh)
 
-    expect(out).toEqual({ ok: false, error: { kind: 'unreachable', detail: 'Post "https://api.github.com/graphql": connection refused' } })
+    expect(out).toEqual({ ok: false, error: { kind: 'unreachable', detail: 'connection refused' } })
   })
 
-  it('reports the exhausted resource when a failure coincides with a spent budget', async () => {
+  it('reports a spent budget as rate limiting rather than an empty listing', async () => {
     const spent = {
       resources: {
-        core: { limit: 5000, remaining: 4000, reset: 100 },
-        graphql: { limit: 5000, remaining: 0, reset: 200 },
+        core: { limit: 5000, remaining: 0, reset: 100 },
+        graphql: { limit: 5000, remaining: 5000, reset: 200 },
         search: { limit: 30, remaining: 30, reset: 300 },
       },
     }
-    const machine = fake((args) => (args[0] === 'api' ? { stdout: JSON.stringify(spent) } : { code: 1, stderr: 'HTTP 403' }))
-    const out = await repos(10, machine.gh)
+    const machine = fake((args) => (args[1] === 'rate_limit' ? { stdout: JSON.stringify(spent) } : { code: 1, stderr: 'HTTP 403' }))
+    const out = await allRepos(REPO_PAGE, machine.gh)
 
-    expect(out).toEqual({ ok: false, error: { kind: 'rate-limited', resource: 'graphql', resetAt: 200_000 } })
+    expect(out).toEqual({ ok: false, error: { kind: 'rate-limited', resource: 'core', resetAt: 100_000 } })
   })
 
-  it('reports a timed out call rather than a failure', async () => {
-    const out = await repos(10, fake(() => ({ code: 'timeout' })).gh)
+  it('reports a timed out page rather than a failure', async () => {
+    const out = await allRepos(REPO_PAGE, fake(() => ({ code: 'timeout' })).gh)
 
     expect(out).toMatchObject({ ok: false, error: { kind: 'timed-out' } })
   })
 
-  it('fails when the listing is not an array', async () => {
-    const out = await repos(10, fake(() => ({ stdout: '{"nope":true}' })).gh)
+  it('fails rather than dropping a row it cannot read, and reads that page again next time', async () => {
+    const listing = account({ [MINE]: [['me/own']] }, (args) =>
+      asked(args).path === MINE && listing.calls.length === 1 ? { stdout: '{"nope":true}' } : undefined,
+    )
 
-    expect(out).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
+    expect(await allRepos(REPO_PAGE, listing.gh)).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
+
+    const out = await allRepos(200, listing.gh)
+
+    expect(out.ok && out.value.map((repo) => repo.nameWithOwner)).toEqual(['me/own'])
+  })
+
+  it('serialises overlapping walks so no page is skipped', async () => {
+    const all = many(300)
+    const listing = account({ [MINE]: [all.slice(0, 100), all.slice(100, 200), all.slice(200, 300), []] })
+
+    await allRepos(REPO_PAGE, listing.gh)
+    const [left, right] = await Promise.all([allRepos(200, listing.gh), allRepos(300, listing.gh)])
+
+    expect(left).toMatchObject({ ok: true })
+    expect(right.ok && right.value.length).toBe(300)
+    const walked = listing.calls.map((args) => `${asked(args).path}#${asked(args).page}`)
+    expect(walked.length).toBe(new Set(walked).size)
   })
 })
 
@@ -382,59 +509,6 @@ describe('rates', () => {
     const out = await rates(fake(() => ({ stdout: '{"resources":{"core":{"limit":1,"remaining":1,"reset":2}}}' })).gh)
 
     expect(out).toMatchObject({ ok: false, error: { kind: 'unreadable' } })
-  })
-})
-
-function named(name: string): string {
-  return JSON.stringify([{ nameWithOwner: name }])
-}
-
-describe('allRepos', () => {
-  function machine(handler: (args: string[]) => Partial<GhOutput>) {
-    return fake((args) => {
-      if (args[0] === 'repo' && args[1] === 'list') return handler(args)
-      if (args[1] === 'user/orgs') return { stdout: 'botpress\niolotech\n' }
-      if (String(args[1]).startsWith('user/repos')) return { stdout: JSON.stringify({ nameWithOwner: 'friend/shared' }) }
-      return {}
-    })
-  }
-
-  it('unions the personal, collaborating and organisation listings without repeating one', async () => {
-    const listing = machine((args) => ({ stdout: named(args[2] === undefined || args[2].startsWith('--') ? 'me/own' : `${args[2]}/thing`) }))
-    const out = await allRepos(10, listing.gh)
-
-    expect(out.ok && out.value.map((repo) => repo.nameWithOwner)).toEqual([
-      'botpress/thing',
-      'friend/shared',
-      'iolotech/thing',
-      'me/own',
-      'The-Blue-Space-Australia/thing',
-      'webarts/thing',
-    ])
-  })
-
-  it('asks each organisation the account never joined but works in', async () => {
-    const listing = machine(() => ({ stdout: '[]' }))
-    await allRepos(10, listing.gh)
-
-    const owners = listing.calls.filter((args) => args[0] === 'repo' && args[2] && !args[2].startsWith('--')).map((args) => args[2])
-
-    expect(owners).toEqual(['botpress', 'iolotech', 'webarts', 'The-Blue-Space-Australia'])
-  })
-
-  it('keeps the listing when one organisation refuses rather than losing every repo', async () => {
-    const listing = machine((args) => (args[2] === 'botpress' ? { code: 1, stderr: 'HTTP 404' } : { stdout: named('me/own') }))
-    const out = await allRepos(10, listing.gh)
-
-    expect(out).toMatchObject({ ok: true })
-    expect(out.ok && out.value.some((repo) => repo.owner === 'botpress')).toBe(false)
-  })
-
-  it('fails when the account listing itself fails, because that is the signed out case', async () => {
-    const listing = machine(() => ({ code: 4 }))
-    const out = await allRepos(10, listing.gh)
-
-    expect(out).toEqual({ ok: false, error: { kind: 'auth-required' } })
   })
 })
 

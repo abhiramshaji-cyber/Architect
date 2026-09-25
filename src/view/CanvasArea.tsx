@@ -1,25 +1,55 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import KeyHintOverlay from '../shell/KeyHintOverlay'
 import PaneTree from '../shell/PaneTree'
+import { useCommands, type Command } from '../shell/commands'
+import { close, focusDir, type Dir, type Pane, type Path } from '../shell/pane-tree'
 import { PANE_BINDINGS, PANE_COMMAND_LABELS, viewAt, type usePanes } from '../shell/usePanes'
-import { useLeaderKeys, type CommandEntry } from '../shell/useLeaderKeys'
+import { useLeaderKeys } from '../shell/useLeaderKeys'
 import { VIEW_IDS, views, type ViewId } from '../shell/views'
-import type { Path } from '../shell/pane-tree'
+import CommandPalette from './CommandPalette'
+
+const PALETTE_KEYS = ['Space']
+
+const MOVES: Record<string, Dir> = {
+  'pane.focus.left': 'left',
+  'pane.focus.down': 'down',
+  'pane.focus.up': 'up',
+  'pane.focus.right': 'right',
+}
+
+function reachable(id: string, tree: Pane, focus: Path): boolean {
+  const dir = MOVES[id]
+  if (dir) return focusDir(tree, focus, dir) !== focus
+  if (id === 'pane.close') return close(tree, focus) !== null
+  return true
+}
 
 type Panes = ReturnType<typeof usePanes>
 
 export default function CanvasArea({ theme, panes }: { theme: string; panes: Panes }) {
   const { tree, focus, commands, focusPane, setRatio, showView } = panes
+  const [palette, setPalette] = useState(false)
+  const scope = viewAt(tree, focus)
 
-  const paneCommands = useMemo<Record<string, CommandEntry>>(
-    () =>
-      Object.fromEntries(
-        Object.entries(commands).map(([id, run]) => [id, { run, label: PANE_COMMAND_LABELS[id] ?? id }])
-      ),
-    [commands]
-  )
+  const registry = useMemo<Command[]>(() => {
+    const bound = new Map(PANE_BINDINGS.map((binding) => [binding.command, binding]))
 
-  const { steps } = useLeaderKeys(PANE_BINDINGS, paneCommands, viewAt(tree, focus))
+    return [
+      ...Object.entries(commands).map(([id, run]) => ({
+        id,
+        label: PANE_COMMAND_LABELS[id] ?? id,
+        run,
+        keys: bound.get(id)?.keys,
+        scope: bound.get(id)?.scope,
+        enabled: reachable(id, tree, focus),
+      })),
+      { id: 'palette.open', label: 'Command palette', keys: PALETTE_KEYS, run: () => setPalette(true) },
+    ]
+  }, [commands, tree, focus])
+
+  useCommands(registry)
+
+  const { steps } = useLeaderKeys(scope)
 
   const renderLeaf = useCallback(
     (view: ViewId, path: Path) => {
@@ -61,6 +91,7 @@ export default function CanvasArea({ theme, panes }: { theme: string; panes: Pan
     <main className="canvas-area">
       <PaneTree tree={tree} focus={focus} onFocus={focusPane} onResize={setRatio} renderLeaf={renderLeaf} />
       <KeyHintOverlay steps={steps} />
+      {palette && <CommandPalette scope={scope} onClose={() => setPalette(false)} />}
     </main>
   )
 }

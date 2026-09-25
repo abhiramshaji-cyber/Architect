@@ -67,9 +67,10 @@ function parseSentences(text: string, asks: Ask[]): Map<string, string> {
   return out
 }
 
-async function requestFile(apiKey: string, job: Job): Promise<Map<string, string>> {
+export async function ask(apiKey: string, question: string, maxTokens: number, signal?: AbortSignal): Promise<string> {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
+    signal,
     headers: {
       'content-type': 'application/json',
       'x-api-key': apiKey,
@@ -77,23 +78,26 @@ async function requestFile(apiKey: string, job: Job): Promise<Map<string, string
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: Math.min(4096, 200 + job.asks.length * 48),
-      messages: [{ role: 'user', content: prompt(job.file, job.asks) }],
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: question }],
     }),
   })
-  if (!res.ok) return new Map()
+  if (!res.ok) return ''
 
   const body = (await res.json()) as unknown
-  if ((body as { stop_reason?: unknown }).stop_reason === 'max_tokens') return new Map()
+  if ((body as { stop_reason?: unknown }).stop_reason === 'max_tokens') return ''
 
   const content = (body as { content?: unknown }).content
-  if (!Array.isArray(content)) return new Map()
+  if (!Array.isArray(content)) return ''
 
-  const text = content
+  return content
     .map((part) => (typeof part === 'object' && part !== null ? (part as { text?: unknown }).text : null))
     .filter((t): t is string => typeof t === 'string')
     .join('')
+}
 
+async function requestFile(apiKey: string, job: Job): Promise<Map<string, string>> {
+  const text = await ask(apiKey, prompt(job.file, job.asks), Math.min(4096, 200 + job.asks.length * 48))
   return parseSentences(text, job.asks)
 }
 

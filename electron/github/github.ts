@@ -21,7 +21,6 @@ const TOKEN_VARS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_E
 const TIMEOUT_MS = 20_000
 const CLONE_TIMEOUT_MS = 30 * 60 * 1000
 const MAX_OUTPUT = 16 * 1024 * 1024
-const MAX_REPOS = 1000
 const EXTRA_ORGS = ['iolotech', 'botpress', 'webarts', 'The-Blue-Space-Australia']
 
 export type GhOutput = { code: number | 'missing' | 'timeout'; stdout: string; stderr: string }
@@ -183,9 +182,6 @@ export async function token(gh: Gh = GH): Promise<GithubResult<string>> {
 
 const SEGMENT = /^[A-Za-z0-9._-]+$/
 
-const REPO_FIELDS =
-  'nameWithOwner,name,owner,description,isPrivate,isFork,isArchived,defaultBranchRef,pushedAt,url,primaryLanguage'
-
 function repoOf(value: unknown): GithubRepo | null {
   const row = record(value)
   const nameWithOwner = text(row?.nameWithOwner)
@@ -206,22 +202,6 @@ function repoOf(value: unknown): GithubRepo | null {
     url: text(row.url),
     language: inner(row.primaryLanguage, 'name'),
   }
-}
-
-export async function repos(limit = 200, gh: Gh = GH, owner?: string): Promise<GithubResult<GithubRepo[]>> {
-  const wanted = Math.min(Math.max(Math.trunc(limit) || 1, 1), MAX_REPOS)
-  if (owner !== undefined && !SEGMENT.test(owner)) return { ok: false, error: { kind: 'bad-argument', value: owner } }
-
-  const target = owner === undefined ? [] : [owner]
-  const args = ['repo', 'list', ...target, '--limit', String(wanted), '--json', REPO_FIELDS]
-
-  const out = await gh.run(args)
-  if (out.code !== 0) return { ok: false, error: await classify(gh, args, out) }
-
-  const rows = parsed(out.stdout)
-  if (!Array.isArray(rows)) return { ok: false, error: { kind: 'unreadable', args } }
-
-  return { ok: true, value: rows.map(repoOf).filter((repo): repo is GithubRepo => repo !== null) }
 }
 
 const BRANCH_QUERY = '.[] | {name: .name, commit: .commit.sha, protected: .protected}'
@@ -316,48 +296,75 @@ export async function compareAll(
   await Promise.all(Array.from({ length: Math.min(COMPARE_LANES, queue.length) }, lane))
 }
 
-const COLLAB_QUERY = [
+export const REPO_PAGE = 100
+const MAX_PAGES = 100
+
+const ROW_FIELDS = [
   '.[] | {nameWithOwner: .full_name, name: .name, owner: {login: .owner.login},',
   'description: .description, isPrivate: .private, isFork: .fork, isArchived: .archived,',
   'defaultBranchRef: {name: .default_branch}, pushedAt: .pushed_at, url: .html_url,',
   'primaryLanguage: {name: .language}}',
 ].join(' ')
 
-async function orgLogins(gh: Gh): Promise<string[]> {
-  const out = await gh.run(['api', 'user/orgs', '--paginate', '--jq', '.[].login'])
-  if (out.code !== 0) return []
+const SOURCES = [
+  'user/repos?affiliation=owner,collaborator,organization_member',
+  ...EXTRA_ORGS.map((org) => `orgs/${org}/repos?type=all`),
+]
 
-  return out.stdout.split('\n').map((line) => line.trim()).filter((line) => SEGMENT.test(line))
+type Listing = { rows: GithubRepo[]; seen: Set<string>; source: number; page: number }
+
+function fresh(): Listing {
+  return { rows: [], seen: new Set(), source: 0, page: 1 }
 }
 
-async function collaborating(gh: Gh): Promise<GithubRepo[]> {
-  const query = 'user/repos?affiliation=collaborator,organization_member&per_page=100'
-  const out = await gh.run(['api', query, '--paginate', '--jq', COLLAB_QUERY])
-  if (out.code !== 0) return []
+let listing = fresh()
 
-  return out.stdout
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => repoOf(parsed(line)))
-    .filter((repo): repo is GithubRepo => repo !== null)
-}
+async function paged(limit: number, gh: Gh): Promise<GithubResult<GithubRepo[]>> {
+  const wanted = Math.max(Math.trunc(limit) || REPO_PAGE, REPO_PAGE)
+  if (wanted === REPO_PAGE) listing = fresh()
 
-export async function allRepos(limit = 200, gh: Gh = GH): Promise<GithubResult<GithubRepo[]>> {
-  const [mine, orgs, shared] = await Promise.all([repos(limit, gh), orgLogins(gh), collaborating(gh)])
-  if (!mine.ok) return mine
+  const state = listing
 
-  const owners = [...new Set([...orgs, ...EXTRA_ORGS])]
-  const listings = await Promise.all(owners.map((owner) => repos(limit, gh, owner)))
+  while (state.rows.length < wanted && state.source < SOURCES.length) {
+    const path = `${SOURCES[state.source]}&sort=full_name&per_page=${REPO_PAGE}&page=${state.page}`
+    const args = ['api', path, '--jq', ROW_FIELDS]
+    const out = await gh.run(args)
 
-  const found = new Map<string, GithubRepo>()
-  for (const repo of [...mine.value, ...shared]) found.set(repo.nameWithOwner, repo)
-  for (const listing of listings) {
-    if (!listing.ok) continue
-    for (const repo of listing.value) found.set(repo.nameWithOwner, repo)
+    if (out.code !== 0) {
+      const error = await classify(gh, args, out)
+      if (state.source === 0 || WHOLE_ACCOUNT.includes(error.kind)) return { ok: false, error }
+
+      state.source += 1
+      state.page = 1
+      continue
+    }
+
+    const lines = out.stdout.split('\n').filter((line) => line.trim() !== '')
+    for (const line of lines) {
+      const repo = repoOf(parsed(line))
+      if (!repo) return { ok: false, error: { kind: 'unreadable', args } }
+      if (state.seen.has(repo.nameWithOwner)) continue
+
+      state.seen.add(repo.nameWithOwner)
+      state.rows.push(repo)
+    }
+
+    if (lines.length < REPO_PAGE || state.page >= MAX_PAGES) {
+      state.source += 1
+      state.page = 1
+    } else state.page += 1
   }
 
-  const value = [...found.values()].sort((a, b) => a.nameWithOwner.localeCompare(b.nameWithOwner, 'en'))
-  return { ok: true, value }
+  return { ok: true, value: [...state.rows] }
+}
+
+let queued: Promise<unknown> = Promise.resolve()
+
+export function allRepos(limit = REPO_PAGE, gh: Gh = GH): Promise<GithubResult<GithubRepo[]>> {
+  const next = queued.then(() => paged(limit, gh))
+  queued = next.catch(() => {})
+
+  return next
 }
 
 const PULL_FIELDS = 'number,title,headRefName,url'
