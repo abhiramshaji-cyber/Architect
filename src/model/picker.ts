@@ -1,3 +1,4 @@
+import { folderName } from './layout'
 import type {
   ClaudeWorktree,
   DraftFailure,
@@ -7,7 +8,11 @@ import type {
   GithubRepo,
   OpenFailure,
   OpenRisk,
+  RemovalFailure,
+  RemovalLeft,
   WorktreeBroken,
+  WorktreeRemoval,
+  WorktreeRemoved,
 } from '../../shared/types'
 
 export type Stage = { kind: 'repos' } | { kind: 'branches'; repo: GithubRepo }
@@ -213,4 +218,54 @@ export function worktreeText(worktree: ClaudeWorktree, now: number): string {
 export function isClaudeWorktree(value: unknown): value is ClaudeWorktree {
   const row = value as Partial<ClaudeWorktree> | null
   return typeof row?.repo === 'string' && typeof row.name === 'string' && typeof row.path === 'string'
+}
+
+function counted(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
+const LEFT_TEXT: Record<RemovalLeft, string> = {
+  both: 'git still lists it and its folder is still there',
+  folder: 'git no longer lists it, but its folder is still there',
+  registration: 'its folder is gone, but git still lists it',
+  neither: 'git no longer lists it and its folder is gone',
+}
+
+export function removalPrompt(worktree: ClaudeWorktree, plan: WorktreeRemoval): string {
+  const head = `Delete the worktree ${worktree.name}?\n\nrepo: ${worktree.repo}\npath: ${worktree.path}\n\n`
+  if (plan.kind === 'prune') return `${head}Its folder is already gone, so git worktree prune drops the stale entry.`
+  if (plan.kind === 'trash') return `${head}git does not know this folder, so it moves to the Trash.`
+
+  const kept = plan.branch ? `git worktree remove deletes the folder. The branch ${plan.branch} is kept.` : 'git worktree remove deletes the folder.'
+  if (plan.unpushed === 0) return `${head}${kept}`
+
+  const where = plan.base ? `any remote branch or ${plan.base}` : 'any remote branch'
+  const warning = plan.branch
+    ? `WARNING: ${plan.branch} has ${counted(plan.unpushed, 'commit')} that are not on ${where}. The branch keeps them, but they exist nowhere else.`
+    : `WARNING: the detached HEAD has ${counted(plan.unpushed, 'commit')} on no branch or remote. After this they are reachable only through the reflog.`
+  return `${head}${kept}\n\n${warning}`
+}
+
+export function dirtyPrompt(worktree: ClaudeWorktree, dirty: number): string {
+  return `WARNING: ${counted(dirty, 'file')} in ${worktree.name} ${dirty === 1 ? 'has' : 'have'} uncommitted changes. They are deleted for good, not moved to the Trash.\n\nForce the delete with git worktree remove --force?`
+}
+
+export function branchPrompt(branch: string, base: string): string {
+  return `${branch} is fully merged into ${base}. Delete the branch too, with git branch -d?\n\nOK deletes the branch. Cancel keeps it.`
+}
+
+export function removedText(worktree: ClaudeWorktree, removed: WorktreeRemoved): string {
+  const how = { remove: 'Deleted', prune: 'Pruned', trash: 'Moved to the Trash:' }[removed.how]
+  const done = `${how} ${folderName(worktree.repo)} / ${worktree.name}`
+  if (removed.branchError) return `${done}, but kept its branch: ${gitMessage(removed.branchError)}`
+  return removed.branch ? `${done} and its branch ${removed.branch}` : done
+}
+
+export function removalMessage(failure: RemovalFailure): string {
+  if (failure.kind === 'open') return `${failure.path} is open in Architect. Close it first, then delete it.`
+  if (failure.kind === 'outside') return `${failure.path} is not a folder inside .claude/worktrees, so it was left alone`
+  if (failure.kind === 'unregistered') return `${failure.path} has its own .git but ${failure.repo} does not list it as a worktree, so it was left alone`
+  if (failure.kind === 'trash-failed') return `Could not move ${failure.path} to the Trash: ${failure.message}`
+
+  return `${gitMessage(failure.error)}. Now ${LEFT_TEXT[failure.left]}.`
 }

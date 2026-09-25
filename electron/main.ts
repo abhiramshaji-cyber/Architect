@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
 import {
@@ -20,6 +20,7 @@ import {
   type PtyEvent,
   type PtySpec,
   type PullDraft,
+  type RemovalChoice,
 } from '../shared/types'
 import { createDaemon } from './daemon'
 import * as message from './draft/message'
@@ -247,6 +248,16 @@ function wireIpc() {
   handle('architect:claude-worktrees', (repos: string[], scan: boolean) =>
     claude.discover([...repos, ...daemon.projects().map((project) => project.root)], scan),
   )
+  handle('architect:claude-worktree-survey', (repo: string, target: string) =>
+    claude.survey(repo, target, [...claims.values()]),
+  )
+  handle('architect:claude-worktree-remove', async (repo: string, target: string, choice: RemovalChoice) => {
+    const removed = await claude.remove(repo, target, choice, [...claims.values()], (item) => shell.trashItem(item))
+    if (removed.ok) {
+      for (const project of daemon.projects()) if (claude.within(project.root, target)) daemon.closeProject(project.root)
+    }
+    return removed
+  })
   handle('architect:git-create-worktree', (root: string, target: string, name: string, base?: string) =>
     git.createWorktree(root, target, name, base),
   )
