@@ -42,11 +42,11 @@ export const runGh: GhRun = (args, timeoutMs = TIMEOUT_MS, cwd) =>
     execFile('gh', args, options, (error, stdout, stderr) => {
       if (!error) return resolve({ code: 0, stdout, stderr })
 
-      const failure = error as { code?: unknown; killed?: boolean }
+      const failure = error as { code?: unknown; killed?: boolean; message: string }
       if (failure.code === 'ENOENT') return resolve({ code: 'missing', stdout, stderr })
       if (failure.killed === true) return resolve({ code: 'timeout', stdout, stderr })
 
-      resolve({ code: typeof failure.code === 'number' ? failure.code : 1, stdout, stderr })
+      resolve({ code: typeof failure.code === 'number' ? failure.code : 1, stdout, stderr: stderr || failure.message })
     })
   })
 

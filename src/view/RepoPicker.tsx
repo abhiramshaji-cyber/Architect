@@ -301,7 +301,7 @@ export default function RepoPicker() {
               <code>{note.action}</code>
             </p>
           )}
-          {error && <p className="picker-error">{error}</p>}
+          {error && error !== note?.text && <p className="picker-error">{error}</p>}
           {message && <p className="picker-note">{message}</p>}
 
           {!repo && <ProjectList />}

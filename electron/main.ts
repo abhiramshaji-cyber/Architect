@@ -22,6 +22,7 @@ import {
   type PullDraft,
 } from '../shared/types'
 import { createDaemon } from './daemon'
+import { loginPath } from './env'
 import * as message from './draft/message'
 import * as claude from './git/claude'
 import * as diff from './git/diff'
@@ -317,6 +318,7 @@ function wireIpc() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform !== 'win32') process.env.PATH = await loginPath(process.env)
   wireIpc()
   createTray()
 

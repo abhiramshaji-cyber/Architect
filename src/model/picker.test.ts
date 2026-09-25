@@ -137,6 +137,11 @@ describe('failure text', () => {
     })
   })
 
+  it('words a missing gh the same in the note and the error so the picker shows it once', () => {
+    expect(authNote({ kind: 'not-installed' })).toEqual({ text: 'The gh CLI is not installed', action: 'brew install gh' })
+    expect(githubMessage({ kind: 'not-installed' })).toBe(authNote({ kind: 'not-installed' })?.text)
+  })
+
   it('says nothing when the account is signed in', () => {
     expect(authNote({ kind: 'logged-in', account: { host: 'github.com', login: 'octocat', scopes: ['repo'] } })).toBe(null)
   })
