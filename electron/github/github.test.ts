@@ -854,7 +854,7 @@ describe('runGh', () => {
   function onPath(script: string | null, mode = 0o755): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-gh-'))
     if (script !== null) fs.writeFileSync(path.join(dir, 'gh'), `#!/bin/sh\n${script}\n`, { mode })
-    process.env.PATH = `${dir}:/usr/bin:/bin`
+    process.env.PATH = dir
     return dir
   }
 
@@ -874,7 +874,7 @@ describe('runGh', () => {
   })
 
   it('reports a hung gh as a timeout', async () => {
-    onPath('exec sleep 5')
+    onPath('exec /bin/sleep 5')
     expect((await runGh(['api', 'user'], 200)).code).toBe('timeout')
   })
 
