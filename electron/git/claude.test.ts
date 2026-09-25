@@ -3,11 +3,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import type { ClaudeWorktree } from '../../shared/types'
-import { byRecency, changedPaths, classify, discover, findRepos, remove, survey, within } from './claude'
+import type { ClaudeWorktree, WorktreeSettings } from '../../shared/types'
+import { byRecency, changedPaths, checkSettings, classify, defaults, discover, findRepos, readSettings, remove, saveSettings, survey, within } from './claude'
 import { parseWorktrees } from './git'
 
 const roots: string[] = []
+const FOLDERS = ['.claude/worktrees']
 
 const ENV = {
   ...process.env,
@@ -39,7 +40,7 @@ function committed(root: string): string {
 }
 
 function row(name: string, changedAt: number | null, repo = '/r'): ClaudeWorktree {
-  return { repo, name, path: `${repo}/.claude/worktrees/${name}`, branch: name, dirty: false, changedAt, broken: null }
+  return { repo, name, path: `${repo}/.claude/worktrees/${name}`, branch: name, dirty: false, changedAt, broken: null, claude: true }
 }
 
 afterAll(() => {
@@ -70,36 +71,52 @@ describe('classify', () => {
     'branch refs/heads/side',
     '',
   ].join('\n')
+  const holders = ['/repo/.claude/worktrees']
+  const known = parseWorktrees(porcelain).map((worktree) => ({ ...worktree, exists: worktree.path !== '/repo/.claude/worktrees/gone' }))
 
-  it('confirms registered worktrees by git, not by folder name', () => {
+  it('lists every linked worktree git reports and marks the ones in a worktree folder as claude', () => {
     const found = [
-      { name: 'with space', git: true },
-      { name: 'loose', git: true },
+      { path: '/repo/.claude/worktrees/with space', git: true },
+      { path: '/repo/.claude/worktrees/loose', git: true },
     ]
 
-    expect(classify('/repo', found, parseWorktrees(porcelain))).toEqual([
-      { repo: '/repo', name: 'with space', path: '/repo/.claude/worktrees/with space', branch: 'claude/with-space', broken: null },
-      { repo: '/repo', name: 'loose', path: '/repo/.claude/worktrees/loose', branch: null, broken: null },
-      { repo: '/repo', name: 'gone', path: '/repo/.claude/worktrees/gone', branch: 'gone', broken: 'missing' },
+    expect(classify('/repo', holders, found, known)).toEqual([
+      { repo: '/repo', name: 'with space', path: '/repo/.claude/worktrees/with space', branch: 'claude/with-space', broken: null, claude: true },
+      { repo: '/repo', name: 'loose', path: '/repo/.claude/worktrees/loose', branch: null, broken: null, claude: true },
+      { repo: '/repo', name: 'gone', path: '/repo/.claude/worktrees/gone', branch: 'gone', broken: 'missing', claude: true },
+      { repo: '/repo', name: 'side', path: '/elsewhere/side', branch: 'side', broken: null, claude: false },
     ])
   })
 
-  it('marks folders git does not know about', () => {
-    const found = [
-      { name: 'plain', git: false },
-      { name: 'stray', git: true },
-    ]
+  it('counts a worktree under any configured folder, however deep, as claude', () => {
+    expect(classify('/repo', ['/elsewhere'], [], known).filter((entry) => entry.claude).map((entry) => entry.name)).toEqual(['side'])
+    expect(classify('/repo', [], [], known).some((entry) => entry.claude)).toBe(false)
+  })
 
-    expect(classify('/repo', found, []).map((entry) => entry.broken)).toEqual(['not-git', 'unregistered'])
+  it('marks folders git does not know about and skips containers of real worktrees', () => {
+    const found = [
+      { path: '/repo/.claude/worktrees/plain', git: false },
+      { path: '/repo/.claude/worktrees/stray', git: true },
+      { path: '/repo/.claude/worktrees', git: false },
+    ]
+    const nested = ['/repo/.claude', ...holders]
+
+    expect(classify('/repo', nested, found, known.slice(0, 1)).map((entry) => [entry.name, entry.broken])).toEqual([
+      ['plain', 'not-git'],
+      ['stray', 'unregistered'],
+    ])
+    expect(classify('/repo', ['/repo/.claude'], [{ path: '/repo/.claude/worktrees', git: false }], known).map((entry) => entry.name)).not.toContain(
+      'worktrees',
+    )
   })
 
   it('marks every folder when the repo cannot list its worktrees', () => {
-    expect(classify('/repo', [{ name: 'a', git: true }], null)).toMatchObject([{ broken: 'unlisted' }])
+    expect(classify('/repo', holders, [{ path: '/repo/.claude/worktrees/a', git: true }], null)).toMatchObject([{ broken: 'unlisted' }])
   })
 
-  it('ignores worktrees outside the claude folder and handles none at all', () => {
-    expect(classify('/elsewhere', [], parseWorktrees(porcelain))).toEqual([])
-    expect(classify('/repo', [], [])).toEqual([])
+  it('never lists the main worktree and handles none at all', () => {
+    expect(classify('/repo', holders, [], known).map((entry) => entry.path)).not.toContain('/repo')
+    expect(classify('/repo', holders, [], [])).toEqual([])
   })
 })
 
@@ -140,26 +157,40 @@ describe('byRecency', () => {
   })
 })
 
+function settings(roots: string[], worktreeFolders = FOLDERS, worktreeScanDepth = 6): WorktreeSettings {
+  return { worktreeRoots: roots, worktreeScanDepth, worktreeFolders }
+}
+
 describe('findRepos', () => {
-  it('finds claude worktree folders and skips heavy folders and symlink loops', async () => {
+  it('finds repos by their .git and skips heavy folders and symlink loops', async () => {
     const home = tmp('home')
-    fs.mkdirSync(path.join(home, 'code', 'one', '.claude', 'worktrees'), { recursive: true })
-    fs.mkdirSync(path.join(home, '.config', 'nvim', '.claude', 'worktrees'), { recursive: true })
-    fs.mkdirSync(path.join(home, 'code', 'bare', '.claude'), { recursive: true })
-    fs.mkdirSync(path.join(home, 'node_modules', 'dep', '.claude', 'worktrees'), { recursive: true })
-    fs.mkdirSync(path.join(home, 'Library', 'x', '.claude', 'worktrees'), { recursive: true })
+    const one = committed(path.join(home, 'code', 'one'))
+    const nvim = committed(path.join(home, '.config', 'nvim'))
+    fs.mkdirSync(path.join(home, 'code', 'plain', '.claude', 'worktrees'), { recursive: true })
+    committed(path.join(home, 'node_modules', 'dep'))
+    committed(path.join(home, 'Library', 'x'))
     fs.symlinkSync(home, path.join(home, 'code', 'loop'))
 
-    expect((await findRepos(home)).sort()).toEqual([path.join(home, '.config', 'nvim'), path.join(home, 'code', 'one')])
+    expect((await findRepos([home], 6)).sort()).toEqual([nvim, one])
   })
 
-  it('stops at the depth bound and survives a missing home', async () => {
+  it('stops at the depth bound and survives missing, duplicate, nested and empty roots', async () => {
     const home = tmp('deep')
-    fs.mkdirSync(path.join(home, 'a', 'b', 'c', '.claude', 'worktrees'), { recursive: true })
+    const deep = committed(path.join(home, 'a', 'b', 'c'))
 
-    expect(await findRepos(home, 2)).toEqual([])
-    expect(await findRepos(home, 3)).toEqual([path.join(home, 'a', 'b', 'c')])
-    expect(await findRepos(path.join(home, 'nope'))).toEqual([])
+    expect(await findRepos([home], 2)).toEqual([])
+    expect(await findRepos([home], 3)).toEqual([deep])
+    expect(await findRepos([path.join(home, 'a'), home, home], 2)).toEqual([deep])
+    expect(await findRepos([path.join(home, 'nope')], 6)).toEqual([])
+    expect(await findRepos([], 6)).toEqual([])
+  })
+
+  it('reaches a main repo outside every root through a linked worktree inside one', async () => {
+    const repo = committed(tmp('outside-repo'))
+    const hub = tmp('hub')
+    sh(repo, 'worktree', 'add', '-b', 'side', path.join(hub, 'side'))
+
+    expect(await findRepos([hub], 2)).toEqual([repo])
   })
 })
 
@@ -177,30 +208,63 @@ describe('discover', () => {
 
     fs.writeFileSync(path.join(holder, 'busy one', 'b.txt'), 'new\n')
 
-    const found = await discover([], true, home)
+    const found = await discover([], true, settings([home]))
 
-    expect(found.map((entry) => [entry.name, entry.branch, entry.dirty, entry.broken])).toEqual([
-      ['busy one', 'claude/busy', true, null],
-      ['quiet', 'claude/quiet', false, null],
-      ['gone', 'claude/gone', false, 'missing'],
-      ['plain', null, false, 'not-git'],
+    expect(found.map((entry) => [entry.name, entry.branch, entry.dirty, entry.broken, entry.claude])).toEqual([
+      ['busy one', 'claude/busy', true, null, true],
+      ['quiet', 'claude/quiet', false, null, true],
+      ['gone', 'claude/gone', false, 'missing', true],
+      ['plain', null, false, 'not-git', true],
     ])
     expect(found[0]?.changedAt).toBeGreaterThanOrEqual(found[1]?.changedAt ?? Infinity)
+  })
+
+  it('finds a sibling worktree, shown under all but not claude, until a custom folder claims it', async () => {
+    const home = tmp('sibling')
+    const root = committed(path.join(home, 'app'))
+    const sibling = path.join(home, 'app-feature')
+    sh(root, 'worktree', 'add', '-b', 'feature', sibling)
+
+    const all = await discover([], true, settings([home]))
+    expect(all.map((entry) => [entry.path, entry.claude])).toEqual([[sibling, false]])
+    expect(all.filter((entry) => entry.claude)).toEqual([])
+
+    const central = tmp('central')
+    const kept = path.join(central, 'app', 'task')
+    sh(root, 'worktree', 'add', '-b', 'task', kept)
+    fs.mkdirSync(path.join(root, '.worktrees', 'loose'), { recursive: true })
+
+    const custom = await discover([], true, settings([home], ['.worktrees', central]))
+    expect(custom.map((entry) => [entry.path, entry.claude, entry.broken]).sort()).toEqual([
+      [sibling, false, null],
+      [path.join(root, '.worktrees', 'loose'), true, 'not-git'],
+      [kept, true, null],
+    ].sort())
+  })
+
+  it('scans a custom root outside home and honours the depth setting', async () => {
+    const outside = tmp('elsewhere-root')
+    const root = committed(path.join(outside, 'x', 'y', 'repo'))
+    const target = worktree(root, 'deep', '-b', 'deep')
+
+    expect(await discover([], true, settings([outside], FOLDERS, 2))).toEqual([])
+    expect((await discover([], true, settings([outside], FOLDERS, 3))).map((entry) => entry.path)).toEqual([target])
+    expect(await discover([], true, settings([]))).toEqual([])
   })
 
   it('refreshes from a known worktree root without scanning and dedupes repos', async () => {
     const home = tmp('known')
     const root = committed(path.join(home, 'repo'))
-    const worktree = path.join(root, '.claude', 'worktrees', 'one')
-    sh(root, 'worktree', 'add', '-b', 'one', worktree)
+    const target = path.join(root, '.claude', 'worktrees', 'one')
+    sh(root, 'worktree', 'add', '-b', 'one', target)
 
-    const found = await discover([worktree, root, path.join(home, 'missing')], false, path.join(home, 'unused'))
+    const found = await discover([target, root, path.join(home, 'missing')], false, settings([path.join(home, 'unused')]))
 
-    expect(found.map((entry) => entry.path)).toEqual([worktree])
+    expect(found.map((entry) => entry.path)).toEqual([target])
   })
 
   it('returns nothing when there are no worktrees anywhere', async () => {
-    expect(await discover([], true, tmp('empty'))).toEqual([])
+    expect(await discover([], true, settings([tmp('empty')]))).toEqual([])
   })
 })
 
@@ -243,11 +307,11 @@ describe('remove', () => {
     const repo = committed(tmp('rm-clean'))
     const target = worktree(repo, 'clean', '-b', 'claude/clean')
 
-    expect(await survey(repo, target, [])).toEqual({
+    expect(await survey(repo, target, [], FOLDERS)).toEqual({
       ok: true,
       value: { kind: 'remove', dirty: 0, unpushed: 0, branch: 'claude/clean', base: 'main', merged: true },
     })
-    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+    expect(await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)).toEqual({
       ok: true,
       value: { how: 'remove', branch: null, branchError: null },
     })
@@ -260,7 +324,7 @@ describe('remove', () => {
     const repo = committed(tmp('rm-branch'))
     const target = worktree(repo, 'merged', '-b', 'claude/merged')
 
-    expect(await remove(repo, target, { force: false, branch: true }, [], NO_TRASH)).toEqual({
+    expect(await remove(repo, target, { force: false, branch: true }, [], FOLDERS, NO_TRASH)).toEqual({
       ok: true,
       value: { how: 'remove', branch: 'claude/merged', branchError: null },
     })
@@ -273,17 +337,17 @@ describe('remove', () => {
     fs.writeFileSync(path.join(target, 'a.txt'), 'changed\n')
     fs.writeFileSync(path.join(target, 'new.txt'), 'new\n')
 
-    const surveyed = await survey(repo, target, [])
+    const surveyed = await survey(repo, target, [], FOLDERS)
     expect(surveyed.ok && surveyed.value.kind === 'remove' && surveyed.value.dirty).toBe(2)
 
-    const refused = await remove(repo, target, KEEP, [], NO_TRASH)
+    const refused = await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)
     expect(refused.ok).toBe(false)
     if (refused.ok || refused.error.kind !== 'git') throw new Error('expected a git failure')
     expect(refused.error.left).toBe('both')
     expect(refused.error.error.kind === 'failed' && refused.error.error.stderr).toMatch(/--force/)
     expect(fs.readFileSync(path.join(target, 'new.txt'), 'utf8')).toBe('new\n')
 
-    expect((await remove(repo, target, { force: true, branch: false }, [], NO_TRASH)).ok).toBe(true)
+    expect((await remove(repo, target, { force: true, branch: false }, [], FOLDERS, NO_TRASH)).ok).toBe(true)
     expect(fs.existsSync(target)).toBe(false)
   })
 
@@ -294,16 +358,16 @@ describe('remove', () => {
     sh(target, 'add', 'b.txt')
     sh(target, 'commit', '-m', 'second')
 
-    expect(await survey(repo, target, [])).toEqual({
+    expect(await survey(repo, target, [], FOLDERS)).toEqual({
       ok: true,
       value: { kind: 'remove', dirty: 0, unpushed: 1, branch: 'claude/ahead', base: 'origin/main', merged: false },
     })
 
     sh(target, 'push', '-q', 'origin', 'claude/ahead')
-    const pushed = await survey(repo, target, [])
+    const pushed = await survey(repo, target, [], FOLDERS)
     expect(pushed.ok && pushed.value.kind === 'remove' && [pushed.value.unpushed, pushed.value.merged]).toEqual([0, false])
 
-    expect(await remove(repo, target, { force: false, branch: true }, [], NO_TRASH)).toEqual({
+    expect(await remove(repo, target, { force: false, branch: true }, [], FOLDERS, NO_TRASH)).toEqual({
       ok: true,
       value: { how: 'remove', branch: null, branchError: null },
     })
@@ -317,7 +381,7 @@ describe('remove', () => {
     sh(target, 'add', 'b.txt')
     sh(target, 'commit', '-m', 'loose')
 
-    expect(await survey(repo, target, [])).toEqual({
+    expect(await survey(repo, target, [], FOLDERS)).toEqual({
       ok: true,
       value: { kind: 'remove', dirty: 0, unpushed: 1, branch: null, base: 'origin/main', merged: false },
     })
@@ -328,7 +392,7 @@ describe('remove', () => {
     const target = worktree(repo, 'locked', '-b', 'claude/locked')
     sh(repo, 'worktree', 'lock', target)
 
-    const refused = await remove(repo, target, { force: true, branch: false }, [], NO_TRASH)
+    const refused = await remove(repo, target, { force: true, branch: false }, [], FOLDERS, NO_TRASH)
     if (refused.ok || refused.error.kind !== 'git') throw new Error('expected a git failure')
     expect(refused.error.left).toBe('both')
     expect(refused.error.error.kind === 'failed' && refused.error.error.stderr).toMatch(/locked/)
@@ -340,8 +404,8 @@ describe('remove', () => {
     const target = worktree(repo, 'gone', '-b', 'claude/gone')
     fs.rmSync(target, { recursive: true, force: true })
 
-    expect(await survey(repo, target, [])).toEqual({ ok: true, value: { kind: 'prune' } })
-    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+    expect(await survey(repo, target, [], FOLDERS)).toEqual({ ok: true, value: { kind: 'prune' } })
+    expect(await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)).toEqual({
       ok: true,
       value: { how: 'prune', branch: null, branchError: null },
     })
@@ -354,7 +418,7 @@ describe('remove', () => {
     sh(repo, 'worktree', 'lock', target)
     fs.rmSync(target, { recursive: true, force: true })
 
-    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+    expect(await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)).toEqual({
       ok: false,
       error: { kind: 'git', error: { kind: 'locked-worktree', path: target }, left: 'registration' },
     })
@@ -367,16 +431,16 @@ describe('remove', () => {
     fs.writeFileSync(path.join(target, 'notes.txt'), 'x\n')
     const trashed: string[] = []
 
-    expect(await survey(repo, target, [])).toEqual({ ok: true, value: { kind: 'trash' } })
+    expect(await survey(repo, target, [], FOLDERS)).toEqual({ ok: true, value: { kind: 'trash' } })
     expect(
-      await remove(repo, target, KEEP, [], async (item) => {
+      await remove(repo, target, KEEP, [], FOLDERS, async (item) => {
         trashed.push(item)
       }),
     ).toEqual({ ok: true, value: { how: 'trash', branch: null, branchError: null } })
     expect(trashed).toEqual([target])
 
     expect(
-      await remove(repo, target, KEEP, [], async () => {
+      await remove(repo, target, KEEP, [], FOLDERS, async () => {
         throw new Error('Operation not permitted')
       }),
     ).toEqual({ ok: false, error: { kind: 'trash-failed', path: target, message: 'Operation not permitted' } })
@@ -387,7 +451,7 @@ describe('remove', () => {
     const repo = committed(tmp('rm-unregistered'))
     const target = committed(path.join(repo, '.claude', 'worktrees', 'clone'))
 
-    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+    expect(await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)).toEqual({
       ok: false,
       error: { kind: 'unregistered', path: target, repo },
     })
@@ -400,31 +464,79 @@ describe('remove', () => {
     fs.mkdirSync(path.join(target, 'src'))
 
     for (const open of [[target], ['/elsewhere', path.join(target, 'src')]]) {
-      expect(await remove(repo, target, KEEP, open, NO_TRASH)).toEqual({ ok: false, error: { kind: 'open', path: target } })
+      expect(await remove(repo, target, KEEP, open, FOLDERS, NO_TRASH)).toEqual({ ok: false, error: { kind: 'open', path: target } })
     }
     expect(fs.existsSync(target)).toBe(true)
-    expect((await survey(repo, target, [repo])).ok).toBe(true)
+    expect((await survey(repo, target, [repo], FOLDERS)).ok).toBe(true)
   })
 
-  it('refuses anything that is not directly inside the claude worktrees folder', async () => {
-    const repo = committed(tmp('rm-outside'))
+  it('refuses the main worktree, a folder holding it, and anything neither listed nor inside a worktree folder', async () => {
+    const parent = tmp('rm-outside')
+    const repo = committed(path.join(parent, 'repo'))
     const holder = path.join(repo, '.claude', 'worktrees')
     fs.mkdirSync(holder, { recursive: true })
     const elsewhere = tmp('rm-elsewhere')
     fs.symlinkSync(elsewhere, path.join(holder, 'link'))
     fs.writeFileSync(path.join(holder, 'file'), 'x\n')
 
-    for (const target of [repo, holder, path.join(holder, 'link'), path.join(holder, 'file'), path.join(holder, 'a', 'b'), elsewhere]) {
-      const refused = await remove(repo, target, KEEP, [], NO_TRASH)
+    for (const target of [repo, parent]) {
+      const refused = await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)
+      expect(refused.ok ? null : refused.error.kind).toBe('main')
+    }
+    for (const target of [holder, path.join(holder, 'link'), path.join(holder, 'file'), elsewhere]) {
+      const refused = await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)
       expect(refused.ok ? null : refused.error.kind).toBe('outside')
     }
+    const deep = await remove(repo, path.join(holder, 'a', 'b'), KEEP, [], FOLDERS, NO_TRASH)
+    expect(deep.ok ? null : deep.error.kind === 'git' && deep.error.error.kind).toBe('no-worktree')
     expect(fs.existsSync(elsewhere)).toBe(true)
+  })
+
+  it('removes a linked worktree that lives outside every worktree folder', async () => {
+    const parent = tmp('rm-sibling')
+    const repo = committed(path.join(parent, 'app'))
+    const target = path.join(parent, 'app-feature')
+    sh(repo, 'worktree', 'add', '-b', 'feature', target)
+
+    expect(await remove(repo, target, KEEP, [], [], NO_TRASH)).toEqual({ ok: true, value: { how: 'remove', branch: null, branchError: null } })
+    expect(fs.existsSync(target)).toBe(false)
+    expect(listed(repo)).not.toContain(target)
+  })
+
+  it('refuses a folder that holds another worktree', async () => {
+    const parent = tmp('rm-holds')
+    const repo = committed(path.join(parent, 'app'))
+    const outer = path.join(parent, 'outer')
+    const inner = path.join(outer, 'inner')
+    sh(repo, 'worktree', 'add', '-b', 'outer', outer)
+    sh(repo, 'worktree', 'add', '-b', 'inner', inner)
+
+    expect(await remove(repo, outer, { force: true, branch: false }, [], FOLDERS, NO_TRASH)).toEqual({
+      ok: false,
+      error: { kind: 'holds', path: outer, worktree: inner },
+    })
+    expect(fs.existsSync(path.join(inner, 'a.txt'))).toBe(true)
+  })
+
+  it('trashes a plain folder only inside a configured, repo relative worktree folder', async () => {
+    const repo = committed(tmp('rm-plain-custom'))
+    const custom = path.join(repo, '.worktrees', 'plain')
+    const loose = path.join(repo, 'notes')
+    fs.mkdirSync(custom, { recursive: true })
+    fs.mkdirSync(loose)
+
+    for (const [target, folders] of [[custom, FOLDERS], [loose, FOLDERS], [custom, [path.join(repo, '.worktrees')]]] as const) {
+      const refused = await remove(repo, target, KEEP, [], [...folders], NO_TRASH)
+      expect(refused.ok ? null : refused.error.kind).toBe('outside')
+    }
+    expect(await survey(repo, custom, [], ['.worktrees'])).toEqual({ ok: true, value: { kind: 'trash' } })
+    expect(fs.existsSync(custom) && fs.existsSync(loose)).toBe(true)
   })
 
   it('reports a worktree that is already gone and a repo git cannot read', async () => {
     const repo = committed(tmp('rm-nothing'))
     const target = path.join(repo, '.claude', 'worktrees', 'never')
-    expect(await remove(repo, target, KEEP, [], NO_TRASH)).toEqual({
+    expect(await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)).toEqual({
       ok: false,
       error: { kind: 'git', error: { kind: 'no-worktree', path: target }, left: 'neither' },
     })
@@ -432,7 +544,67 @@ describe('remove', () => {
     const bare = tmp('rm-not-repo')
     const inside = path.join(bare, '.claude', 'worktrees', 'x')
     fs.mkdirSync(inside, { recursive: true })
-    const refused = await remove(bare, inside, KEEP, [], NO_TRASH)
+    const refused = await remove(bare, inside, KEEP, [], FOLDERS, NO_TRASH)
     expect(refused.ok ? null : refused.error.kind === 'git' && refused.error.error.kind).toBe('not-a-repo')
+  })
+})
+
+describe('settings', () => {
+  it('defaults to scanning home six deep for claude worktrees when nothing is stored or it is garbage', async () => {
+    const dir = tmp('settings-default')
+    expect(await readSettings(path.join(dir, 'none.json'), '/home/me')).toEqual(defaults('/home/me'))
+    expect(defaults('/home/me')).toEqual({ worktreeRoots: ['/home/me'], worktreeScanDepth: 6, worktreeFolders: ['.claude/worktrees'] })
+
+    const garbage = path.join(dir, 'garbage.json')
+    fs.writeFileSync(garbage, '{not json')
+    expect(await readSettings(garbage, '/home/me')).toEqual(defaults('/home/me'))
+  })
+
+  it('keeps each valid stored field, drops unsafe entries, and falls back per field', async () => {
+    const file = path.join(tmp('settings-mixed'), 'settings.json')
+    fs.writeFileSync(file, JSON.stringify({ worktreeRoots: ['/code', 'relative'], worktreeScanDepth: -1, worktreeFolders: ['..', '.', 'wt/', '/abs'] }))
+
+    expect(await readSettings(file, '/home/me')).toEqual({ worktreeRoots: ['/code'], worktreeScanDepth: 6, worktreeFolders: ['wt', '/abs'] })
+  })
+
+  it('rejects a missing, relative, duplicate or file root, an escaping or empty folder, and a bad depth', async () => {
+    const dir = tmp('settings-bad')
+    const file = path.join(dir, 'file.txt')
+    fs.writeFileSync(file, 'x')
+
+    const checked = await checkSettings({
+      worktreeRoots: [dir, `${dir}${path.sep}`, path.join(dir, 'nope'), 'relative', file],
+      worktreeScanDepth: 1.5,
+      worktreeFolders: ['../sibling', '.', '.claude/worktrees', '.claude/worktrees/', path.join(dir, 'gone')],
+    })
+
+    expect(checked.ok ? [] : checked.error.map((problem) => [problem.field, problem.kind])).toEqual([
+      ['worktreeRoots', 'duplicate'],
+      ['worktreeRoots', 'missing'],
+      ['worktreeRoots', 'relative'],
+      ['worktreeRoots', 'not-folder'],
+      ['worktreeFolders', 'escapes'],
+      ['worktreeFolders', 'empty'],
+      ['worktreeFolders', 'duplicate'],
+      ['worktreeFolders', 'missing'],
+      ['worktreeScanDepth', 'depth'],
+    ])
+    const shapeless = await checkSettings(null)
+    expect(shapeless.ok ? [] : shapeless.error.map((problem) => problem.kind)).toEqual(['not-list', 'not-list', 'depth'])
+  })
+
+  it('saves clean settings beside other keys, accepts zero roots, and leaves the file alone when invalid', async () => {
+    const dir = tmp('settings-save')
+    const file = path.join(dir, 'nested', 'settings.json')
+    fs.mkdirSync(path.dirname(file))
+    fs.writeFileSync(file, JSON.stringify({ other: 1 }))
+
+    const saved = await saveSettings(file, { worktreeRoots: [`${dir}${path.sep}`], worktreeScanDepth: 0, worktreeFolders: ['wt/'] })
+    expect(saved).toEqual({ ok: true, value: { worktreeRoots: [dir], worktreeScanDepth: 0, worktreeFolders: ['wt'] } })
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ other: 1, worktreeRoots: [dir], worktreeScanDepth: 0, worktreeFolders: ['wt'] })
+
+    expect((await saveSettings(file, { worktreeRoots: [], worktreeScanDepth: 6, worktreeFolders: [] })).ok).toBe(true)
+    expect((await saveSettings(file, { worktreeRoots: ['nope'], worktreeScanDepth: 6, worktreeFolders: [] })).ok).toBe(false)
+    expect(await readSettings(file)).toEqual({ worktreeRoots: [], worktreeScanDepth: 6, worktreeFolders: [] })
   })
 })

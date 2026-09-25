@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   dirtyPrompt,
   removalMessage,
+  settingsMessage,
   removalPrompt,
   removedText,
   agoText,
@@ -173,6 +174,7 @@ describe('worktree text', () => {
     dirty: true,
     changedAt: now - 5 * 60_000,
     broken: null,
+    claude: true,
   }
 
   it('says how long ago a worktree changed', () => {
@@ -191,7 +193,16 @@ describe('worktree text', () => {
   it('counts distance and rejects cached rows of the wrong shape', () => {
     expect(distanceText({ ahead: 2, behind: 0 })).toBe('2 ahead')
     expect(distanceText({ ahead: 0, behind: 0 })).toBe('in sync')
-    expect([worktree, null, { repo: 1 }, 'x'].filter(isClaudeWorktree)).toEqual([worktree])
+    const stale = { ...worktree, claude: undefined }
+    expect([worktree, null, { repo: 1 }, 'x', stale].filter(isClaudeWorktree)).toEqual([worktree])
+  })
+})
+
+describe('settingsMessage', () => {
+  it('names the field, the value and what is wrong with it', () => {
+    expect(settingsMessage({ field: 'worktreeRoots', value: '/nope', kind: 'missing' })).toBe('Scan folder /nope does not exist')
+    expect(settingsMessage({ field: 'worktreeFolders', value: '../x', kind: 'escapes' })).toBe('Worktree folder ../x points outside the repo')
+    expect(settingsMessage({ field: 'worktreeRoots', value: '', kind: 'not-list' })).toBe('Scan folder is not a list of paths')
   })
 })
 
@@ -204,6 +215,7 @@ describe('removal text', () => {
     dirty: true,
     changedAt: null,
     broken: null,
+    claude: true,
   }
 
   it('names the repo, the worktree and the path, and warns about unpushed commits', () => {
@@ -220,6 +232,8 @@ describe('removal text', () => {
     expect(dirtyPrompt(worktree, 1)).toContain('1 file in feat has')
     expect(dirtyPrompt(worktree, 3)).toContain('3 files in feat have')
     expect(removalMessage({ kind: 'open', path: worktree.path })).toContain('Close it first')
+    expect(removalMessage({ kind: 'main', path: '/code/app' })).toContain('main worktree')
+    expect(removalMessage({ kind: 'holds', path: '/code/wt', worktree: '/code/wt/inner' })).toContain('/code/wt/inner')
     expect(
       removalMessage({ kind: 'git', error: { kind: 'failed', args: ['worktree', 'remove'], code: 128, stderr: 'Permission denied' }, left: 'folder' }),
     ).toBe('git worktree remove failed: Permission denied. Now git no longer lists it, but its folder is still there.')

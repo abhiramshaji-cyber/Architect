@@ -10,6 +10,7 @@ import type {
   OpenRisk,
   RemovalFailure,
   RemovalLeft,
+  SettingsProblem,
   WorktreeBroken,
   WorktreeRemoval,
   WorktreeRemoved,
@@ -217,7 +218,29 @@ export function worktreeText(worktree: ClaudeWorktree, now: number): string {
 
 export function isClaudeWorktree(value: unknown): value is ClaudeWorktree {
   const row = value as Partial<ClaudeWorktree> | null
-  return typeof row?.repo === 'string' && typeof row.name === 'string' && typeof row.path === 'string'
+  return typeof row?.repo === 'string' && typeof row.name === 'string' && typeof row.path === 'string' && typeof row.claude === 'boolean'
+}
+
+const PROBLEM_TEXT: Record<SettingsProblem['kind'], string> = {
+  'not-list': 'is not a list of paths',
+  relative: 'is not an absolute path',
+  missing: 'does not exist',
+  'not-folder': 'is a file, not a folder',
+  duplicate: 'is already in the list',
+  escapes: 'points outside the repo',
+  empty: 'is empty',
+  depth: 'is not a whole number of zero or more',
+}
+
+const FIELD_TEXT: Record<SettingsProblem['field'], string> = {
+  worktreeRoots: 'Scan folder',
+  worktreeFolders: 'Worktree folder',
+  worktreeScanDepth: 'Scan depth',
+}
+
+export function settingsMessage(problem: SettingsProblem): string {
+  const value = problem.value === '' ? '' : ` ${problem.value}`
+  return `${FIELD_TEXT[problem.field]}${value} ${PROBLEM_TEXT[problem.kind]}`
 }
 
 function counted(count: number, noun: string): string {
@@ -263,7 +286,9 @@ export function removedText(worktree: ClaudeWorktree, removed: WorktreeRemoved):
 
 export function removalMessage(failure: RemovalFailure): string {
   if (failure.kind === 'open') return `${failure.path} is open in Architect. Close it first, then delete it.`
-  if (failure.kind === 'outside') return `${failure.path} is not a folder inside .claude/worktrees, so it was left alone`
+  if (failure.kind === 'outside') return `${failure.path} is neither a worktree git lists for this repo nor a folder inside a worktree folder, so it was left alone`
+  if (failure.kind === 'main') return `${failure.path} is the repo's main worktree or holds it, so it was left alone`
+  if (failure.kind === 'holds') return `${failure.path} holds the worktree ${failure.worktree}, so it was left alone`
   if (failure.kind === 'unregistered') return `${failure.path} has its own .git but ${failure.repo} does not list it as a worktree, so it was left alone`
   if (failure.kind === 'trash-failed') return `Could not move ${failure.path} to the Trash: ${failure.message}`
 

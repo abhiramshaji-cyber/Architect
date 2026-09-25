@@ -2482,3 +2482,51 @@ body.resizing {
   font-family: var(--mono);
   font-size: 11px;
 }
+
+.picker-locations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sunken);
+}
+
+.picker-locations p {
+  margin: 0;
+}
+
+.picker-locations-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.picker-locations-list li,
+.picker-locations-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.picker-locations-list code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.picker-depth {
+  width: 64px;
+}
+
+.pane-action[aria-pressed='true'] {
+  border-color: var(--border);
+  color: var(--text);
+}

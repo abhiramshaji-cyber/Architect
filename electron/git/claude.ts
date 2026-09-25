@@ -8,22 +8,27 @@ import type {
   RemovalChoice,
   RemovalLeft,
   RemovalResult,
+  SettingsProblem,
+  SettingsResult,
   Worktree,
   WorktreeRemoval,
   WorktreeRemoved,
+  WorktreeSettings,
 } from '../../shared/types'
 import { defaultBranch, git, parseStatus, parseWorktrees, succeeds } from './git'
 
-const HOLDER = path.join('.claude', 'worktrees')
-const SCAN_DEPTH = 6
 const LANES = 8
 const LEAVE_INDEX_ALONE = '--no-optional-locks'
-const SKIP = new Set(['node_modules', 'Library', '.git', '.Trash', '.cache', '.npm', '.cargo', '.rustup'])
+const SKIP = new Set(['node_modules', 'Library', 'AppData', '.Trash', '.cache', '.npm', '.cargo', '.rustup'])
 const PATH_FIELD: Record<string, number> = { '1': 8, '2': 9, u: 10, '?': 1 }
 
 type Listed = Omit<Worktree, 'exists'>
-type Found = { name: string; git: boolean }
+type Found = { path: string; git: boolean }
 type Entry = Omit<ClaudeWorktree, 'dirty' | 'changedAt'>
+
+export function defaults(home = os.homedir()): WorktreeSettings {
+  return { worktreeRoots: [home], worktreeScanDepth: 6, worktreeFolders: ['.claude/worktrees'] }
+}
 
 function readDir(dir: string): Promise<Dirent[]> {
   return fs.readdir(dir, { withFileTypes: true }).catch(() => [])
@@ -43,24 +48,38 @@ function mtime(target: string): Promise<number> {
   )
 }
 
-export async function findRepos(home: string, depth = SCAN_DEPTH): Promise<string[]> {
-  const holders: string[] = []
-  let level = [home]
+function present<T>(value: T | null): value is T {
+  return value !== null
+}
+
+async function realDirs(dirs: string[]): Promise<string[]> {
+  const real = await Promise.all(dirs.map((dir) => fs.realpath(dir).catch(() => null)))
+  return [...new Set(real.filter(present))]
+}
+
+export async function findRepos(roots: string[], depth: number): Promise<string[]> {
+  const mains: string[] = []
+  const links: string[] = []
+  let level = await realDirs(roots)
+  const seen = new Set(level)
 
   for (let at = 0; at <= depth && level.length > 0; at += 1) {
     const read = await Promise.all(level.map(async (dir) => ({ dir, entries: await readDir(dir) })))
     level = []
     for (const { dir, entries } of read) {
       for (const entry of entries) {
-        if (!entry.isDirectory() || SKIP.has(entry.name)) continue
-        if (entry.name === '.claude') holders.push(dir)
-        else level.push(path.join(dir, entry.name))
+        const child = path.join(dir, entry.name)
+        if (entry.name === '.git') (entry.isDirectory() ? mains : links).push(dir)
+        else if (entry.isDirectory() && !SKIP.has(entry.name) && !seen.has(child)) {
+          seen.add(child)
+          level.push(child)
+        }
       }
     }
   }
 
-  const held = await Promise.all(holders.map((dir) => isDir(path.join(dir, HOLDER))))
-  return holders.filter((_, at) => held[at])
+  const linked = await pooled(links, repoOf)
+  return [...mains, ...linked.filter(present)]
 }
 
 async function repoOf(root: string): Promise<string | null> {
@@ -71,38 +90,44 @@ async function repoOf(root: string): Promise<string | null> {
   return path.basename(dir) === '.git' ? path.dirname(dir) : null
 }
 
-export function classify(repo: string, found: Found[], listed: Listed[] | null): Entry[] {
-  const holder = path.join(repo, HOLDER)
-  const registered = new Map(
-    (listed ?? [])
-      .filter((worktree) => path.dirname(worktree.path) === holder)
-      .map((worktree) => [path.basename(worktree.path), worktree]),
-  )
+export function within(root: string, target: string): boolean {
+  const relative = path.relative(target, root)
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+}
 
-  const present = found.map(({ name, git: hasGit }): Entry => {
-    const worktree = registered.get(name)
-    const broken = listed === null ? 'unlisted' : worktree ? null : hasGit ? 'unregistered' : 'not-git'
-    return {
-      repo,
-      name,
-      path: path.join(holder, name),
-      branch: worktree?.branch ?? null,
-      broken,
-    }
-  })
+function inside(target: string, holder: string): boolean {
+  return target !== holder && within(target, holder)
+}
 
-  const names = new Set(found.map((entry) => entry.name))
-  const missing = [...registered]
-    .filter(([name]) => !names.has(name))
-    .map(([name, worktree]): Entry => ({
+export function classify(repo: string, holders: string[], found: Found[], listed: Worktree[] | null): Entry[] {
+  const linked = (listed ?? []).slice(1).filter((worktree) => !worktree.bare)
+  const registered = new Set((listed ?? []).map((worktree) => worktree.path))
+
+  const worktrees = linked.map(
+    (worktree): Entry => ({
       repo,
-      name,
+      name: path.basename(worktree.path),
       path: worktree.path,
       branch: worktree.branch,
-      broken: 'missing',
-    }))
+      broken: worktree.exists ? null : 'missing',
+      claude: holders.some((holder) => inside(worktree.path, holder)),
+    }),
+  )
 
-  return [...present, ...missing]
+  const plain = found
+    .filter(({ path: dir }) => !registered.has(dir) && !holders.includes(dir) && !linked.some((worktree) => inside(worktree.path, dir)))
+    .map(
+      ({ path: dir, git: hasGit }): Entry => ({
+        repo,
+        name: path.basename(dir),
+        path: dir,
+        branch: null,
+        broken: listed === null ? 'unlisted' : hasGit ? 'unregistered' : 'not-git',
+        claude: true,
+      }),
+    )
+
+  return [...worktrees, ...plain]
 }
 
 export function changedPaths(stdout: string): string[] {
@@ -129,18 +154,20 @@ export function byRecency(a: ClaudeWorktree, b: ClaudeWorktree): number {
   )
 }
 
-async function entriesOf(repo: string): Promise<Entry[]> {
-  const holder = path.join(repo, HOLDER)
-  const dirs = (await readDir(holder)).filter((entry) => entry.isDirectory())
-  const found = await Promise.all(
-    dirs.map(async (entry) => ({
-      name: entry.name,
-      git: Number.isFinite(await mtime(path.join(holder, entry.name, '.git'))),
-    })),
-  )
+function plainHolders(repo: string, folders: string[]): string[] {
+  return folders.filter((folder) => !path.isAbsolute(folder)).map((folder) => path.join(repo, folder))
+}
 
-  const listed = await git(repo, ['worktree', 'list', '--porcelain'])
-  return classify(repo, found, listed.ok ? parseWorktrees(listed.value) : null)
+async function foldersIn(holders: string[]): Promise<Found[]> {
+  const read = await Promise.all(holders.map(async (holder) => ({ holder, entries: await readDir(holder) })))
+  const dirs = [...new Set(read.flatMap(({ holder, entries }) => entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(holder, entry.name))))]
+  return Promise.all(dirs.map(async (dir) => ({ path: dir, git: Number.isFinite(await mtime(path.join(dir, '.git'))) })))
+}
+
+async function entriesOf(repo: string, folders: string[]): Promise<Entry[]> {
+  const [found, listed] = await Promise.all([foldersIn(plainHolders(repo, folders)), listedIn(repo)])
+  const known = listed.ok ? await Promise.all(listed.value.map(async (worktree) => ({ ...worktree, exists: await isDir(worktree.path) }))) : null
+  return classify(repo, folders.map((folder) => path.resolve(repo, folder)), found, known)
 }
 
 async function inspect(entry: Entry): Promise<ClaudeWorktree> {
@@ -183,16 +210,14 @@ async function pooled<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[
   return out
 }
 
-export async function discover(roots: string[], scan: boolean, home = os.homedir()): Promise<ClaudeWorktree[]> {
-  const [known, scanned] = await Promise.all([Promise.all(roots.map(repoOf)), scan ? findRepos(home) : []])
-  const real = await Promise.all(
-    [...known, ...scanned]
-      .filter((repo): repo is string => repo !== null)
-      .map((repo) => fs.realpath(repo).catch(() => null)),
-  )
+export async function discover(known: string[], scan: boolean, settings: WorktreeSettings): Promise<ClaudeWorktree[]> {
+  const [opened, scanned] = await Promise.all([
+    pooled(known, repoOf),
+    scan ? findRepos(settings.worktreeRoots, settings.worktreeScanDepth) : [],
+  ])
 
-  const repos = [...new Set(real.filter((repo): repo is string => repo !== null))]
-  const entries = (await pooled(repos, entriesOf)).flat()
+  const repos = await realDirs([...opened.filter(present), ...scanned])
+  const entries = (await pooled(repos, (repo) => entriesOf(repo, settings.worktreeFolders))).flat()
   return (await pooled(entries, inspect)).sort(byRecency)
 }
 
@@ -206,14 +231,10 @@ function real(target: string): Promise<string> {
   return fs.realpath(target).catch(() => path.resolve(target))
 }
 
-export function within(root: string, target: string): boolean {
-  const relative = path.relative(target, root)
-  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
-}
-
 async function listedIn(repo: string): Promise<{ ok: true; value: Listed[] } | { ok: false; error: GitFailure }> {
   const listed = await git(repo, ['worktree', 'list', '--porcelain'])
-  return listed.ok ? { ok: true, value: parseWorktrees(listed.value) } : listed
+  if (!listed.ok) return listed
+  return { ok: true, value: parseWorktrees(listed.value).map((worktree) => ({ ...worktree, path: path.resolve(worktree.path) })) }
 }
 
 async function leftAt(repo: string, spot: string): Promise<RemovalLeft> {
@@ -257,25 +278,31 @@ async function risk(repo: string, entry: Listed, main: Listed | undefined): Prom
   }
 }
 
-export async function survey(repo: string, target: string, open: string[]): Promise<RemovalResult<WorktreeRemoval>> {
+export async function survey(
+  repo: string,
+  target: string,
+  open: string[],
+  folders: string[],
+): Promise<RemovalResult<WorktreeRemoval>> {
   const home = await real(repo)
   const spot = path.resolve(target)
-  const name = path.basename(spot)
-  if (path.dirname(spot) !== path.join(home, HOLDER) || name === '' || name === '.' || name === '..') {
-    return { ok: false, error: { kind: 'outside', path: spot } }
-  }
-
   const roots = await Promise.all(open.map(real))
   if (roots.some((root) => within(root, spot))) return { ok: false, error: { kind: 'open', path: spot } }
 
   const [listed, stat] = await Promise.all([listedIn(home), fs.lstat(spot).catch(() => null)])
   if (!listed.ok) return gitFailed(listed.error)
 
-  const entry = listed.value.find((worktree) => worktree.path === spot)
+  const [main, ...linked] = listed.value
+  if (within(home, spot) || (main && within(main.path, spot))) return { ok: false, error: { kind: 'main', path: spot } }
+  const held = linked.find((worktree) => inside(worktree.path, spot))
+  if (held) return { ok: false, error: { kind: 'holds', path: spot, worktree: held.path } }
+
+  const entry = linked.find((worktree) => worktree.path === spot)
   if (!stat) return entry ? { ok: true, value: { kind: 'prune' } } : gitFailed({ kind: 'no-worktree', path: spot }, 'neither')
   if (!stat.isDirectory() || (await real(spot)) !== spot) return { ok: false, error: { kind: 'outside', path: spot } }
-  if (entry) return risk(home, entry, listed.value[0])
+  if (entry) return risk(home, entry, main)
 
+  if (!plainHolders(home, folders).includes(path.dirname(spot))) return { ok: false, error: { kind: 'outside', path: spot } }
   const hasGit = Number.isFinite(await mtime(path.join(spot, '.git')))
   return hasGit ? { ok: false, error: { kind: 'unregistered', path: spot, repo: home } } : { ok: true, value: { kind: 'trash' } }
 }
@@ -303,9 +330,10 @@ export async function remove(
   target: string,
   choice: RemovalChoice,
   open: string[],
+  folders: string[],
   trash: (target: string) => Promise<void>,
 ): Promise<RemovalResult<WorktreeRemoved>> {
-  const surveyed = await survey(repo, target, open)
+  const surveyed = await survey(repo, target, open, folders)
   if (!surveyed.ok) return surveyed
 
   const home = await real(repo)
@@ -329,4 +357,104 @@ export async function remove(
   if (left === 'registration') return gitFailed({ kind: 'locked-worktree', path: spot }, left)
 
   return { ok: true, value: { how: 'prune', branch: null, branchError: null } }
+}
+
+function strings(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : null
+}
+
+function isDepth(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
+function fields(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+function segments(folder: string): string[] {
+  return path.normalize(folder).split(path.sep).filter((part) => part !== '' && part !== '.')
+}
+
+function relativeProblem(folder: string): SettingsProblem['kind'] | null {
+  const parts = segments(folder)
+  if (parts.length === 0) return 'empty'
+  return parts[0] === '..' ? 'escapes' : null
+}
+
+function cleaned(folder: string): string {
+  return path.isAbsolute(folder) ? path.resolve(folder) : path.join(...segments(folder))
+}
+
+async function placeProblem(target: string): Promise<SettingsProblem['kind'] | null> {
+  if (!path.isAbsolute(target)) return 'relative'
+  const stat = await fs.stat(target).catch(() => null)
+  if (!stat) return 'missing'
+  return stat.isDirectory() ? null : 'not-folder'
+}
+
+export async function readSettings(file: string, home = os.homedir()): Promise<WorktreeSettings> {
+  const stored = fields(await fs.readFile(file, 'utf8').then(JSON.parse, () => null).catch(() => null))
+  const base = defaults(home)
+  const roots = strings(stored.worktreeRoots)
+  const folders = strings(stored.worktreeFolders)
+
+  return {
+    worktreeRoots: roots ? roots.filter((root) => path.isAbsolute(root)) : base.worktreeRoots,
+    worktreeScanDepth: isDepth(stored.worktreeScanDepth) ? stored.worktreeScanDepth : base.worktreeScanDepth,
+    worktreeFolders: folders
+      ? folders.filter((folder) => path.isAbsolute(folder) || relativeProblem(folder) === null).map(cleaned)
+      : base.worktreeFolders,
+  }
+}
+
+async function listProblems(
+  field: 'worktreeRoots' | 'worktreeFolders',
+  items: string[],
+  check: (item: string) => Promise<SettingsProblem['kind'] | null>,
+): Promise<SettingsProblem[]> {
+  const kinds = await Promise.all(items.map(check))
+  const seen = new Set<string>()
+
+  return items.flatMap((value, at): SettingsProblem[] => {
+    const kind = kinds[at]
+    if (kind) return [{ field, value, kind }]
+
+    const key = cleaned(value)
+    if (seen.has(key)) return [{ field, value, kind: 'duplicate' }]
+    seen.add(key)
+    return []
+  })
+}
+
+export async function checkSettings(input: unknown): Promise<SettingsResult> {
+  const given = fields(input)
+  const roots = strings(given.worktreeRoots)
+  const folders = strings(given.worktreeFolders)
+  const depth = given.worktreeScanDepth
+
+  const problems: SettingsProblem[] = [
+    ...(roots ? await listProblems('worktreeRoots', roots, placeProblem) : [{ field: 'worktreeRoots' as const, value: '', kind: 'not-list' as const }]),
+    ...(folders
+      ? await listProblems('worktreeFolders', folders, async (folder) =>
+          path.isAbsolute(folder) ? placeProblem(folder) : relativeProblem(folder),
+        )
+      : [{ field: 'worktreeFolders' as const, value: '', kind: 'not-list' as const }]),
+    ...(isDepth(depth) ? [] : [{ field: 'worktreeScanDepth' as const, value: String(depth), kind: 'depth' as const }]),
+  ]
+  if (problems.length > 0 || !roots || !folders || !isDepth(depth)) return { ok: false, error: problems }
+
+  return {
+    ok: true,
+    value: { worktreeRoots: roots.map(cleaned), worktreeScanDepth: depth, worktreeFolders: folders.map(cleaned) },
+  }
+}
+
+export async function saveSettings(file: string, input: unknown): Promise<SettingsResult> {
+  const checked = await checkSettings(input)
+  if (!checked.ok) return checked
+
+  const stored = fields(await fs.readFile(file, 'utf8').then(JSON.parse, () => null).catch(() => null))
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await fs.writeFile(file, JSON.stringify({ ...stored, ...checked.value }, null, 2))
+  return checked
 }

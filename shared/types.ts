@@ -173,7 +173,18 @@ export type ClaudeWorktree = {
   dirty: boolean
   changedAt: number | null
   broken: WorktreeBroken | null
+  claude: boolean
 }
+
+export type WorktreeSettings = { worktreeRoots: string[]; worktreeScanDepth: number; worktreeFolders: string[] }
+
+export type SettingsProblem = {
+  field: keyof WorktreeSettings
+  value: string
+  kind: 'not-list' | 'relative' | 'missing' | 'not-folder' | 'duplicate' | 'escapes' | 'empty' | 'depth'
+}
+
+export type SettingsResult = { ok: true; value: WorktreeSettings } | { ok: false; error: SettingsProblem[] }
 
 export type WorktreeRemoval =
   | { kind: 'remove'; dirty: number; unpushed: number; branch: string | null; base: string | null; merged: boolean }
@@ -187,6 +198,8 @@ export type RemovalLeft = 'both' | 'folder' | 'registration' | 'neither'
 export type RemovalFailure =
   | { kind: 'open'; path: string }
   | { kind: 'outside'; path: string }
+  | { kind: 'main'; path: string }
+  | { kind: 'holds'; path: string; worktree: string }
   | { kind: 'unregistered'; path: string; repo: string }
   | { kind: 'trash-failed'; path: string; message: string }
   | { kind: 'git'; error: GitFailure; left: RemovalLeft }
@@ -444,6 +457,9 @@ export type ArchitectApi = {
   claudeWorktrees(repos: string[], scan: boolean): Promise<ClaudeWorktree[]>
   claudeWorktreeSurvey(repo: string, path: string): Promise<RemovalResult<WorktreeRemoval>>
   claudeWorktreeRemove(repo: string, path: string, choice: RemovalChoice): Promise<RemovalResult<WorktreeRemoved>>
+  worktreeSettings(): Promise<WorktreeSettings>
+  saveWorktreeSettings(settings: WorktreeSettings): Promise<SettingsResult>
+  pickFolder(): Promise<string | null>
   gitCreateWorktree(root: string, path: string, name: string, base?: string): Promise<GitResult<WorktreeCreated>>
   gitRemoveWorktree(root: string, path: string): Promise<GitResult<{ path: string }>>
   gitPruneWorktrees(root: string): Promise<GitResult<Worktree[]>>
