@@ -248,10 +248,10 @@ function counted(count: number, noun: string): string {
 }
 
 const LEFT_TEXT: Record<RemovalLeft, string> = {
-  both: 'git still lists it and its folder is still there',
-  folder: 'git no longer lists it, but its folder is still there',
-  registration: 'its folder is gone, but git still lists it',
-  neither: 'git no longer lists it and its folder is gone',
+  both: 'Nothing was deleted',
+  folder: 'Now git no longer lists it, but its folder is still there',
+  registration: 'Now its folder is gone, but git still lists it',
+  neither: 'Now git no longer lists it and its folder is gone',
 }
 
 export function removalPrompt(worktree: ClaudeWorktree, plan: WorktreeRemoval): string {
@@ -292,5 +292,5 @@ export function removalMessage(failure: RemovalFailure): string {
   if (failure.kind === 'unregistered') return `${failure.path} has its own .git but ${failure.repo} does not list it as a worktree, so it was left alone`
   if (failure.kind === 'trash-failed') return `Could not move ${failure.path} to the Trash: ${failure.message}`
 
-  return `${gitMessage(failure.error)}. Now ${LEFT_TEXT[failure.left]}.`
+  return `${gitMessage(failure.error)}. ${LEFT_TEXT[failure.left]}.`
 }
