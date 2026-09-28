@@ -24,7 +24,7 @@ const MAX_OUTPUT = 64 * 1024 * 1024
 const CONNECT_MS = 5000
 const PORTS: Record<string, number> = { https: 443, http: 80, ssh: 22, git: 9418 }
 
-type ExecFailure = { code?: unknown; syscall?: unknown; stderr?: unknown }
+type ExecFailure = { code?: unknown; syscall?: unknown; stderr?: unknown; message?: unknown }
 
 function text(value: unknown): string {
   if (typeof value === 'string') return value
@@ -36,30 +36,37 @@ function exitCode(error: ExecFailure): number | null {
   return typeof error.code === 'number' ? error.code : null
 }
 
-function spawnFailed(error: ExecFailure): boolean {
-  return error.code === 'ENOENT' && typeof error.syscall === 'string' && error.syscall.startsWith('spawn')
+function unspawned(error: ExecFailure): boolean {
+  return typeof error.syscall === 'string' && error.syscall.startsWith('spawn')
 }
 
-export async function succeeds(root: string, args: string[]): Promise<boolean> {
+async function attempt(root: string, args: string[]): Promise<ExecFailure | null> {
   try {
     await run('git', args, { cwd: root, maxBuffer: MAX_OUTPUT, windowsHide: true })
-    return true
-  } catch {
-    return false
+    return null
+  } catch (error) {
+    return error as ExecFailure
   }
 }
 
+export async function succeeds(root: string, args: string[]): Promise<boolean> {
+  return (await attempt(root, args)) === null
+}
+
 async function classify(root: string, args: string[], error: ExecFailure): Promise<GitFailure> {
-  if (spawnFailed(error)) {
+  if (unspawned(error) && error.code === 'ENOENT') {
     const reachable = await fs.stat(root).then(
       (stat) => stat.isDirectory(),
       () => false,
     )
     return reachable ? { kind: 'not-installed' } : { kind: 'missing-root', root }
   }
+  if (unspawned(error)) return { kind: 'failed', args, code: null, stderr: text(error.message) }
 
-  if (!(await succeeds(root, ['rev-parse', '--git-dir']))) return { kind: 'not-a-repo', root }
-  if (!(await succeeds(root, ['rev-parse', '--verify', '--quiet', 'HEAD']))) return { kind: 'no-commits', root }
+  const repo = await attempt(root, ['rev-parse', '--git-dir'])
+  if (repo) return unspawned(repo) ? classify(root, args, repo) : { kind: 'not-a-repo', root }
+  const born = await attempt(root, ['rev-parse', '--verify', '--quiet', 'HEAD'])
+  if (born) return unspawned(born) ? classify(root, args, born) : { kind: 'no-commits', root }
 
   return { kind: 'failed', args, code: exitCode(error), stderr: text(error.stderr).trim() }
 }

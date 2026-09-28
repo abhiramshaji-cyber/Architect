@@ -216,6 +216,10 @@ const RESCAN_DEBOUNCE_MS = 300
 
 type Kinded = { isFile(): boolean; isDirectory(): boolean }
 
+type Closable = { close(): unknown }
+
+const NATIVE_RECURSIVE = process.platform === 'darwin' || process.platform === 'win32'
+
 function isIgnoredSource(root: string, target: string, stats?: Kinded): boolean {
   const relative = path.relative(root, target)
   if (relative === '') return false
@@ -230,6 +234,36 @@ function isIgnoredSource(root: string, target: string, stats?: Kinded): boolean 
   })
 }
 
+function kindOf(target: string): fs.Stats | undefined {
+  try {
+    return fs.lstatSync(target)
+  } catch {
+    return undefined
+  }
+}
+
+function watchSources(root: string, changed: () => void): Closable {
+  const failed = (err: unknown) => console.error(`source watcher for ${root}:`, errorText(err))
+
+  if (!NATIVE_RECURSIVE) {
+    const sources = chokidar.watch(root, {
+      ignoreInitial: true,
+      followSymlinks: false,
+      ignored: (target: string, stats?: fs.Stats) => isIgnoredSource(root, target, stats),
+    })
+    sources.on('all', changed)
+    sources.on('error', failed)
+    return sources
+  }
+
+  const sources = fs.watch(root, { recursive: true }, (_event, file) => {
+    const target = file ? path.join(root, file) : root
+    if (!isIgnoredSource(root, target, kindOf(target))) changed()
+  })
+  sources.on('error', failed)
+  return sources
+}
+
 type Waiter = { resolve: (decision: Decision) => void; timer: ReturnType<typeof setTimeout> }
 
 type PendingEntry = { pending: Pending; waiters: Set<Waiter> }
@@ -239,7 +273,7 @@ type ProjectState = {
   architecture: Architecture | null
   contract: ContractState
   watcher: FSWatcher
-  sources: FSWatcher
+  sources: Closable
   rescanTimer: ReturnType<typeof setTimeout> | null
   rescanning: boolean
   rescanAgain: boolean
@@ -628,7 +662,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       contract: { status: 'missing' },
       lastWrittenContent: null,
       watcher: null as unknown as FSWatcher,
-      sources: null as unknown as FSWatcher,
+      sources: null as unknown as Closable,
       rescanTimer: null,
       rescanning: false,
       rescanAgain: false,
@@ -684,14 +718,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     })
     state.watcher = watcher
 
-    const sources = chokidar.watch(root, {
-      ignoreInitial: true,
-      followSymlinks: false,
-      ignored: (target: string, stats?: fs.Stats) => isIgnoredSource(root, target, stats),
-    })
-    sources.on('all', () => scheduleRescan(state))
-    sources.on('error', (err) => console.error(`source watcher for ${root}:`, errorText(err)))
-    state.sources = sources
+    state.sources = watchSources(root, () => scheduleRescan(state))
 
     projects.set(root, state)
     remembered.add(root)

@@ -290,9 +290,9 @@ export async function survey(
   if (roots.some((root) => within(root, spot))) return { ok: false, error: { kind: 'open', path: spot } }
 
   const [listed, stat] = await Promise.all([listedIn(home), fs.lstat(spot).catch(() => null)])
-  if (!listed.ok) return gitFailed(listed.error)
+  if (!listed.ok && listed.error.kind !== 'not-a-repo') return gitFailed(listed.error)
 
-  const [main, ...linked] = listed.value
+  const [main, ...linked] = listed.ok ? listed.value : []
   if (within(home, spot) || (main && within(main.path, spot))) return { ok: false, error: { kind: 'main', path: spot } }
   const held = linked.find((worktree) => inside(worktree.path, spot))
   if (held) return { ok: false, error: { kind: 'holds', path: spot, worktree: held.path } }
@@ -303,8 +303,8 @@ export async function survey(
   if (entry) return risk(home, entry, main)
 
   if (!plainHolders(home, folders).includes(path.dirname(spot))) return { ok: false, error: { kind: 'outside', path: spot } }
-  const hasGit = Number.isFinite(await mtime(path.join(spot, '.git')))
-  return hasGit ? { ok: false, error: { kind: 'unregistered', path: spot, repo: home } } : { ok: true, value: { kind: 'trash' } }
+  const own = listed.ok ? Number.isFinite(await mtime(path.join(spot, '.git'))) : await isDir(path.join(spot, '.git'))
+  return own ? { ok: false, error: { kind: 'unregistered', path: spot, repo: home } } : { ok: true, value: { kind: 'trash' } }
 }
 
 async function removeListed(

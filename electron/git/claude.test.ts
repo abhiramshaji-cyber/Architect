@@ -541,11 +541,44 @@ describe('remove', () => {
       error: { kind: 'git', error: { kind: 'no-worktree', path: target }, left: 'neither' },
     })
 
+  })
+
+  it('trashes folders a repo git cannot read left behind, but not a clone of its own', async () => {
     const bare = tmp('rm-not-repo')
-    const inside = path.join(bare, '.claude', 'worktrees', 'x')
-    fs.mkdirSync(inside, { recursive: true })
-    const refused = await remove(bare, inside, KEEP, [], FOLDERS, NO_TRASH)
-    expect(refused.ok ? null : refused.error.kind === 'git' && refused.error.error.kind).toBe('not-a-repo')
+    const holder = path.join(bare, '.claude', 'worktrees')
+    const plain = path.join(holder, 'plain')
+    const linked = path.join(holder, 'linked')
+    fs.mkdirSync(plain, { recursive: true })
+    fs.mkdirSync(linked)
+    fs.writeFileSync(path.join(linked, '.git'), `gitdir: ${path.join(bare, '.git', 'worktrees', 'linked')}\n`)
+    const clone = committed(path.join(holder, 'clone'))
+    const trashed: string[] = []
+    const trash = async (item: string) => {
+      trashed.push(item)
+    }
+
+    for (const target of [plain, linked]) {
+      expect(await remove(bare, target, KEEP, [], FOLDERS, trash)).toEqual({ ok: true, value: { how: 'trash', branch: null, branchError: null } })
+    }
+    expect(await remove(bare, clone, KEEP, [], FOLDERS, trash)).toEqual({ ok: false, error: { kind: 'unregistered', path: clone, repo: bare } })
+    expect(trashed).toEqual([plain, linked])
+  })
+
+  it('refuses to trash anything when git cannot start, so a healthy repo is never taken for a broken one', async () => {
+    const repo = committed(tmp('rm-unspawnable'))
+    const target = worktree(repo, 'kept', '-b', 'claude/kept')
+    const bin = tmp('rm-bin')
+    fs.writeFileSync(path.join(bin, 'git'), '', { mode: 0o644 })
+    const original = process.env.PATH
+    process.env.PATH = bin
+
+    try {
+      const refused = await remove(repo, target, KEEP, [], FOLDERS, NO_TRASH)
+      expect(refused.ok ? null : refused.error.kind === 'git' && refused.error.error.kind).toBe('failed')
+    } finally {
+      process.env.PATH = original
+    }
+    expect(fs.existsSync(path.join(target, 'a.txt'))).toBe(true)
   })
 })
 
