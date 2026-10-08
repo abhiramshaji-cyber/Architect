@@ -12,7 +12,6 @@ import type {
   RemovalLeft,
   SettingsProblem,
   WorktreeBroken,
-  WorktreeRemoval,
   WorktreeRemoved,
 } from '../../shared/types'
 
@@ -76,7 +75,7 @@ export function escaped(state: PickerState): PickerState | null {
   return state.stage.kind === 'branches' ? START : null
 }
 
-function plural(count: number, noun: string): string {
+export function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
@@ -243,38 +242,11 @@ export function settingsMessage(problem: SettingsProblem): string {
   return `${FIELD_TEXT[problem.field]}${value} ${PROBLEM_TEXT[problem.kind]}`
 }
 
-function counted(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
-}
-
 const LEFT_TEXT: Record<RemovalLeft, string> = {
   both: 'Nothing was deleted',
   folder: 'Now git no longer lists it, but its folder is still there',
   registration: 'Now its folder is gone, but git still lists it',
   neither: 'Now git no longer lists it and its folder is gone',
-}
-
-export function removalPrompt(worktree: ClaudeWorktree, plan: WorktreeRemoval): string {
-  const head = `Delete the worktree ${worktree.name}?\n\nrepo: ${worktree.repo}\npath: ${worktree.path}\n\n`
-  if (plan.kind === 'prune') return `${head}Its folder is already gone, so git worktree prune drops the stale entry.`
-  if (plan.kind === 'trash') return `${head}git does not know this folder, so it moves to the Trash.`
-
-  const kept = plan.branch ? `git worktree remove deletes the folder. The branch ${plan.branch} is kept.` : 'git worktree remove deletes the folder.'
-  if (plan.unpushed === 0) return `${head}${kept}`
-
-  const where = plan.base ? `any remote branch or ${plan.base}` : 'any remote branch'
-  const warning = plan.branch
-    ? `WARNING: ${plan.branch} has ${counted(plan.unpushed, 'commit')} that are not on ${where}. The branch keeps them, but they exist nowhere else.`
-    : `WARNING: the detached HEAD has ${counted(plan.unpushed, 'commit')} on no branch or remote. After this they are reachable only through the reflog.`
-  return `${head}${kept}\n\n${warning}`
-}
-
-export function dirtyPrompt(worktree: ClaudeWorktree, dirty: number): string {
-  return `WARNING: ${counted(dirty, 'file')} in ${worktree.name} ${dirty === 1 ? 'has' : 'have'} uncommitted changes. They are deleted for good, not moved to the Trash.\n\nForce the delete with git worktree remove --force?`
-}
-
-export function branchPrompt(branch: string, base: string): string {
-  return `${branch} is fully merged into ${base}. Delete the branch too, with git branch -d?\n\nOK deletes the branch. Cancel keeps it.`
 }
 
 export function removedText(worktree: ClaudeWorktree, removed: WorktreeRemoved): string {
