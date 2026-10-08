@@ -5,7 +5,7 @@ import DiffView from '../view/DiffView'
 import FilesView from '../view/FilesView'
 import RepoPicker from '../view/RepoPicker'
 import TerminalView, { PlainShell } from '../view/TerminalView'
-import WorktreePicker from '../view/WorktreePicker'
+import WorktreePicker from '../view/worktrees'
 
 export type ViewId = 'contract' | 'code' | 'diff' | 'files' | 'terminal' | 'shell' | 'repos' | 'worktrees'
 export type ViewProps = { theme: string }

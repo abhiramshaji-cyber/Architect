@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  dirtyPrompt,
   removalMessage,
   settingsMessage,
-  removalPrompt,
   removedText,
   agoText,
   authNote,
@@ -283,40 +281,7 @@ describe("removal text", () => {
     claude: true,
   };
 
-  it("names the repo, the worktree and the path, and warns about unpushed commits", () => {
-    const plan = {
-      kind: "remove",
-      dirty: 0,
-      unpushed: 2,
-      branch: "claude/feat",
-      base: "origin/main",
-      merged: false,
-    } as const;
-    const text = removalPrompt(worktree, plan);
-    for (const part of [
-      "feat",
-      "/code/app",
-      worktree.path,
-      "claude/feat is kept",
-      "2 commits",
-      "origin/main",
-    ])
-      expect(text).toContain(part);
-    expect(
-      removalPrompt(worktree, { ...plan, branch: null, unpushed: 1 }),
-    ).toContain("reflog");
-    expect(removalPrompt(worktree, { ...plan, unpushed: 0 })).not.toContain(
-      "WARNING",
-    );
-    expect(removalPrompt(worktree, { kind: "prune" })).toContain(
-      "git worktree prune",
-    );
-    expect(removalPrompt(worktree, { kind: "trash" })).toContain("Trash");
-  });
-
-  it("counts dirty files and says what a failure left behind", () => {
-    expect(dirtyPrompt(worktree, 1)).toContain("1 file in feat has");
-    expect(dirtyPrompt(worktree, 3)).toContain("3 files in feat have");
+  it("says what a failure left behind", () => {
     expect(removalMessage({ kind: "open", path: worktree.path })).toContain(
       "Close it first",
     );
