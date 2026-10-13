@@ -2,10 +2,11 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 
 import type { Architecture, SourceWindow } from '../../shared/types'
 import { refusalOf } from '../model/buffer'
-import { hangingIndent, type CodeNodeData, type FnRef } from '../model/codemap'
+import type { CodeNodeData, FnRef } from '../model/codemap'
 import { renameComponent, setOwns, setPurpose, type OpResult } from '../model/edit-ops'
-import { clampInspectorWidth, statusOf, INSPECTOR_W, type NodeData } from '../model/layout'
+import { clampInspectorWidth, INSPECTOR_W, type NodeData } from '../model/layout'
 import Icon from './Icon'
+import Listing from './source/Listing'
 
 const WIDTH_KEY = 'architect.inspector.width'
 
@@ -72,39 +73,6 @@ function useWidth() {
   }
 
   return { panel, width, grab }
-}
-
-function Listing({ window }: { window: SourceWindow }) {
-  const { from, lines, total } = window
-  const last = from + lines.length - 1
-  const gutter = `${String(Math.max(last, total)).length}ch`
-  const beyond = total - last
-
-  return (
-    <div className="inspector-src">
-      {lines.map((line, i) => (
-        <div key={i} className="inspector-src-line">
-          <span className="inspector-src-no" style={{ width: gutter }}>
-            {from + i}
-          </span>
-          <span
-            className="inspector-src-text"
-            style={{
-              paddingLeft: `${hangingIndent(line)}ch`,
-              textIndent: `-${hangingIndent(line)}ch`
-            }}
-          >
-            {line === '' ? ' ' : line}
-          </span>
-        </div>
-      ))}
-      {beyond > 0 && (
-        <p className="inspector-src-more">
-          {beyond} more {beyond === 1 ? 'line' : 'lines'} below, {total} in the file
-        </p>
-      )}
-    </div>
-  )
 }
 
 function Grip({ onGrab }: { onGrab: (e: React.PointerEvent<HTMLDivElement>) => void }) {
@@ -209,7 +177,7 @@ export function CodeInspector({
                   {source.total === 0 ? 'This file is empty' : 'Nothing to show at that line'}
                 </p>
               ) : (
-                <Listing window={source} />
+                <Listing path={node.path} window={source} />
               )}
             </section>
           </>
@@ -238,11 +206,10 @@ export function CodeInspector({
   )
 }
 
-export default function Inspector({ node, onClose, onSelect, onEdit, onDrop }: InspectorProps) {
+export default function Inspector({ node, onClose, onSelect, onEdit: edit, onDrop }: InspectorProps) {
   const [pass, setPass] = useState(0)
   const { panel, width, grab } = useWidth()
 
-  const edit = node.kind === 'component' && !node.ghost ? onEdit : undefined
   const owned = node.owns.join('\n')
 
   const commit = (op: (a: Architecture) => OpResult) => (edit ? edit(op) : false)
@@ -258,7 +225,7 @@ export default function Inspector({ node, onClose, onSelect, onEdit, onDrop }: I
         <div className="inspector-head">
           <div className="inspector-title">
             <span className="inspector-id">{node.label}</span>
-            <span className="inspector-status">{statusOf(node)}</span>
+            <span className="inspector-status">{node.role}</span>
           </div>
           <button className="icon-button inspector-close" onClick={onClose} aria-label="Close inspector">
             <Icon name="close" />
@@ -327,7 +294,7 @@ export default function Inspector({ node, onClose, onSelect, onEdit, onDrop }: I
           <>
             {node.purpose && (
               <section className="inspector-section">
-                <h3>{node.kind === 'file' ? 'Path' : 'Purpose'}</h3>
+                <h3>Purpose</h3>
                 <p className="inspector-purpose">{node.purpose}</p>
               </section>
             )}
@@ -343,19 +310,6 @@ export default function Inspector({ node, onClose, onSelect, onEdit, onDrop }: I
               </section>
             )}
           </>
-        )}
-
-        {node.badges.length > 0 && (
-          <section className="inspector-section">
-            <h3>Proposed packages</h3>
-            <div className="node-badges">
-              {node.badges.map((b) => (
-                <span key={b} className="badge">
-                  {b}
-                </span>
-              ))}
-            </div>
-          </section>
         )}
       </aside>
     </>

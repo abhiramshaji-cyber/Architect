@@ -471,6 +471,7 @@ body.resizing {
   *::before,
   *::after {
     animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
   }
 
   button:active {

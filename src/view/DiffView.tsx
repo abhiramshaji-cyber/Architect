@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   ChangedFile,
   DiffChanges,
-  DiffHunk,
-  DiffRow,
   DiffSection,
   FileDiff,
   GitResult,
@@ -13,6 +11,7 @@ import type {
 import { draftMessage, githubMessage, gitMessage } from '../model/picker'
 import { useProject } from '../model/store'
 import type { ViewProps } from '../shell/views'
+import { flatten, SplitDiff } from './SplitDiff'
 
 const ROW_PAGE = 400
 
@@ -34,15 +33,6 @@ const MARK: Record<ChangedFile['status'], string> = {
 }
 
 type Selected = { section: DiffSection; file: ChangedFile }
-
-type Entry = { kind: 'hunk'; header: string } | { kind: 'row'; row: DiffRow }
-
-function flatten(hunks: DiffHunk[]): Entry[] {
-  return hunks.flatMap((hunk) => [
-    { kind: 'hunk' as const, header: hunk.header },
-    ...hunk.rows.map((row) => ({ kind: 'row' as const, row })),
-  ])
-}
 
 function sameFile(a: Selected | null, section: DiffSection, file: ChangedFile): boolean {
   return a !== null && a.section === section && a.file.path === file.path
@@ -98,35 +88,6 @@ function Files({
         </li>
       ))}
     </ul>
-  )
-}
-
-function Rows({ entries, shown }: { entries: Entry[]; shown: number }) {
-  return (
-    <div className="diff-grid">
-      {entries.slice(0, shown).map((entry, index) =>
-        entry.kind === 'hunk' ? (
-          <div className="diff-hunk" key={index}>
-            {entry.header}
-          </div>
-        ) : (
-          <div className="diff-pair" key={index}>
-            <span className="diff-no">{entry.row.old?.line ?? ''}</span>
-            <span className={entry.row.old ? (entry.row.context ? 'diff-cell' : 'diff-cell del') : 'diff-cell blank'}>
-              {entry.row.old && <span className="diff-sign">{entry.row.context ? ' ' : '-'}</span>}
-              {entry.row.old?.text}
-              {entry.row.old?.noNewline && <span className="diff-eof"> no newline at end of file</span>}
-            </span>
-            <span className="diff-no">{entry.row.new?.line ?? ''}</span>
-            <span className={entry.row.new ? (entry.row.context ? 'diff-cell' : 'diff-cell add') : 'diff-cell blank'}>
-              {entry.row.new && <span className="diff-sign">{entry.row.context ? ' ' : '+'}</span>}
-              {entry.row.new?.text}
-              {entry.row.new?.noNewline && <span className="diff-eof"> no newline at end of file</span>}
-            </span>
-          </div>
-        ),
-      )}
-    </div>
   )
 }
 
@@ -588,7 +549,7 @@ export default function DiffView(_props: ViewProps) {
         )}
         {entries.length > 0 && (
           <>
-            <Rows entries={entries} shown={shown} />
+            <SplitDiff entries={entries} shown={shown} />
             {entries.length > shown && (
               <button className="ghost diff-more" onClick={() => setShown(shown + ROW_PAGE)}>
                 Show {Math.min(ROW_PAGE, entries.length - shown)} more

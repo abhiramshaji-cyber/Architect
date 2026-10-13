@@ -4,8 +4,8 @@ import type {
   ArchitectApi,
   CodeMap,
   GithubCompared,
+  HistoryEntry,
   IpcResult,
-  Pending,
   ProjectSummary,
   PtyEvent,
   SessionTouch,
@@ -26,8 +26,7 @@ const architect: ArchitectApi = {
   claimRoot: (root) => invoke('architect:claim-root', root),
   releaseRoot: () => invoke('architect:release-root'),
   focusRoot: (root) => invoke('architect:focus-root', root),
-  pending: () => invoke('architect:pending'),
-  decide: (id, approved, reason, component) => invoke('architect:decide', id, approved, reason, component),
+  history: (root) => invoke('architect:history', root),
   edits: (root) => invoke('architect:edits', root),
   edit: (root, id) => invoke('architect:edit', root, id),
   createEdit: (root, architecture) => invoke('architect:create-edit', root, architecture),
@@ -43,11 +42,14 @@ const architect: ArchitectApi = {
   writeSource: (root, file, text, baseline) =>
     invoke('architect:write-source', root, file, text, baseline),
   readTree: (root, dir) => invoke('architect:read-tree', root, dir),
-  onChange: (fn: (a: Architecture) => void) => {
-    ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))
+  search: (query) => invoke('architect:search', query),
+  onChange: (fn: (root: string, architecture: Architecture) => void) => {
+    ipcRenderer.on('architect:change', (_event, root: string, architecture: Architecture) => fn(root, architecture))
   },
-  onPending: (fn: (p: Pending[]) => void) => {
-    ipcRenderer.on('architect:pending-update', (_event, pending: Pending[]) => fn(pending))
+  onHistory: (fn: (entry: HistoryEntry) => void) => {
+    const listener = (_event: unknown, entry: HistoryEntry) => fn(entry)
+    ipcRenderer.on('architect:history', listener)
+    return () => ipcRenderer.off('architect:history', listener)
   },
   onProjects: (fn: (p: ProjectSummary[]) => void) => {
     ipcRenderer.on('architect:projects-update', (_event, projects: ProjectSummary[]) => fn(projects))

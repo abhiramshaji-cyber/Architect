@@ -17,15 +17,17 @@ import {
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { Architecture, Ownership, Pending } from '../../shared/types'
+import type { Architecture, Ownership } from '../../shared/types'
 import { addEdge, removeComponent, removeEdge, type OpResult } from '../model/edit-ops'
+import { liveClass, type Recent } from '../model/live/recent'
 import Inspector from './Inspector'
+import { edgeTypes } from './live/DrawnEdge'
+import Follow, { motionMs } from './live/Follow'
 import {
   build,
   dependency,
   heightOf,
   positions,
-  statusOf,
   HANDLE_IN,
   HANDLE_OUT,
   FIT_PADDING,
@@ -37,7 +39,7 @@ import {
 type CanvasProps = {
   architecture: Architecture
   ownership: Ownership | null
-  pending: Pending[]
+  recent: Recent
   theme: string
   selectedId: string | null
   onSelect: (id: string | null) => void
@@ -55,7 +57,7 @@ function Reveal({ count, stage }: { count: number; stage: number }) {
     const grew = count > seen.current.count
     const relaid = width !== seen.current.width || stage !== seen.current.stage
     seen.current = { count, width, stage }
-    if (grew || relaid) void flow.fitView({ ...FIT, duration: grew ? 220 : 0 })
+    if (grew || relaid) void flow.fitView({ ...FIT, duration: grew ? motionMs(220) : 0 })
   }, [count, width, stage, flow])
 
   return null
@@ -66,9 +68,6 @@ function palette() {
   const read = (name: string) => style.getPropertyValue(name).trim()
   return {
     ink: read('--ink'),
-    danger: read('--danger'),
-    propose: read('--propose'),
-    labelBg: read('--label-bg'),
     dots: read('--dots')
   }
 }
@@ -78,26 +77,15 @@ function marker(color: string) {
 }
 
 function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
-  const classes = ['node', `node-${data.role}`]
-  if (data.ghost) classes.push('node-ghost')
-  if (data.unassigned) classes.push('node-unassigned')
-
   return (
-    <div className={classes.join(' ')}>
+    <div className={`node node-${data.role}`}>
       <Handle type="target" position={Position.Top} id={HANDLE_IN} />
       <Handle type="source" position={Position.Bottom} id={HANDLE_OUT} />
       <div className="node-head">
         <span className="node-id">{data.label}</span>
-        <span className="node-role">{data.files === undefined ? statusOf(data) : `${data.files} files`}</span>
+        <span className="node-role">{data.files === undefined ? data.role : `${data.files} files`}</span>
       </div>
       {data.purpose && <div className="node-purpose">{data.purpose}</div>}
-      {data.badges.length > 0 && (
-        <div className="node-badges">
-          {data.badges.map((b) => (
-            <span key={b} className="badge">{b}</span>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
@@ -172,7 +160,7 @@ const nodeTypes = { component: ComponentNode }
 
 const DELETE_KEYS = ['Delete', 'Backspace']
 
-export default function Canvas({ architecture, ownership, pending, theme, selectedId, onSelect, onEdit }: CanvasProps) {
+export default function Canvas({ architecture, ownership, recent, theme, selectedId, onSelect, onEdit }: CanvasProps) {
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
@@ -187,59 +175,43 @@ export default function Canvas({ architecture, ownership, pending, theme, select
     return () => watch.disconnect()
   }, [])
 
-  const { nodes, edges, realIds } = useMemo(() => {
+  const { nodes, edges } = useMemo(() => {
     const counts = new Map<string, number>()
     for (const o of ownership?.owned ?? []) counts.set(o.owner, (counts.get(o.owner) ?? 0) + 1)
     for (const m of ownership?.multi ?? []) for (const id of m.owners) counts.set(id, (counts.get(id) ?? 0) + 1)
 
-    const { nodes: logical, links } = build(architecture, pending)
+    const { nodes: logical, links } = build(architecture)
     const at = positions(logical, links, architecture.layout, stage)
 
     const rfNodes: Node<NodeData>[] = logical.map((n) => ({
       id: n.id,
       type: 'component',
       draggable: false,
-      deletable: editing ? !n.data.ghost : undefined,
+      deletable: editing ? true : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
       style: { width: NODE_W, height: heightOf(n.data) },
       data: counts.has(n.id) ? { ...n.data, files: counts.get(n.id) } : n.data
     }))
 
-    const rfEdges: RFEdge[] = links.map((l) => {
-      const color = l.cyclical ? colors.danger : l.kind === 'real' ? colors.ink : colors.propose
-      const dashed = l.kind !== 'real'
-      return {
-        id: l.id,
-        source: l.from,
-        target: l.to,
-        deletable: editing ? l.kind === 'real' : undefined,
-        markerEnd: marker(color),
-        ...(l.cyclical && l.kind === 'proposed'
-          ? {
-              label: 'cycle',
-              labelBgPadding: [6, 3] as [number, number],
-              labelBgBorderRadius: 4,
-              labelBgStyle: { fill: colors.labelBg, stroke: colors.danger },
-              labelStyle: { fill: colors.danger, fontSize: 10, fontWeight: 600 }
-            }
-          : {}),
-        style: {
-          stroke: color,
-          strokeWidth: l.cyclical ? 2 : 1.4,
-          ...(dashed ? { strokeDasharray: l.kind === 'owns' ? '3 5' : '6 5' } : {})
-        }
-      }
-    })
+    const rfEdges: RFEdge[] = links.map((l) => ({
+      id: l.id,
+      type: 'drawn',
+      source: l.from,
+      target: l.to,
+      deletable: editing ? true : undefined,
+      markerEnd: marker(colors.ink),
+      style: { stroke: colors.ink, strokeWidth: 1.4 }
+    }))
 
-    const real = new Set(links.filter((l) => l.kind === 'real').map((l) => l.id))
-
-    return { nodes: rfNodes, edges: rfEdges, realIds: real }
-  }, [architecture, ownership, pending, colors, editing, stage])
+    return { nodes: rfNodes, edges: rfEdges }
+  }, [architecture, ownership, colors, editing, stage])
 
   const marked = useMemo(
-    () => nodes.map((n) => ({ ...n, selected: n.id === selectedId })),
-    [nodes, selectedId]
+    () => nodes.map((n) => ({ ...n, selected: n.id === selectedId, className: liveClass(recent, n.id) })),
+    [nodes, selectedId, recent]
   )
+
+  const drawn = useMemo(() => edges.map((e) => ({ ...e, className: liveClass(recent, e.id) })), [edges, recent])
 
   const selected = nodes.find((n) => n.id === selectedId)?.data ?? null
 
@@ -272,7 +244,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
 
       const what = gone.length === 1 ? `"${gone[0]}"` : `${gone.length} components`
       const its = gone.length === 1 ? 'it' : 'them'
-      if (!confirm(`Delete ${what} and every edge touching ${its}? Saving the edit writes this to architect.md.`)) return
+      if (!confirm(`Delete ${what} and every edge touching ${its} from this edit?`)) return
 
       onEdit((a) =>
         gone.reduce<OpResult>(
@@ -287,16 +259,15 @@ export default function Canvas({ architecture, ownership, pending, theme, select
   const disconnect = useCallback(
     (removed: RFEdge[]) => {
       if (!onEdit) return
-      const cut = removed.filter((e) => realIds.has(e.id))
-      if (cut.length === 0) return
+      if (removed.length === 0) return
       onEdit((a) =>
-        cut.reduce<OpResult>(
+        removed.reduce<OpResult>(
           (acc, e) => (acc.ok ? removeEdge(acc.architecture, e.source, e.target) : acc),
           { ok: true, architecture: a }
         )
       )
     },
-    [onEdit, realIds]
+    [onEdit]
   )
 
   useEffect(() => {
@@ -310,8 +281,9 @@ export default function Canvas({ architecture, ownership, pending, theme, select
     <div ref={stageRef} className={editing ? 'canvas-stage canvas-editing' : 'canvas-stage'}>
       <ReactFlow
         nodes={marked}
-        edges={edges}
+        edges={drawn}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         nodesDraggable={false}
         nodesConnectable={editing}
         connectionMode={editing ? ConnectionMode.Loose : undefined}
@@ -328,6 +300,7 @@ export default function Canvas({ architecture, ownership, pending, theme, select
         onPaneClick={close}
       >
         <Reveal count={nodes.length} stage={stage} />
+        <Follow ids={selectedId ? [selectedId] : []} />
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
       </ReactFlow>

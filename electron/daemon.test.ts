@@ -275,7 +275,7 @@ describe("drafting a first contract", () => {
     return root;
   }
 
-  it("queues the draft as a pending proposal and writes nothing before it is approved", async () => {
+  it("writes the draft straight to architect.md and the file parses back to what was drafted", async () => {
     const root = repo();
     daemon = createDaemon({
       socketPath,
@@ -286,52 +286,16 @@ describe("drafting a first contract", () => {
     const result = await daemon.draftContract(root);
 
     expect(result.ok).toBe(true);
-    expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
-    expect(daemon.projects()[0]?.contract).toEqual({ status: "missing" });
-    expect(daemon.pending().map((p) => p.proposal.kind)).toEqual(["contract"]);
-  });
-
-  it("writes the draft on approval and the file parses back to what was shown", async () => {
-    const root = repo();
-    daemon = createDaemon({
-      socketPath,
-      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
-    });
-    await daemon.open(root);
-    await daemon.draftContract(root);
-
-    const proposal = daemon.pending()[0];
-    expect(proposal?.proposal.kind).toBe("contract");
-    if (proposal?.proposal.kind !== "contract") return;
-    await daemon.decide(proposal.id, true);
-
+    if (!result.ok) return;
     const written = fs.readFileSync(path.join(root, "architect.md"), "utf8");
-    expect(written).toBe(proposal.proposal.markdown);
+    expect(written).toBe(result.value);
     const architecture = parse(written);
     expect(architecture.components.map((c) => c.id)).toEqual(["api", "ui"]);
     expect(architecture.edges).toEqual([{ from: "ui", to: "api" }]);
     expect(daemon.projects()[0]?.contract).toEqual({ status: "ready" });
-    expect(daemon.pending()).toEqual([]);
   });
 
-  it("writes nothing when the draft is rejected and leaves the project without a contract", async () => {
-    const root = repo();
-    daemon = createDaemon({
-      socketPath,
-      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
-    });
-    await daemon.open(root);
-    await daemon.draftContract(root);
-
-    const proposal = daemon.pending()[0];
-    await daemon.decide(proposal?.id ?? "", false, "not how I see it");
-
-    expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
-    expect(daemon.projects()[0]?.contract).toEqual({ status: "missing" });
-    expect(daemon.pending()).toEqual([]);
-  });
-
-  it("reports the agent as not installed and queues nothing", async () => {
+  it("reports the agent as not installed and writes nothing", async () => {
     const root = repo();
     daemon = createDaemon({
       socketPath,
@@ -343,11 +307,10 @@ describe("drafting a first contract", () => {
       ok: false,
       error: { kind: "not-installed" },
     });
-    expect(daemon.pending()).toEqual([]);
     expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
   });
 
-  it("reports a reply that is not a contract and queues nothing", async () => {
+  it("reports a reply that is not a contract and writes nothing", async () => {
     const root = repo();
     daemon = createDaemon({
       socketPath,
@@ -364,7 +327,6 @@ describe("drafting a first contract", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe("unusable");
-    expect(daemon.pending()).toEqual([]);
     expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
   });
 
@@ -381,7 +343,7 @@ describe("drafting a first contract", () => {
       ok: false,
       error: { kind: "nothing-to-draft" },
     });
-    expect(daemon.pending()).toEqual([]);
+    expect(fs.existsSync(path.join(flat, "architect.md"))).toBe(false);
   });
 
   it("refuses to draft for a project that already has a contract", async () => {
@@ -397,67 +359,25 @@ describe("drafting a first contract", () => {
     );
   });
 
-  it("replaces an earlier draft rather than stacking a second one in the inbox", async () => {
-    const root = repo();
-    let call = 0;
-    daemon = createDaemon({
-      socketPath,
-      claude: async () => ({
-        code: 0,
-        stdout: drafted(root).replace("A tiny web app.", `Take ${++call}.`),
-        stderr: "",
-      }),
-    });
-    await daemon.open(root);
-
-    await daemon.draftContract(root);
-    await daemon.draftContract(root);
-
-    expect(daemon.pending().length).toBe(1);
-    const only = daemon.pending()[0];
-    expect(
-      only?.proposal.kind === "contract" && only.proposal.markdown,
-    ).toContain("Take 2.");
-  });
-
-  it("survives a restart so a slow draft is not lost when the app reopens", async () => {
-    const root = repo();
-    const first = createDaemon({
-      socketPath,
-      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
-    });
-    await first.listen();
-    await first.open(root);
-    await first.draftContract(root);
-    const markdown = first.pending()[0]?.proposal;
-    await first.close();
-
-    daemon = createDaemon({ socketPath });
-    await daemon.listen();
-
-    expect(daemon.pending().map((p) => p.proposal)).toEqual([markdown]);
-    expect(daemon.pending()[0]?.projectRoot).toBe(root);
-  });
-
-  it("rejects an approved draft when a contract appeared while it was waiting", async () => {
+  it("never overwrites a contract that appeared while the draft was running", async () => {
     const root = repo();
     daemon = createDaemon({
       socketPath,
-      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
+      claude: async () => {
+        writeArchitect(root, fixture(component("a")));
+        return { code: 0, stdout: drafted(root), stderr: "" };
+      },
     });
     await daemon.open(root);
-    await daemon.draftContract(root);
 
-    writeArchitect(root, fixture(component("a")));
-    const proposal = daemon.pending()[0];
-    await daemon.decide(proposal?.id ?? "", true);
-
+    await expect(daemon.draftContract(root)).rejects.toThrow(
+      /already has an architect\.md/,
+    );
     expect(
       parse(
         fs.readFileSync(path.join(root, "architect.md"), "utf8"),
       ).components.map((c) => c.id),
     ).toEqual(["a"]);
-    expect(daemon.pending()).toEqual([]);
   });
 });
 
@@ -606,136 +526,153 @@ describe("project resolution", () => {
   });
 });
 
-describe("correctness requirements", () => {
+describe("applying proposals", () => {
   beforeEach(() => {
     writeArchitect(tmpRoot, fixture(component("api") + component("db")));
   });
 
-  it("answers check_change immediately while propose_change is blocked", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
+  const contract = () =>
+    fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8");
+
+  async function propose(
+    proposal: Extract<RequestInput, { op: "propose_change" }>["proposal"],
+  ): Promise<Decision | null> {
     const c = await client(socketPath);
-
-    const proposePromise = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-
-    const checkRes = await c.request({
-      op: "check_change",
-      cwd: tmpRoot,
-      from: "api",
-      to: "db",
-    });
-    expect(checkRes.ok).toBe(true);
-    if (checkRes.ok)
-      expect(checkRes.result).toEqual({ status: "undrawn-edge" });
-
-    const pending = daemon.pending();
-    expect(pending).toHaveLength(1);
-    await daemon.decide(pending[0]!.id, true);
-    await proposePromise;
-    c.close();
-  });
-
-  it("resolves pending after timeout, then lets await_proposal be called twice without duplicating the entry", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 30 });
-    await daemon.listen();
-    const c = await client(socketPath);
-
     const res = await c.request({
       op: "propose_change",
       cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
+      proposal,
+      rationale: "because",
     });
-    expect(res.ok).toBe(true);
-    const decision = res.ok ? (res.result as Decision) : null;
-    expect(decision).toEqual({ status: "pending", id: expect.any(String) });
-    const id = (decision as { status: "pending"; id: string }).id;
+    c.close();
+    return res.ok ? (res.result as Decision) : null;
+  }
 
-    expect(daemon.pending()).toHaveLength(1);
+  it("writes an edge at once and check_change allows it straight after", async () => {
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
 
-    const await1 = c.request({
-      op: "await_proposal",
-      cwd: tmpRoot,
-      proposalId: id,
+    await expect(propose({ kind: "edge", from: "api", to: "db" })).resolves.toEqual({
+      status: "approved",
     });
-    const await2 = c.request({
-      op: "await_proposal",
-      cwd: tmpRoot,
-      proposalId: id,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(daemon.pending()).toHaveLength(1);
-
-    await daemon.decide(id, true);
-
-    const [r1, r2] = await Promise.all([await1, await2]);
-    expect(r1.ok && r1.result).toEqual({ status: "approved" });
-    expect(r2.ok && r2.result).toEqual({ status: "approved" });
-    expect(daemon.pending()).toHaveLength(0);
+    expect(contract()).toMatch(/api -> db/);
+    const c = await client(socketPath);
+    const res = await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db" });
+    expect(res.ok && res.result).toEqual({ status: "allowed" });
     c.close();
   });
 
-  it("ignores the watcher event triggered by its own approval write", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    let changeCount = 0;
-    daemon.onChange(() => {
-      changeCount += 1;
+  it("pushes the change once with its root and ignores the watcher event of its own write", async () => {
+    daemon = createDaemon({ socketPath });
+    const changes: string[] = [];
+    daemon.onChange((root, architecture) => {
+      changes.push(`${root}:${architecture.edges.length}`);
     });
     await daemon.listen();
     await daemon.open(tmpRoot);
-    const c = await client(socketPath);
 
-    const proposePromise = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const pending = daemon.pending();
-    await daemon.decide(pending[0]!.id, true);
-    await proposePromise;
-
+    await propose({ kind: "edge", from: "api", to: "db" });
     await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(changeCount).toBe(1);
 
-    const content = fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8");
-    expect(content).toMatch(/api -> db/);
-    c.close();
+    expect(changes).toEqual([`${tmpRoot}:1`]);
   });
 
-  it("collapses two proposals for the same edge into one pending entry", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
+  it("pushes a hand edit for every open project, not only the last one opened", async () => {
+    const other = fs.mkdtempSync(path.join(tmpRoot, "other-"));
+    writeArchitect(other, fixture(component("x")));
+    daemon = createDaemon({ socketPath });
+    const roots: string[] = [];
+    daemon.onChange((root) => {
+      roots.push(root);
+    });
+    await daemon.open(tmpRoot);
+    await daemon.open(other);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    writeArchitect(tmpRoot, fixture(component("api")));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(roots).toEqual([tmpRoot]);
+  });
+
+  it("records each applied change in the history of its project, newest first", async () => {
+    daemon = createDaemon({ socketPath });
+    const heard: string[][] = [];
+    daemon.onHistory((entry) => {
+      heard.push(entry.added);
+    });
     await daemon.listen();
-    const c = await client(socketPath);
 
-    const p1 = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "first",
-    });
-    const p2 = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "second",
-    });
+    await propose({ kind: "edge", from: "api", to: "db" });
+    await propose({ kind: "component", id: "worker", purpose: "does work", owns: ["worker/**"] });
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(daemon.pending()).toHaveLength(1);
+    expect(daemon.history(tmpRoot).map((e) => [e.source, e.added])).toEqual([
+      ["contract", ["worker"]],
+      ["contract", ["api->db"]],
+    ]);
+    expect(heard).toEqual([["api->db"], ["worker"]]);
 
-    await daemon.decide(daemon.pending()[0]!.id, true);
-    const [r1, r2] = await Promise.all([p1, p2]);
-    expect(r1.ok && r1.result).toEqual({ status: "approved" });
-    expect(r2.ok && r2.result).toEqual({ status: "approved" });
-    c.close();
+    await daemon.close();
+    daemon = createDaemon({ socketPath });
+    expect(daemon.history(tmpRoot).map((e) => e.added)).toEqual([["worker"], ["api->db"]]);
+  });
+
+  it("answers approved without rewriting the file when the change is already there", async () => {
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    const before = contract();
+
+    await expect(
+      propose({ kind: "component", id: "api", purpose: "other", owns: [] }),
+    ).resolves.toEqual({ status: "approved" });
+
+    expect(contract()).toBe(before);
+    expect(daemon.history(tmpRoot)).toEqual([]);
+  });
+
+  it.each([
+    ["a cycle", { kind: "edge", from: "db", to: "api" }, /cycle/],
+    ["an unknown edge endpoint", { kind: "edge", from: "api", to: "ghost" }, /ghost/],
+    ["a file for an unknown component", { kind: "file", path: "x.ts", component: "ghost" }, /ghost/],
+    ["removing an unknown component", { kind: "remove_component", id: "ghost" }, /ghost/],
+  ] as const)("rejects %s and leaves architect.md untouched", async (_name, proposal, reason) => {
+    writeArchitect(
+      tmpRoot,
+      fixture(component("api") + component("db")).replace(`${h2} Forbidden`, `- api -> db\n\n${h2} Forbidden`),
+    );
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    const before = contract();
+
+    const decision = await propose(proposal);
+
+    expect(decision?.status).toBe("rejected");
+    if (decision?.status === "rejected") expect(decision.reason).toMatch(reason);
+    expect(contract()).toBe(before);
+  });
+
+  it("rejects an edge the contract forbids", async () => {
+    writeArchitect(
+      tmpRoot,
+      fixture(component("api") + component("db")).replace(`${h2} Packages`, `- api -> db : no direct access\n\n${h2} Packages`),
+    );
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+
+    const decision = await propose({ kind: "edge", from: "api", to: "db" });
+
+    expect(decision).toEqual({ status: "rejected", reason: "api -> db is forbidden: no direct access" });
+  });
+
+  it("writes a contract proposal only when the project has none", async () => {
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+
+    const decision = await propose({ kind: "contract", markdown: fixture(component("solo")) });
+
+    expect(decision).toEqual({ status: "rejected", reason: `${tmpRoot} already has an architect.md` });
+    expect(parse(contract()).components.map((c) => c.id)).toEqual(["api", "db"]);
   });
 
   it("keeps the previous good architecture when architect.md becomes malformed", async () => {
@@ -771,169 +708,6 @@ describe("correctness requirements", () => {
     expect(changeCount).toBe(0);
     c.close();
   });
-
-  it("does not strand the queue when a client disconnects mid proposal", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    const c = await client(socketPath);
-
-    void c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const [entry] = daemon.pending();
-    expect(entry).toBeDefined();
-    c.close();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    await expect(daemon.decide(entry!.id, true)).resolves.toBeUndefined();
-
-    const c2 = await client(socketPath);
-    const res = await c2.request({
-      op: "check_change",
-      cwd: tmpRoot,
-      from: "api",
-      to: "db",
-    });
-    expect(res.ok).toBe(true);
-    expect(daemon.pending()).toHaveLength(0);
-    c2.close();
-  });
-
-  it("rejects cleanly when the proposal targets a component deleted while it was pending", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    await daemon.open(tmpRoot);
-    const c = await client(socketPath);
-
-    const proposePromise = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "file", path: "db/x.ts", component: "db" },
-      rationale: "new file",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const [entry] = daemon.pending();
-    expect(entry).toBeDefined();
-
-    writeArchitect(tmpRoot, fixture(component("api")));
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    await daemon.decide(entry!.id, true);
-    const res = await proposePromise;
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      const decision = res.result as Decision;
-      expect(decision.status).toBe("rejected");
-      if (decision.status === "rejected") expect(decision.reason).toMatch(/db/);
-    }
-    expect(daemon.pending()).toHaveLength(0);
-    c.close();
-  });
-
-  it("applies an approved file proposal to the component reassigned at decide time", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    await daemon.open(tmpRoot);
-    const c = await client(socketPath);
-
-    const proposePromise = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "file", path: "shared.ts", component: "api" },
-      rationale: "reassign me",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const [entry] = daemon.pending();
-
-    await daemon.decide(entry!.id, true, undefined, "db");
-    const res = await proposePromise;
-    expect(res.ok).toBe(true);
-    if (res.ok) expect((res.result as Decision).status).toBe("approved");
-
-    const architecture = (await daemon.open(tmpRoot)).architecture!;
-    const api = architecture.components.find((comp) => comp.id === "api")!;
-    const db = architecture.components.find((comp) => comp.id === "db")!;
-    expect(api.owns).not.toContain("shared.ts");
-    expect(db.owns).toContain("shared.ts");
-    c.close();
-  });
-
-  it("rejects cleanly when reassigned to a component that does not exist", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    await daemon.open(tmpRoot);
-    const c = await client(socketPath);
-
-    const proposePromise = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "file", path: "shared.ts", component: "api" },
-      rationale: "reassign me",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const [entry] = daemon.pending();
-
-    await daemon.decide(entry!.id, true, undefined, "ghost");
-    const res = await proposePromise;
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      const decision = res.result as Decision;
-      expect(decision.status).toBe("rejected");
-      if (decision.status === "rejected")
-        expect(decision.reason).toMatch(/ghost/);
-    }
-    expect(daemon.pending()).toHaveLength(0);
-    c.close();
-  });
-
-  it("ignores component on a rejection and on a non file proposal", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    const c = await client(socketPath);
-
-    const rejectPromise = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    let [entry] = daemon.pending();
-    await daemon.decide(entry!.id, false, "nope", "db");
-    const rejectRes = await rejectPromise;
-    expect(rejectRes.ok).toBe(true);
-    if (rejectRes.ok)
-      expect(rejectRes.result).toEqual({ status: "rejected", reason: "nope" });
-
-    const componentPromise = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: {
-        kind: "component",
-        id: "worker",
-        purpose: "does work",
-        owns: ["worker/**"],
-      },
-      rationale: "new component",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    [entry] = daemon.pending();
-    await daemon.decide(entry!.id, true, undefined, "db");
-    const componentRes = await componentPromise;
-    expect(componentRes.ok).toBe(true);
-    if (componentRes.ok)
-      expect((componentRes.result as Decision).status).toBe("approved");
-
-    const architecture = (await daemon.open(tmpRoot)).architecture!;
-    expect(architecture.components.some((comp) => comp.id === "worker")).toBe(
-      true,
-    );
-    c.close();
-  });
 });
 
 describe("project persistence", () => {
@@ -954,291 +728,6 @@ describe("project persistence", () => {
       good,
       gone,
     ]);
-  });
-});
-
-describe("pending persistence", () => {
-  let pendingPath: string;
-
-  beforeEach(() => {
-    pendingPath = path.join(path.dirname(socketPath), "pending.json");
-    writeArchitect(tmpRoot, fixture(component("api") + component("db")));
-  });
-
-  function writeStore(entries: unknown) {
-    fs.mkdirSync(path.dirname(pendingPath), { recursive: true });
-    fs.writeFileSync(
-      pendingPath,
-      typeof entries === "string" ? entries : JSON.stringify(entries),
-    );
-  }
-
-  it("saves a pending proposal, reloads it, and approves it for a waiter that arrived after the restart", async () => {
-    const first = createDaemon({ socketPath, proposalTimeoutMs: 30 });
-    await first.listen();
-    const c1 = await client(socketPath);
-
-    const res = await c1.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-    const id = res.ok
-      ? (res.result as { status: "pending"; id: string }).id
-      : "";
-    expect(JSON.parse(fs.readFileSync(pendingPath, "utf8"))).toEqual([
-      {
-        id,
-        projectRoot: tmpRoot,
-        proposal: { kind: "edge", from: "api", to: "db" },
-        rationale: "wiring",
-        createdAt: expect.any(Number),
-      },
-    ]);
-    c1.close();
-    await first.close();
-
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    expect(daemon.pending().map((p) => p.id)).toEqual([id]);
-
-    const c2 = await client(socketPath);
-    const awaited = c2.request({
-      op: "await_proposal",
-      cwd: tmpRoot,
-      proposalId: id,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    await daemon.decide(id, true);
-
-    const decided = await awaited;
-    expect(decided.ok && decided.result).toEqual({ status: "approved" });
-    expect(daemon.pending()).toHaveLength(0);
-    expect(JSON.parse(fs.readFileSync(pendingPath, "utf8"))).toEqual([]);
-    expect(fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8")).toMatch(
-      /api -> db/,
-    );
-    c2.close();
-  });
-
-  it("keeps both proposals on disk while two are pending at once", async () => {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    const c = await client(socketPath);
-
-    void c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-    void c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "file", path: "db/x.ts", component: "db" },
-      rationale: "new file",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    const stored = JSON.parse(fs.readFileSync(pendingPath, "utf8")) as {
-      proposal: { kind: string };
-    }[];
-    expect(stored.map((p) => p.proposal.kind).sort()).toEqual(["edge", "file"]);
-    c.close();
-  });
-
-  it("reloads a proposal whose project is gone and rejects it instead of throwing", async () => {
-    const gone = path.join(tmpRoot, "gone");
-    writeStore([
-      {
-        id: "orphan",
-        projectRoot: gone,
-        proposal: { kind: "edge", from: "api", to: "db" },
-        rationale: "wiring",
-        createdAt: 1,
-      },
-    ]);
-
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    expect(daemon.pending()).toHaveLength(1);
-
-    const c = await client(socketPath);
-    const awaited = c.request({
-      op: "await_proposal",
-      cwd: tmpRoot,
-      proposalId: "orphan",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    await expect(daemon.decide("orphan", true)).resolves.toBeUndefined();
-
-    const res = await awaited;
-    expect(res.ok && res.result).toEqual({
-      status: "rejected",
-      reason: `could not open ${gone}`,
-    });
-    expect(daemon.pending()).toHaveLength(0);
-    c.close();
-  });
-
-  it("decides a reloaded proposal that nobody is waiting on", async () => {
-    writeStore([
-      {
-        id: "orphan",
-        projectRoot: tmpRoot,
-        proposal: { kind: "edge", from: "api", to: "db" },
-        rationale: "wiring",
-        createdAt: 1,
-      },
-    ]);
-
-    daemon = createDaemon({ socketPath });
-    await daemon.listen();
-
-    await expect(daemon.decide("orphan", true)).resolves.toBeUndefined();
-    expect(daemon.pending()).toHaveLength(0);
-    expect(fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8")).toMatch(
-      /api -> db/,
-    );
-  });
-
-  it("starts with an empty inbox when the store is unreadable", async () => {
-    const corrupt = [
-      "",
-      "not json",
-      '{"id":"x"}',
-      JSON.stringify([1, null, "x"]),
-      JSON.stringify([
-        {
-          id: "a",
-          projectRoot: tmpRoot,
-          proposal: { kind: "ghost" },
-          rationale: "",
-          createdAt: 0,
-        },
-      ]),
-      JSON.stringify([
-        {
-          id: "a",
-          projectRoot: tmpRoot,
-          proposal: { kind: "edge", from: "api" },
-          rationale: "",
-          createdAt: 0,
-        },
-      ]),
-    ];
-
-    for (const contents of corrupt) {
-      writeStore(contents);
-      const d = createDaemon({ socketPath });
-      await d.listen();
-      expect(d.pending()).toEqual([]);
-      await d.close();
-    }
-  });
-
-  it("keeps the valid entries of a partly corrupt store and drops unknown fields", async () => {
-    writeStore([
-      { id: "bad", proposal: { kind: "edge" } },
-      {
-        id: "good",
-        projectRoot: tmpRoot,
-        proposal: { kind: "edge", from: "api", to: "db" },
-        rationale: "wiring",
-        createdAt: 1,
-        extra: "ignored",
-      },
-    ]);
-
-    daemon = createDaemon({ socketPath });
-    await daemon.listen();
-
-    expect(daemon.pending()).toEqual([
-      {
-        id: "good",
-        projectRoot: tmpRoot,
-        proposal: { kind: "edge", from: "api", to: "db" },
-        rationale: "wiring",
-        createdAt: 1,
-      },
-    ]);
-  });
-
-  it("reattaches a reproposing agent to the reloaded proposal instead of duplicating it", async () => {
-    writeStore([
-      {
-        id: "orphan",
-        projectRoot: tmpRoot,
-        proposal: { kind: "edge", from: "api", to: "db" },
-        rationale: "wiring",
-        createdAt: 1,
-      },
-    ]);
-
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-
-    const c = await client(socketPath);
-    const awaited = c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    expect(daemon.pending().map((p) => p.id)).toEqual(["orphan"]);
-
-    await daemon.decide("orphan", true);
-
-    const res = await awaited;
-    expect(res.ok && res.result).toEqual({ status: "approved" });
-    c.close();
-  });
-
-  it("rejects a reloaded proposal that nobody is waiting on", async () => {
-    writeStore([
-      {
-        id: "orphan",
-        projectRoot: tmpRoot,
-        proposal: { kind: "edge", from: "api", to: "db" },
-        rationale: "wiring",
-        createdAt: 1,
-      },
-    ]);
-
-    daemon = createDaemon({ socketPath });
-    await daemon.listen();
-
-    await expect(
-      daemon.decide("orphan", false, "not now"),
-    ).resolves.toBeUndefined();
-    expect(daemon.pending()).toEqual([]);
-    expect(
-      fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8"),
-    ).not.toMatch(/api -> db/);
-  });
-
-  it("still queues a proposal when the store cannot be written", async () => {
-    fs.mkdirSync(pendingPath, { recursive: true });
-
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
-    await daemon.listen();
-    const c = await client(socketPath);
-
-    void c.request({
-      op: "propose_change",
-      cwd: tmpRoot,
-      proposal: { kind: "edge", from: "api", to: "db" },
-      rationale: "wiring",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    expect(daemon.pending()).toHaveLength(1);
-    c.close();
   });
 });
 
@@ -1967,7 +1456,7 @@ ${h2} Packages
   }
 
   async function daemonOn(root: string) {
-    daemon = createDaemon({ socketPath, proposalTimeoutMs: 60_000 });
+    daemon = createDaemon({ socketPath });
     await daemon.listen();
     await daemon.open(root);
     await settle();
@@ -2003,7 +1492,7 @@ ${h2} Packages
     expect(parseErrorOf(daemon.projects()[0])).toBeDefined();
 
     const changes: Architecture[] = [];
-    daemon.onChange((a) => changes.push(a));
+    daemon.onChange((_root, a) => changes.push(a));
 
     writeArchitect(
       tmpRoot,
@@ -2169,24 +1658,17 @@ ${h2} Packages
     ).toBeUndefined();
   });
 
-  it("refuses to approve a proposal against a broken file", async () => {
-    writeArchitect(tmpRoot, good);
+  it("refuses to apply a proposal against a broken file", async () => {
+    writeArchitect(tmpRoot, broken);
     await daemonOn(tmpRoot);
     const c = await client(socketPath);
 
-    const proposed = c.request({
+    const res = await c.request({
       op: "propose_change",
       cwd: tmpRoot,
       proposal: { kind: "edge", from: "db", to: "db" },
       rationale: "wiring",
     });
-    await settle();
-
-    writeArchitect(tmpRoot, broken);
-    await settle();
-
-    await daemon.decide(daemon.pending()[0]!.id, true);
-    const res = await proposed;
 
     expect(res.ok).toBe(true);
     if (res.ok) {
@@ -2225,7 +1707,6 @@ describe("source watcher", () => {
     writeArchitect(root, fixture(component("api")));
     daemon = createDaemon({
       socketPath,
-      proposalTimeoutMs: 60_000,
       rescanDebounceMs,
     });
     await daemon.listen();

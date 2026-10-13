@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import KeyHintOverlay from '../shell/KeyHintOverlay'
 import PaneTree from '../shell/PaneTree'
 import { useCommands, type Command } from '../shell/commands'
@@ -58,6 +58,16 @@ export default function CanvasArea({ theme, panes }: { theme: string; panes: Pan
 
   useCommands(registry)
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey || !e.shiftKey || e.altKey || e.code !== 'KeyP') return
+      e.preventDefault()
+      setPalette(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const { steps } = useLeaderKeys(scope)
 
   const renderLeaf = useCallback(
@@ -95,7 +105,7 @@ export default function CanvasArea({ theme, panes }: { theme: string; panes: Pan
               ))}
             </div>
           </div>
-          <View theme={theme} />
+          <View theme={theme} show={(next) => showView(path, next)} />
         </>
       )
     },

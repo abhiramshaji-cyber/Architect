@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { GitResult, GitStatus } from '../../shared/types'
 import { isDirty } from '../model/buffer'
-import { pendingHere, type ProjectState } from '../model/store'
+import type { ProjectState } from '../model/store'
 import { gitText } from './git-segment'
 import Icon from './Icon'
 import { registerSegment, segmentList, subscribeSegments } from './segments'
@@ -63,17 +63,6 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
   useEffect(() => registerSegment({ id: 'core.git', order: 5, text: gitText(git) }), [git])
 
   useEffect(() => registerSegment({ id: 'core.view', order: 10, text: viewLabel ?? '' }), [viewLabel])
-
-  const waiting = pendingHere(project).length
-  useEffect(
-    () =>
-      registerSegment({
-        id: 'core.pending',
-        order: 15,
-        text: waiting === 0 ? '' : `${waiting} pending approval${waiting === 1 ? '' : 's'}`,
-      }),
-    [waiting]
-  )
 
   const unsaved = isDirty(project.file) ? project.file?.path ?? '' : ''
   useEffect(

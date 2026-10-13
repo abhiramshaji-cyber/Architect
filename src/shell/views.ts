@@ -7,7 +7,7 @@ import RepoPicker from '../view/RepoPicker'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
 export type ViewId = 'contract' | 'code' | 'diff' | 'files' | 'terminal' | 'shell' | 'repos'
-export type ViewProps = { theme: string }
+export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
   contract: { label: 'Contract', component: ContractView },

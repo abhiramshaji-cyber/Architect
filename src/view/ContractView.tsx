@@ -4,16 +4,17 @@ import Canvas from './Canvas'
 import EditBar from './EditBar'
 import EditList from './EditList'
 import Icon from './Icon'
-import PendingInbox from './PendingInbox'
+import HistoryPanel from './live/HistoryPanel'
 import { addComponent, type OpResult } from '../model/edit-ops'
+import type { Target } from '../model/live/history'
 import { draftMessage } from '../model/picker'
 import {
   applyEdit,
   createContract,
   draftContract,
   loadErrorOf,
+  openFile,
   parseErrorOf,
-  pendingHere,
   useProject,
 } from '../model/store'
 import type { ViewProps } from '../shell/views'
@@ -44,9 +45,9 @@ function draftNote(failure: DraftFailure): string {
   return `Draft failed: ${draftMessage(failure)}`
 }
 
-export default function ContractView({ theme }: ViewProps) {
+export default function ContractView({ theme, show }: ViewProps) {
   const project = useProject()
-  const { currentRoot, architecture, contract, draft, owners, busy, drafting, draftError } = project
+  const { currentRoot, architecture, contract, draft, owners, recent, busy, drafting, draftError } = project
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [rail, setRail] = useState(() => ({ root: currentRoot, open: railOpen(currentRoot) }))
 
@@ -85,6 +86,18 @@ export default function ContractView({ theme }: ViewProps) {
     })
   }, [draft, edit])
 
+  const pick = useCallback(
+    (target: Target) => {
+      if (target.kind === 'node') {
+        setSelectedId(target.id)
+        return
+      }
+      openFile(target.path)
+      show('files')
+    },
+    [show]
+  )
+
   const shown = draft ? draft.architecture : architecture
 
   return (
@@ -106,7 +119,7 @@ export default function ContractView({ theme }: ViewProps) {
               key={draft ? `${currentRoot}:${draft.id}:${draft.status}` : currentRoot}
               architecture={shown}
               ownership={draft ? null : owners}
-              pending={draft ? [] : pendingHere(project)}
+              recent={draft ? {} : recent}
               theme={theme}
               selectedId={selectedId}
               onSelect={setSelectedId}
@@ -121,15 +134,15 @@ export default function ContractView({ theme }: ViewProps) {
           className="icon-button rail-handle"
           onClick={flipRail}
           aria-expanded={rail.open}
-          aria-label={rail.open ? 'Hide edits and approvals' : 'Show edits and approvals'}
-          title={rail.open ? 'Hide edits and approvals' : 'Show edits and approvals'}
+          aria-label={rail.open ? 'Hide history' : 'Show history'}
+          title={rail.open ? 'Hide history' : 'Show history'}
         >
           <Icon name={rail.open ? 'chevron-right' : 'chevron-left'} />
         </button>
         {rail.open && (
           <div className="rail-body">
+            <HistoryPanel onPick={pick} />
             <EditList />
-            <PendingInbox />
           </div>
         )}
       </aside>
@@ -142,8 +155,6 @@ export default function ContractView({ theme }: ViewProps) {
     if (parseErrorOf(project)) return <div className="empty-state">architect.md has errors</div>
     if (!currentRoot) return null
     if (contract?.status !== 'missing') return <div className="empty-state">Opening…</div>
-
-    const waiting = pendingHere(project).some((p) => p.proposal.kind === 'contract')
 
     return (
       <div className="empty-state blank-contract">
@@ -159,7 +170,6 @@ export default function ContractView({ theme }: ViewProps) {
         </div>
 
         {drafting && <p className="blank-note">Drafting…</p>}
-        {!drafting && waiting && <p className="blank-note">Draft waiting in inbox</p>}
         {!drafting && draftError && <p className="blank-note">{draftNote(draftError)}</p>}
       </div>
     )

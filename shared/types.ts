@@ -69,15 +69,18 @@ export const proposalSchema = z.discriminatedUnion('kind', [
 
 export type Proposal = z.infer<typeof proposalSchema>
 
-export const pendingSchema = z.object({
+export const historyEntrySchema = z.object({
   id: z.string(),
-  projectRoot: z.string(),
-  proposal: proposalSchema,
-  rationale: z.string(),
-  createdAt: z.number(),
+  root: z.string(),
+  at: z.number(),
+  source: z.enum(['contract', 'code']),
+  added: z.array(z.string()),
+  changed: z.array(z.string()),
+  removed: z.array(z.string()),
+  file: z.string().optional(),
 })
 
-export type Pending = z.infer<typeof pendingSchema>
+export type HistoryEntry = z.infer<typeof historyEntrySchema>
 
 export type EditStatus = 'draft' | 'handed'
 
@@ -96,7 +99,6 @@ export type Verdict =
 export type Decision =
   | { status: 'approved' }
   | { status: 'rejected'; reason: string }
-  | { status: 'pending'; id: string }
 
 export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('get_architecture'), cwd: z.string() }),
@@ -108,7 +110,6 @@ export const requestSchema = z.discriminatedUnion('op', [
     proposal: proposalSchema,
     rationale: z.string(),
   }),
-  z.object({ id: z.string(), op: z.literal('await_proposal'), cwd: z.string(), proposalId: z.string() }),
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
   z.object({
@@ -139,6 +140,10 @@ export type ContractState =
   | { status: 'invalid'; error: string }
 
 export type SessionTouch = { root: string; file: string }
+
+export type SearchHit = { file: string; line: number; text: string }
+
+export type SearchResult = { hits: SearchHit[]; capped: boolean }
 
 export type ProjectSummary = { root: string; title: string; contract: ContractState }
 
@@ -379,8 +384,6 @@ export type ArchitectApi = {
   claimRoot(root: string): Promise<boolean>
   releaseRoot(): Promise<void>
   focusRoot(root: string): Promise<boolean>
-  pending(): Promise<Pending[]>
-  decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void>
   createContract(root: string): Promise<Architecture>
   draftContract(root: string): Promise<DraftResult<string>>
   edits(root: string): Promise<EditSummary[]>
@@ -396,8 +399,10 @@ export type ArchitectApi = {
   openSource(root: string, file: string): Promise<SourceFile>
   writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>
   readTree(root: string, dir: string): Promise<TreeListing>
-  onChange(fn: (a: Architecture) => void): void
-  onPending(fn: (p: Pending[]) => void): void
+  search(query: string): Promise<SearchResult>
+  history(root: string): Promise<HistoryEntry[]>
+  onChange(fn: (root: string, architecture: Architecture) => void): void
+  onHistory(fn: (entry: HistoryEntry) => void): () => void
   onProjects(fn: (p: ProjectSummary[]) => void): void
   onCodeMap(fn: (root: string, map: CodeMap) => void): void
   onTouch(fn: (touch: SessionTouch) => void): void
@@ -438,5 +443,3 @@ export type ArchitectApi = {
 export type Response =
   | { id: string; ok: true; result: unknown }
   | { id: string; ok: false; error: string }
-
-export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000

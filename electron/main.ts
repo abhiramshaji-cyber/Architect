@@ -11,11 +11,11 @@ import {
   type DraftResult,
   type GithubCompare,
   type GithubResult,
+  type HistoryEntry,
   type IpcResult,
   type OpenChoice,
   type OpenResult,
   type OpenedBranch,
-  type Pending,
   type ProjectSummary,
   type PtyEvent,
   type PtySpec,
@@ -29,6 +29,7 @@ import * as git from './git/git'
 import * as open from './git/open'
 import * as github from './github/github'
 import { createPtyHost } from './pty/pty'
+import { search } from './search/search'
 import { TAB_DIGITS, TAB_GROUP, claim, owner, tabIndex } from './tabs'
 
 const TRAY_ICON = nativeImage.createFromPath(
@@ -140,15 +141,10 @@ function onSession(root: string, file: string): void {
   claim(claims, (id) => tabs.some((tab) => tab.id === id), window.id, root)
 }
 
-function updateTray(pending: Pending[]) {
-  tray?.setTitle(pending.length > 0 ? String(pending.length) : '')
-  tray?.setToolTip(`Architect (${pending.length} pending)`)
-}
-
 function createTray() {
   tray = new Tray(TRAY_ICON)
   tray.setContextMenu(Menu.buildFromTemplate([{ role: 'quit' }]))
-  updateTray(daemon.pending())
+  tray.setToolTip('Architect')
 }
 
 function handleIn<A extends unknown[], R>(
@@ -202,10 +198,7 @@ function wireIpc() {
   handle('architect:draft-contract', (root: string) => daemon.draftContract(root))
   handle('architect:open', (root: string) => daemon.open(root))
   handle('architect:close-project', (root: string) => daemon.closeProject(root))
-  handle('architect:pending', () => daemon.pending())
-  handle('architect:decide', (id: string, approved: boolean, reason?: string, component?: string) =>
-    daemon.decide(id, approved, reason, component),
-  )
+  handle('architect:history', (root: string) => daemon.history(root))
   handle('architect:edits', (root: string) => daemon.edits(root))
   handle('architect:edit', (root: string, id: string) => daemon.edit(root, id))
   handle('architect:create-edit', (root: string, architecture: Architecture) =>
@@ -231,6 +224,11 @@ function wireIpc() {
   handleIn('architect:claim-root', (window, root: string) =>
     claim(claims, (id) => tabs.some((tab) => tab.id === id), window.id, root),
   )
+  handleIn('architect:search', (window, query: string) => {
+    const root = claims.get(window.id)
+    if (!root) throw new Error('no project open in this tab')
+    return search(root, query)
+  })
   handleIn('architect:release-root', (window) => {
     claims.delete(window.id)
   })
@@ -321,12 +319,11 @@ app.whenReady().then(async () => {
   wireIpc()
   createTray()
 
-  daemon.onChange((architecture: Architecture) => {
-    broadcast('architect:change', architecture)
+  daemon.onChange((root: string, architecture: Architecture) => {
+    broadcast('architect:change', root, architecture)
   })
-  daemon.onPending((pending: Pending[]) => {
-    updateTray(pending)
-    broadcast('architect:pending-update', pending)
+  daemon.onHistory((entry: HistoryEntry) => {
+    broadcast('architect:history', entry)
   })
   daemon.onProjects((projects: ProjectSummary[]) => {
     broadcast('architect:projects-update', projects)
