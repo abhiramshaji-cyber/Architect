@@ -222,7 +222,8 @@ function loadedProjects(projects: ProjectSummary[]): void {
   const entries = { ...state.entries }
   for (const p of projects) {
     const entry = entries[p.root]
-    if (entry?.status === 'ready') entries[p.root] = { ...entry, contract: p.contract }
+    if (entry?.status !== 'ready') continue
+    entries[p.root] = { ...entry, contract: p.contract, drafting: p.drafting ?? false, draftError: p.draftError ?? null }
   }
   set({ projects, entries })
   if (bound || Object.keys(state.entries).length > 0) return

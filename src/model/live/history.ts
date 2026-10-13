@@ -4,7 +4,11 @@ export type Target = { kind: 'node'; id: string } | { kind: 'file'; path: string
 
 export type Moment = { label: string; at: number; entries: HistoryEntry[] }
 
-const MARKS = { added: '+', changed: '~', removed: '−' } as const
+export type Change = 'added' | 'changed' | 'removed'
+
+export type Row = { entry: HistoryEntry; change: Change; name: string; parent: string; count: number }
+
+const CHANGES = ['added', 'changed', 'removed'] as const
 
 export function merge(known: HistoryEntry[], incoming: HistoryEntry[]): HistoryEntry[] {
   const byId = new Map(known.map((e) => [e.id, e]))
@@ -38,15 +42,39 @@ function nameOf(id: string): string {
   return to === undefined ? id : `${from} → ${to}`
 }
 
-export function lineOf(entry: HistoryEntry): string {
-  const kinds = ['added', 'changed', 'removed'] as const
-  const parts = kinds.flatMap((kind) =>
-    entry[kind]
-      .filter((id) => kind !== 'changed' || !id.startsWith('folder:'))
-      .map((id) => `${MARKS[kind]} ${nameOf(id)}`)
+function split(file: string): { name: string; parent: string } {
+  const cut = file.replace(/\/$/, '').lastIndexOf('/')
+  return cut < 0 ? { name: file, parent: '' } : { name: file.slice(cut + 1), parent: file.slice(0, cut) }
+}
+
+export function rowOf(entry: HistoryEntry): Row | null {
+  const items = CHANGES.flatMap((change) =>
+    entry[change].filter((id) => change !== 'changed' || !id.startsWith('folder:')).map((id) => ({ change, id }))
   )
-  if (parts.length === 0 && entry.file) return `~ ${entry.file}`
-  return parts.join(', ')
+  const file = entry.source === 'code' ? (entry.file ?? items.find((i) => i.id.startsWith('codefile:'))?.id.slice('codefile:'.length)) : undefined
+
+  if (file) {
+    const change = items.find((i) => i.id === `codefile:${file}`)?.change ?? 'changed'
+    return { entry, change, ...split(file), count: 1 }
+  }
+  const [first] = items
+  if (!first) return null
+
+  const change = items.every((i) => i.change === first.change) ? first.change : 'changed'
+  if (items.length === 1 && entry.source === 'code') return { entry, change, ...split(nameOf(first.id)), count: 1 }
+  return { entry, change, name: items.map((i) => nameOf(i.id)).join(', '), parent: '', count: 1 }
+}
+
+export function collapse(entries: HistoryEntry[]): Row[] {
+  const rows: Row[] = []
+  for (const row of entries.map(rowOf)) {
+    if (!row) continue
+    const last = rows[rows.length - 1]
+    const same = last?.entry.source === row.entry.source && last.name === row.name && last.parent === row.parent
+    if (same) rows[rows.length - 1] = { ...last, count: last.count + 1 }
+    else rows.push(row)
+  }
+  return rows
 }
 
 export function targetOf(entry: HistoryEntry): Target | null {

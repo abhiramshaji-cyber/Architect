@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { HistoryEntry } from '../../../shared/types'
-import { ago, byMoment, lineOf, merge, targetOf } from './history'
+import { ago, byMoment, collapse, merge, rowOf, targetOf } from './history'
 
 function entry(over: Partial<HistoryEntry>): HistoryEntry {
   return { id: 'h', root: '/r', at: 0, source: 'contract', added: [], changed: [], removed: [], ...over }
@@ -8,16 +8,25 @@ function entry(over: Partial<HistoryEntry>): HistoryEntry {
 
 describe('history', () => {
   it('names components and edges instead of showing raw ids', () => {
-    expect(lineOf(entry({ added: ['db', 'db->api'], removed: ['old'] }))).toBe('+ db, + db → api, − old')
+    expect(rowOf(entry({ added: ['db', 'db->api'] }))).toMatchObject({ change: 'added', name: 'db, db → api', parent: '' })
+    expect(rowOf(entry({ added: ['db'], removed: ['old'] }))?.change).toBe('changed')
   })
 
-  it('shows code paths and leaves out folders that only changed because a file inside did', () => {
-    const code = entry({ source: 'code', added: ['folder:src/new'], changed: ['codefile:src/a.ts', 'folder:src'] })
-    expect(lineOf(code)).toBe('+ src/new/, ~ src/a.ts')
+  it('splits a code file into its name and parent folder', () => {
+    const code = entry({ source: 'code', added: ['folder:src/new', 'codefile:src/view/a.ts'], changed: ['folder:src'] })
+    expect(rowOf(code)).toMatchObject({ change: 'added', name: 'a.ts', parent: 'src/view' })
+    expect(rowOf(entry({ source: 'code', file: 'a.ts' }))).toMatchObject({ change: 'changed', name: 'a.ts', parent: '' })
+    expect(rowOf(entry({ source: 'code', changed: ['folder:src'] }))).toBeNull()
   })
 
-  it('falls back to the touched file when no node moved', () => {
-    expect(lineOf(entry({ source: 'code', file: 'src/a.ts' }))).toBe('~ src/a.ts')
+  it('collapses consecutive entries for the same file into one counted row', () => {
+    const edits = [
+      entry({ id: 'c', source: 'code', file: 'src/a.ts' }),
+      entry({ id: 'b', source: 'code', file: 'src/a.ts' }),
+      entry({ id: 'x', source: 'code', file: 'src/b.ts' }),
+      entry({ id: 'a', source: 'code', file: 'src/a.ts' }),
+    ]
+    expect(collapse(edits).map((r) => [r.entry.id, r.count])).toEqual([['c', 2], ['x', 1], ['a', 1]])
   })
 
   it('points a contract entry at a component, or the source of an edge', () => {

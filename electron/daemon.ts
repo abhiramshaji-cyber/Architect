@@ -10,6 +10,7 @@ import {
   type CodeMap,
   type ContractState,
   type Decision,
+  type DraftFailure,
   type DraftResult,
   type Edit,
   type EditSummary,
@@ -37,6 +38,7 @@ import { apply, check, ownership, parse, serialize } from './contract/graph'
 import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
+import { AUTO_DRAFT_MODEL, placeOf, placeSkip, sizeSkip } from './autodraft/skip'
 
 const MAP_VERSION = 3
 
@@ -330,6 +332,9 @@ export function createDaemon(options: DaemonOptions = {}) {
   let codeMapListener: ((root: string, map: CodeMap) => void) | null = null
   let sessionListener: ((root: string, file: string) => void) | null = null
   const sessionCwds = new Map<string, string>()
+  const drafting = new Map<string, Promise<DraftResult<string>>>()
+  const draftFailures = new Map<string, DraftFailure>()
+  const autoTried = new Set<string>()
   let server: net.Server | null = null
 
   async function locate(root: string, file: string): Promise<{ base: string; target: string } | 'unreadable' | 'outside'> {
@@ -566,11 +571,16 @@ export function createDaemon(options: DaemonOptions = {}) {
   }
 
   function listProjects(): ProjectSummary[] {
-    return [...projects.values()].map((p) => ({
-      root: p.root,
-      title: p.architecture?.title ?? path.basename(p.root),
-      contract: p.contract,
-    }))
+    return [...projects.values()].map((p) => {
+      const failure = draftFailures.get(p.root)
+      return {
+        root: p.root,
+        title: p.architecture?.title ?? path.basename(p.root),
+        contract: p.contract,
+        ...(drafting.has(p.root) ? { drafting: true as const } : {}),
+        ...(failure ? { draftError: failure } : {}),
+      }
+    })
   }
 
   function notifyProjects() {
@@ -649,7 +659,18 @@ export function createDaemon(options: DaemonOptions = {}) {
     void runRescan(state)
 
     sessionListener?.(located.root, relative)
+    autoDraft(located.root).catch((err) => {
+      if (projects.get(located.root)?.contract.status === 'missing') console.error('auto draft failed:', errorText(err))
+    })
     return located.root
+  }
+
+  async function autoDraft(root: string) {
+    if (autoTried.has(root) || drafting.has(root) || loadProject(root).contract.status !== 'missing') return
+    autoTried.add(root)
+    if (placeSkip(await placeOf(root)) || sizeSkip(await mapOf(root))) return
+    if (drafting.has(root) || projects.get(root)?.contract.status !== 'missing') return
+    await draftContract(root, AUTO_DRAFT_MODEL)
   }
 
   function teardown(state: ProjectState) {
@@ -806,11 +827,36 @@ export function createDaemon(options: DaemonOptions = {}) {
     return architecture
   }
 
-  async function draftContract(root: string): Promise<DraftResult<string>> {
+  async function mapOf(root: string): Promise<CodeMap> {
+    return readStoredMap(cacheDir, root)?.map ?? (await rescanProject(root))
+  }
+
+  async function draftContract(root: string, model?: string): Promise<DraftResult<string>> {
+    const running = drafting.get(root)
+    if (running) return running
+
+    const job = runDraft(root, model)
+    drafting.set(root, job)
+    draftFailures.delete(root)
+    notifyProjects()
+    try {
+      const result = await job
+      if (!result.ok) draftFailures.set(root, result.error)
+      return result
+    } catch (err) {
+      draftFailures.set(root, { kind: 'failed', code: 1, stderr: errorText(err) })
+      throw err
+    } finally {
+      drafting.delete(root)
+      notifyProjects()
+    }
+  }
+
+  async function runDraft(root: string, model?: string): Promise<DraftResult<string>> {
     const state = loadProject(root)
     if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
 
-    const drafted = await draft(root, readStoredMap(cacheDir, root)?.map ?? (await rescanProject(root)), claude)
+    const drafted = await draft(root, await mapOf(root), claude, model)
     if (!drafted.ok) return drafted
 
     const adopted = adopt(state, drafted.value)
@@ -969,7 +1015,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     projects: listProjects,
     open,
     createContract,
-    draftContract,
+    draftContract: (root: string) => draftContract(root),
     history: (root: string): HistoryEntry[] => historyOf(root),
     edits: (root: string): EditSummary[] => {
       loadProject(root)

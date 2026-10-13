@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { byMoment, lineOf, targetOf, type Target } from '../../model/live/history'
+import { byMoment, collapse, rowOf, targetOf, type Target } from '../../model/live/history'
 import { useProject } from '../../model/store'
 import Icon from '../Icon'
 
@@ -9,7 +9,7 @@ export default function HistoryPanel({ onPick }: { onPick: (target: Target) => v
   const { history } = useProject()
   const [now, setNow] = useState(Date.now)
   const [opened] = useState(Date.now)
-  const groups = useMemo(() => byMoment(history.filter((e) => lineOf(e) !== ''), now), [history, now])
+  const groups = useMemo(() => byMoment(history.filter((e) => rowOf(e) !== null), now), [history, now])
 
   useEffect(() => {
     setNow(Date.now())
@@ -30,22 +30,28 @@ export default function HistoryPanel({ onPick }: { onPick: (target: Target) => v
                 {group.label}
               </time>
               <ul>
-                {group.entries.map((entry) => {
+                {collapse(group.entries).map(({ entry, change, name, parent, count }) => {
                   const target = targetOf(entry)
-                  const line = lineOf(entry)
+                  const full = parent ? `${parent}/${name}` : name
                   return (
                     <li key={entry.id} className={entry.at >= opened ? 'history-entry arriving' : 'history-entry'}>
                       <button
                         className="history-item"
                         onClick={target ? () => onPick(target) : undefined}
                         disabled={!target}
-                        title={line}
-                        aria-label={`${entry.source === 'contract' ? 'Contract' : 'Code'} ${line}`}
+                        title={`${change} ${full}`}
+                        aria-label={`${entry.source === 'contract' ? 'Contract' : 'Code'} ${change} ${full}`}
                       >
-                        <span className="history-source">
+                        <span className={`history-source ${change}`}>
                           <Icon name={entry.source === 'contract' ? 'graph' : 'file'} size={14} />
                         </span>
-                        <span className="history-line">{line}</span>
+                        <span className="history-name">{name}</span>
+                        {parent && (
+                          <span className="history-parent">
+                            <bdi>{parent}</bdi>
+                          </span>
+                        )}
+                        {count > 1 && <span className="history-count">×{count}</span>}
                       </button>
                     </li>
                   )

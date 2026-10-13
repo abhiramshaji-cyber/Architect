@@ -156,21 +156,29 @@ export default function ContractView({ theme, show }: ViewProps) {
     if (!currentRoot) return null
     if (contract?.status !== 'missing') return <div className="empty-state">Opening…</div>
 
+    if (drafting) {
+      return (
+        <div className="empty-state blank-contract" role="status">
+          <span className="drafting-pulse" aria-hidden="true" />
+          <h2>Drafting</h2>
+        </div>
+      )
+    }
+
     return (
       <div className="empty-state blank-contract">
         <h2>No architect.md</h2>
 
         <div className="blank-actions">
-          <button className="primary" onClick={createContract} disabled={busy || drafting}>
+          <button className="primary" onClick={createContract} disabled={busy}>
             Create architect.md
           </button>
-          <button onClick={draftContract} disabled={busy || drafting}>
+          <button onClick={draftContract} disabled={busy}>
             Draft with Claude
           </button>
         </div>
 
-        {drafting && <p className="blank-note">Drafting…</p>}
-        {!drafting && draftError && <p className="blank-note">{draftNote(draftError)}</p>}
+        {draftError && <p className="blank-note">{draftNote(draftError)}</p>}
       </div>
     )
   }

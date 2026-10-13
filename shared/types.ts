@@ -145,7 +145,13 @@ export type SearchHit = { file: string; line: number; text: string }
 
 export type SearchResult = { hits: SearchHit[]; capped: boolean }
 
-export type ProjectSummary = { root: string; title: string; contract: ContractState }
+export type ProjectSummary = {
+  root: string
+  title: string
+  contract: ContractState
+  drafting?: true
+  draftError?: DraftFailure
+}
 
 export type OpenedProject = { contract: ContractState; architecture: Architecture | null }
 
