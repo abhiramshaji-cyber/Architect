@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { SOCKET_PATH } from '../shared/socket.js'
+import { runHook } from './hook.js'
 import { type Request, type Proposal, PROPOSAL_TIMEOUT_MS } from '../shared/types.js'
 
 type RequestInput = { [K in Request['op']]: Omit<Extract<Request, { op: K }>, 'id' | 'cwd'> }[Request['op']]
@@ -221,6 +222,10 @@ function main() {
 
   const transport = new StdioServerTransport()
   server.connect(transport)
+  send({ op: 'session-event', event: 'connect' }).catch(() => {})
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main()
+if (import.meta.url === `file://${process.argv[1]}`) {
+  if (process.argv[2] === 'hook') void runHook().finally(() => process.exit(0))
+  else main()
+}

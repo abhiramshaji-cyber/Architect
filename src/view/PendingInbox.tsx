@@ -31,7 +31,12 @@ export default function PendingInbox() {
 
   return (
     <div className="rail-section inbox">
-      <h2>Approval inbox</h2>
+      <div className="rail-head">
+        <h2>
+          Inbox
+          {pending.length > 0 && <span className="rail-count">{pending.length}</span>}
+        </h2>
+      </div>
       <ul className="pending-list">
         {pending.map((p) => {
           const cycle =
@@ -43,7 +48,7 @@ export default function PendingInbox() {
               <div className="pending-summary">{describe(p)}</div>
               <div className="pending-rationale">{p.rationale}</div>
               {p.proposal.kind === 'contract' && <pre className="pending-contract">{p.proposal.markdown}</pre>}
-              {cycle && <div className="pending-cycle">would introduce a cycle</div>}
+              {cycle && <div className="pending-cycle">Creates a cycle</div>}
               {p.proposal.kind === 'file' && architecture && architecture.components.length > 0 && (
                 <select
                   className="reassign-select"
@@ -63,25 +68,24 @@ export default function PendingInbox() {
                     autoFocus
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    placeholder="reason"
+                    placeholder="Reason"
                   />
-                  <button onClick={() => settle(p.id, false, reason)}>send</button>
-                  <button onClick={() => setRejecting(null)}>cancel</button>
+                  <button onClick={() => settle(p.id, false, reason)}>Send</button>
+                  <button className="ghost" onClick={() => setRejecting(null)}>
+                    Cancel
+                  </button>
                 </div>
               ) : (
                 <div className="pending-actions">
-                  <button className="approve" onClick={() => approve(p)}>
-                    approve
+                  <button className="primary" onClick={() => approve(p)}>
+                    Approve
                   </button>
-                  <button className="reject" onClick={() => setRejecting(p.id)}>
-                    reject
-                  </button>
+                  <button onClick={() => setRejecting(p.id)}>Reject</button>
                 </div>
               )}
             </li>
           )
         })}
-        {pending.length === 0 && <li className="empty">Nothing pending</li>}
       </ul>
     </div>
   )

@@ -13,7 +13,7 @@ Parses, serializes and queries `architect.md`. Fully deterministic, no model cal
 owns: `electron/contract/graph.ts`
 
 ### git
-Shells out to the git binary and returns typed results for branch, dirty state, worktrees, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. No git library, no domain logic.
+Shells out to the git binary and returns typed results for branch, dirty state, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. No git library, no domain logic.
 owns: `electron/git/**`
 
 ### github

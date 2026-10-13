@@ -5,7 +5,7 @@ import { isDirty, refusalOf } from '../model/buffer'
 import { closeFile, editFile, openFile, reloadFile, revertFile, saveFile, useProject } from '../model/store'
 
 export default function FilesView() {
-  const { currentRoot, file, fileLine, fileBusy, fileNotice } = useProject()
+  const { currentRoot, file, fileLine, fileBusy, fileNotice, touched } = useProject()
   const dirty = isDirty(file)
 
   useEffect(() => {
@@ -18,15 +18,15 @@ export default function FilesView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  if (!currentRoot) return <div className="empty-state">Select a project to browse its files</div>
+  if (!currentRoot) return null
 
   return (
     <div className="files">
-      <FileTree root={currentRoot} current={file?.path ?? null} onOpen={openFile} />
+      <FileTree root={currentRoot} current={file?.path ?? null} touched={touched} onOpen={openFile} />
 
       <div className="files-pane">
         {file === null ? (
-          <div className="empty-state">{fileBusy ? 'Opening…' : 'Select a file to read or edit it'}</div>
+          <div className="empty-state">{fileBusy ? 'Opening…' : 'No file open'}</div>
         ) : (
           <>
             <div className="files-bar">

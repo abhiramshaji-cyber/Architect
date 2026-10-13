@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, mkdirSync, readdirSync, rmSync, statSync, existsSync } from 'node:fs'
+import { chmodSync, cpSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, existsSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { mergeHooks } from './claude-hooks.mjs'
 
 const NAME = 'Architect.app'
 
@@ -112,6 +113,52 @@ function installBridge() {
   cpSync('out/mcp/bridge.js', bridge)
   chmodSync(bridge, 0o755)
   console.log(`installed mcp bridge -> ${bridge}`)
+  registerMcp(bridge)
+  registerHooks(bridge)
+}
+
+function registerMcp(bridge) {
+  try {
+    execFileSync('claude', ['mcp', 'get', 'architect'], { stdio: 'ignore' })
+    return
+  } catch (err) {
+    if (err.code === 'ENOENT') return
+  }
+
+  try {
+    execFileSync('claude', ['mcp', 'add', '--scope', 'user', 'architect', '--', 'node', bridge], { stdio: 'ignore' })
+    console.log('registered architect mcp server with claude code')
+  } catch (err) {
+    console.error(`could not register the mcp server with claude code: ${err.message}`)
+  }
+}
+
+function registerHooks(bridge) {
+  const link = join(homedir(), '.claude', 'settings.json')
+  const file = existsSync(link) ? realpathSync(link) : link
+  let raw = '{}'
+  try {
+    raw = readFileSync(file, 'utf8')
+  } catch (err) {
+    if (err.code !== 'ENOENT') return console.error(`could not read ${file}: ${err.message}`)
+  }
+
+  let settings
+  try {
+    settings = JSON.parse(raw)
+  } catch {
+    return console.error(`${file} is not valid JSON, so claude code hooks were not added`)
+  }
+
+  const next = mergeHooks(settings, `node ${JSON.stringify(bridge)} hook`)
+  if (!next) return console.error(`${file} has an unexpected hooks shape, so claude code hooks were not added`)
+  if (JSON.stringify(next) === JSON.stringify(settings)) return
+
+  mkdirSync(dirname(file), { recursive: true })
+  const temp = `${file}.${process.pid}.tmp`
+  writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`)
+  renameSync(temp, file)
+  console.log(`added architect session hooks -> ${file}`)
 }
 
 if (process.platform === 'darwin') installMac()

@@ -6,8 +6,9 @@ import { useProject } from '../model/store'
 import type { PtyEvent } from '../../shared/types'
 import type { ViewProps } from '../shell/views'
 
-const DARK = { background: '#101014', foreground: '#e6e6e6', cursor: '#e6e6e6' }
-const LIGHT = { background: '#ffffff', foreground: '#1b1b1f', cursor: '#1b1b1f' }
+const DARK = { background: '#0b0b0c', foreground: '#e4e4e4', cursor: '#e4e4e4', cursorAccent: '#0b0b0c', selectionBackground: '#3a3a3d' }
+const LIGHT = { background: '#fafafa', foreground: '#1a1a1a', cursor: '#1a1a1a', cursorAccent: '#fafafa', selectionBackground: '#d6d6d6' }
+const FONT = "'Geist Mono Variable', 'SF Mono', ui-monospace, monospace"
 
 export function latchedRoot(held: string | null, current: string | null): string | null {
   return held ?? current
@@ -33,7 +34,7 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
     setExited(null)
     setError(null)
 
-    const term = new Terminal({ fontSize: 12, cursorBlink: true })
+    const term = new Terminal({ fontSize: 13, lineHeight: 1.35, fontFamily: FONT, cursorBlink: true })
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(mount)
@@ -102,15 +103,14 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
 
   return (
     <>
-      <header className="canvas-header">
-        <h2>{tmux ? 'Terminal' : 'Shell'}</h2>
-        {startedIn && <p className="canvas-path">{startedIn}</p>}
-        {exited !== null && <span className="muted">exited {exited}</span>}
-      </header>
+      {(startedIn || exited !== null) && (
+        <header className="terminal-head">
+          {startedIn && <span className="canvas-path">{startedIn}</span>}
+          {exited !== null && <span className="muted">exited {exited}</span>}
+        </header>
+      )}
       {bound === null ? (
-        <div className="empty-state">
-          Open a project first, a terminal needs a directory to start in.
-        </div>
+        <div className="empty-state">No project open</div>
       ) : (
         <>
           {error && <div className="empty-state">{error}</div>}

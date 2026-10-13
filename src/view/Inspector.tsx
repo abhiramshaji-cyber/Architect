@@ -5,6 +5,7 @@ import { refusalOf } from '../model/buffer'
 import { hangingIndent, type CodeNodeData, type FnRef } from '../model/codemap'
 import { renameComponent, setOwns, setPurpose, type OpResult } from '../model/edit-ops'
 import { clampInspectorWidth, statusOf, INSPECTOR_W, type NodeData } from '../model/layout'
+import Icon from './Icon'
 
 const WIDTH_KEY = 'architect.inspector.width'
 
@@ -161,8 +162,8 @@ export function CodeInspector({
             <span className="inspector-id">{node.name}</span>
             <span className="inspector-status">{KINDS[node.kind]}</span>
           </div>
-          <button className="inspector-close" onClick={onClose} aria-label="Close inspector">
-            ×
+          <button className="icon-button inspector-close" onClick={onClose} aria-label="Close inspector">
+            <Icon name="close" />
           </button>
         </div>
 
@@ -216,7 +217,7 @@ export function CodeInspector({
           <section className="inspector-section">
             <h3>Functions</h3>
             {node.functions.length === 0 ? (
-              <p className="inspector-purpose">No functions in this file</p>
+              <p className="inspector-purpose">None</p>
             ) : (
               <ul className="inspector-fns">
                 {node.functions.map((fn, i) => (
@@ -259,8 +260,8 @@ export default function Inspector({ node, onClose, onSelect, onEdit, onDrop }: I
             <span className="inspector-id">{node.label}</span>
             <span className="inspector-status">{statusOf(node)}</span>
           </div>
-          <button className="inspector-close" onClick={onClose} aria-label="Close inspector">
-            ×
+          <button className="icon-button inspector-close" onClick={onClose} aria-label="Close inspector">
+            <Icon name="close" />
           </button>
         </div>
 
@@ -321,7 +322,6 @@ export default function Inspector({ node, onClose, onSelect, onEdit, onDrop }: I
             <button className="inspector-danger" onClick={() => onDrop?.(node.label)}>
               Delete component
             </button>
-            <p className="inspector-hint">Or select it on the canvas and press Delete.</p>
           </section>
         ) : (
           <>

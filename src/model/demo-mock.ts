@@ -543,6 +543,7 @@ export function installMock() {
       fn(Object.entries(roots).map(([root, title]) => ({ root, title, contract: { status: 'ready' } })))
     },
     onCodeMap() {},
+    onTouch() {},
     async ptySpawn() {
       throw new Error('no terminal in the demo')
     },
@@ -570,40 +571,10 @@ export function installMock() {
     async gitRemoteBranches(root) {
       return demoGit(root)
     },
-    async gitWorktrees(root) {
-      return demoGit(root)
-    },
     async gitFetch(root) {
       return demoGit(root)
     },
     async gitDistance(root) {
-      return demoGit(root)
-    },
-    async claudeWorktrees() {
-      return []
-    },
-    async claudeWorktreeSurvey(repo) {
-      return { ok: false, error: { kind: 'git', error: demoGit(repo).error, left: 'both' } }
-    },
-    async claudeWorktreeRemove(repo) {
-      return { ok: false, error: { kind: 'git', error: demoGit(repo).error, left: 'both' } }
-    },
-    async worktreeSettings() {
-      return { worktreeRoots: [], worktreeScanDepth: 6, worktreeFolders: ['.claude/worktrees'] }
-    },
-    async saveWorktreeSettings(settings) {
-      return { ok: true, value: settings }
-    },
-    async pickFolder() {
-      return null
-    },
-    async gitCreateWorktree(root) {
-      return demoGit(root)
-    },
-    async gitRemoveWorktree(root) {
-      return demoGit(root)
-    },
-    async gitPruneWorktrees(root) {
       return demoGit(root)
     },
     async gitChanges(root) {

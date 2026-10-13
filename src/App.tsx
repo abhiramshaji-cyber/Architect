@@ -3,7 +3,7 @@ import CanvasArea from './view/CanvasArea'
 import StatusLine from './view/StatusLine'
 import { at } from './shell/pane-tree'
 import { usePanes } from './shell/usePanes'
-import { views } from './shell/views'
+import { shownView, views } from './shell/views'
 import { parseErrorOf, start, useProject } from './model/store'
 
 export default function App() {
@@ -23,7 +23,7 @@ export default function App() {
   }, [theme])
 
   const activePane = at(panes.tree, panes.focus)
-  const viewLabel = activePane?.kind === 'leaf' ? views[activePane.view].label : null
+  const viewLabel = activePane?.kind === 'leaf' ? views[shownView(activePane.view, project.currentRoot !== null)].label : null
 
   return (
     <div className="app">

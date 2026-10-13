@@ -32,6 +32,7 @@ export type ProjectEntry = {
   fileLine: number | null
   fileBusy: boolean
   fileNotice: { text: string; error: boolean } | null
+  touched: string | null
 }
 
 export type ProjectState = {
@@ -57,6 +58,7 @@ export type ProjectState = {
   fileLine: number | null
   fileBusy: boolean
   fileNotice: { text: string; error: boolean } | null
+  touched: string | null
 }
 
 function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
@@ -79,6 +81,7 @@ function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
     fileLine: null,
     fileBusy: false,
     fileNotice: null,
+    touched: null,
   }
 }
 
@@ -101,6 +104,7 @@ function activeView(entries: Record<string, ProjectEntry>, root: string | null) 
     fileLine: entry?.fileLine ?? null,
     fileBusy: entry?.fileBusy ?? false,
     fileNotice: entry?.fileNotice ?? null,
+    touched: entry?.touched ?? null,
   }
 }
 
@@ -190,10 +194,17 @@ function discardOk(entry: ProjectEntry | undefined): boolean {
 }
 
 let started = false
+let bound: string | null = null
+let boundTouch: string | null = null
 
 export function start(): void {
   if (started) return
   started = true
+
+  const query = new URLSearchParams(globalThis.location?.search)
+  bound = query.get('root')
+  boundTouch = query.get('touch')
+  if (bound) adoptProject(bound)
 
   window.architect.projects().then(loadedProjects)
   window.architect.pending().then(loadedPending)
@@ -205,6 +216,12 @@ export function start(): void {
   })
   window.architect.onPending(loadedPending)
   window.architect.onProjects(loadedProjects)
+  window.architect.onCodeMap((root, codeMap) => {
+    if (!state.entries[root]) return
+    patchEntry(root, { codeMap })
+    loadOwners(root)
+  })
+  window.architect.onTouch(({ root, file }) => patchEntry(root, { touched: file }))
 }
 
 function loadedProjects(projects: ProjectSummary[]): void {
@@ -214,7 +231,7 @@ function loadedProjects(projects: ProjectSummary[]): void {
     if (entry?.status === 'ready') entries[p.root] = { ...entry, contract: p.contract }
   }
   set({ projects, entries })
-  if (Object.keys(state.entries).length > 0) return
+  if (bound || Object.keys(state.entries).length > 0) return
 
   const preferred = state.pending[0]?.projectRoot ?? projects[0]?.root
   if (preferred) adoptProject(preferred)
@@ -222,7 +239,7 @@ function loadedProjects(projects: ProjectSummary[]): void {
 
 function loadedPending(pending: Pending[]): void {
   set({ pending })
-  if (Object.keys(state.entries).length > 0) return
+  if (bound || Object.keys(state.entries).length > 0) return
   const root = pending[0]?.projectRoot
   if (root) adoptProject(root)
 }
@@ -244,7 +261,7 @@ function enterProject(root: string): void {
   const existing = state.entries[root]
   const loaded = !!existing && existing.status !== 'error'
   set({
-    entries: { ...state.entries, [root]: existing ?? emptyEntry() },
+    entries: { ...state.entries, [root]: existing ?? { ...emptyEntry(), touched: root === bound ? boundTouch : null } },
     currentRoot: root,
     message: null,
   })

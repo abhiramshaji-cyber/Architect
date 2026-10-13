@@ -3,6 +3,7 @@ import type { GitResult, GitStatus } from '../../shared/types'
 import { isDirty } from '../model/buffer'
 import { pendingHere, type ProjectState } from '../model/store'
 import { gitText } from './git-segment'
+import Icon from './Icon'
 import { registerSegment, segmentList, subscribeSegments } from './segments'
 
 const GIT_POLL_MS = 3000
@@ -100,8 +101,8 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
         </span>
       ))}
 
-      <button className="theme-toggle" onClick={onFlipTheme} aria-label={label} title={label}>
-        {theme === 'light' ? '☾' : '☀'}
+      <button className="icon-button theme-toggle" onClick={onFlipTheme} aria-label={label} title={label}>
+        <Icon name={theme === 'light' ? 'moon' : 'sun'} size={14} />
       </button>
     </footer>
   )

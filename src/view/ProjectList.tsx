@@ -1,5 +1,6 @@
 import { folderName } from '../model/layout'
 import { closeProject, openProject, useProject } from '../model/store'
+import Icon from './Icon'
 
 export default function ProjectList() {
   const { projects, currentRoot, entries } = useProject()
@@ -24,10 +25,8 @@ export default function ProjectList() {
                 {p.title !== folder && <span className="project-title">{p.title}</span>}
                 {entry?.status === 'error' && <span className="project-unavailable">unavailable</span>}
               </button>
-              <button className="project-close" aria-label={close} title={close} onClick={() => closeProject(p.root)}>
-                <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                  <path d="M3.25 3.25l5.5 5.5M8.75 3.25l-5.5 5.5" strokeLinecap="round" />
-                </svg>
+              <button className="icon-button project-close" aria-label={close} title={close} onClick={() => closeProject(p.root)}>
+                <Icon name="close" size={14} />
               </button>
             </li>
           )

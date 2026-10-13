@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { SourceWindow } from '../../shared/types'
 import type { GotoResult, Located } from '../model/goto'
+import Icon from './Icon'
 
 const SNIPPET_LINES = 6
 const REFS_SHOWN = 30
@@ -32,7 +33,7 @@ function Snippet({ root, at }: { root: string; at: Located }) {
   }, [root, at.file, at.line, at.endLine])
 
   if (!source) return <p className="goto-hint">Loading…</p>
-  if (source.error || source.lines.length === 0) return <p className="goto-hint">No preview available</p>
+  if (source.error || source.lines.length === 0) return <p className="goto-hint">No preview</p>
 
   return (
     <pre className="goto-snippet">
@@ -85,7 +86,7 @@ function List({ title, items, onFocus, onJump }: {
           ))}
         </ul>
       )}
-      {hidden > 0 && <p className="goto-hint">+{hidden} more, not shown</p>}
+      {hidden > 0 && <p className="goto-hint">+{hidden} more</p>}
     </section>
   )
 }
@@ -115,14 +116,14 @@ export default function GotoPanel({ root, result, onClose, onJump }: GotoPanelPr
         <span className="goto-title">
           {found ? result.def.name : 'Go to definition'}
         </span>
-        <button className="inspector-close" onClick={onClose} aria-label="Close">
-          ×
+        <button className="icon-button inspector-close" onClick={onClose} aria-label="Close">
+          <Icon name="close" />
         </button>
       </div>
 
-      {result.status === 'no-map' && <p className="goto-hint">The code map has not loaded yet.</p>}
+      {result.status === 'no-map' && <p className="goto-hint">Code map loading</p>}
       {result.status === 'unresolved' && (
-        <p className="goto-hint">No definition found. This symbol may be stale — try rescanning.</p>
+        <p className="goto-hint">No definition. Try a rescan.</p>
       )}
 
       {found && (

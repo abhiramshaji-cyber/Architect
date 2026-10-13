@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  removalMessage,
-  settingsMessage,
-  removedText,
-  agoText,
   authNote,
   distanceText,
-  isClaudeWorktree,
-  worktreeText,
   entered,
   escaped,
   gitMessage,
@@ -20,7 +14,7 @@ import {
   START,
   typed,
 } from "./picker";
-import type { ClaudeWorktree, GithubRepo, OpenRisk } from "../../shared/types";
+import type { GithubRepo, OpenRisk } from "../../shared/types";
 
 function repo(nameWithOwner: string): GithubRepo {
   const [owner = "", name = ""] = nameWithOwner.split("/");
@@ -204,138 +198,5 @@ describe("failure text", () => {
       }),
     ).toContain("origin/x");
     expect(githubMessage({ kind: "auth-required" })).toContain("gh auth login");
-  });
-});
-
-describe("worktree text", () => {
-  const now = Date.UTC(2026, 0, 31);
-  const worktree: ClaudeWorktree = {
-    repo: "/r",
-    name: "w",
-    path: "/r/.claude/worktrees/w",
-    branch: null,
-    dirty: true,
-    changedAt: now - 5 * 60_000,
-    broken: null,
-    claude: true,
-  };
-
-  it("says how long ago a worktree changed", () => {
-    expect(agoText(null, now)).toBe("never changed");
-    expect(agoText(now - 10_000, now)).toBe("changed just now");
-    expect(agoText(now - 3 * 3_600_000, now)).toBe("changed 3h ago");
-    expect(agoText(now - 86_400_000, now)).toBe("changed yesterday");
-    expect(agoText(now - 5 * 86_400_000, now)).toBe("changed 5 days ago");
-  });
-
-  it("shows a detached, dirty worktree and a broken one", () => {
-    expect(worktreeText(worktree, now)).toBe(
-      "detached · uncommitted changes · changed 5 min ago",
-    );
-    expect(worktreeText({ ...worktree, broken: "missing" }, now)).toBe(
-      "broken · its folder is gone",
-    );
-  });
-
-  it("counts distance and rejects cached rows of the wrong shape", () => {
-    expect(distanceText({ ahead: 2, behind: 0 })).toBe("2 ahead");
-    expect(distanceText({ ahead: 0, behind: 0 })).toBe("in sync");
-    const stale = { ...worktree, claude: undefined };
-    expect(
-      [worktree, null, { repo: 1 }, "x", stale].filter(isClaudeWorktree),
-    ).toEqual([worktree]);
-  });
-});
-
-describe("settingsMessage", () => {
-  it("names the field, the value and what is wrong with it", () => {
-    expect(
-      settingsMessage({
-        field: "worktreeRoots",
-        value: "/nope",
-        kind: "missing",
-      }),
-    ).toBe("Scan folder /nope does not exist");
-    expect(
-      settingsMessage({
-        field: "worktreeFolders",
-        value: "../x",
-        kind: "escapes",
-      }),
-    ).toBe("Worktree folder ../x points outside the repo");
-    expect(
-      settingsMessage({ field: "worktreeRoots", value: "", kind: "not-list" }),
-    ).toBe("Scan folder is not a list of paths");
-  });
-});
-
-describe("removal text", () => {
-  const worktree: ClaudeWorktree = {
-    repo: "/code/app",
-    name: "feat",
-    path: "/code/app/.claude/worktrees/feat",
-    branch: "claude/feat",
-    dirty: true,
-    changedAt: null,
-    broken: null,
-    claude: true,
-  };
-
-  it("says what a failure left behind", () => {
-    expect(removalMessage({ kind: "open", path: worktree.path })).toContain(
-      "Close it first",
-    );
-    expect(removalMessage({ kind: "main", path: "/code/app" })).toContain(
-      "main worktree",
-    );
-    expect(
-      removalMessage({
-        kind: "holds",
-        path: "/code/wt",
-        worktree: "/code/wt/inner",
-      }),
-    ).toContain("/code/wt/inner");
-    expect(
-      removalMessage({
-        kind: "git",
-        error: {
-          kind: "failed",
-          args: ["worktree", "remove"],
-          code: 128,
-          stderr: "Permission denied",
-        },
-        left: "folder",
-      }),
-    ).toBe(
-      "git worktree remove failed: Permission denied. Now git no longer lists it, but its folder is still there.",
-    );
-    expect(
-      removalMessage({
-        kind: "git",
-        error: { kind: "not-a-repo", root: "/code/app" },
-        left: "both",
-      }),
-    ).toBe("/code/app is not a git repository. Nothing was deleted.");
-    expect(
-      removedText(worktree, {
-        how: "remove",
-        branch: null,
-        branchError: {
-          kind: "failed",
-          args: ["branch", "-d"],
-          code: 1,
-          stderr: "not fully merged",
-        },
-      }),
-    ).toBe(
-      "Deleted app / feat, but kept its branch: git branch -d failed: not fully merged",
-    );
-    expect(
-      removedText(worktree, {
-        how: "remove",
-        branch: "claude/feat",
-        branchError: null,
-      }),
-    ).toBe("Deleted app / feat and its branch claude/feat");
   });
 });

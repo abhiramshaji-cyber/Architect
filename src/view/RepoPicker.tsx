@@ -348,10 +348,10 @@ export default function RepoPicker() {
               })}
 
             {!repo && ranked.length > shownRepos.length && (
-              <li className="empty">{ranked.length - shownRepos.length} more match. Keep typing to narrow.</li>
+              <li className="empty">+{ranked.length - shownRepos.length} more</li>
             )}
 
-            {count === 0 && !waiting && <li className="empty">Nothing matches</li>}
+            {count === 0 && !waiting && <li className="empty">No matches</li>}
           </ul>
         </div>
 
@@ -359,7 +359,7 @@ export default function RepoPicker() {
           {highlightRepo && (
             <>
               <h4>{highlightRepo.nameWithOwner}</h4>
-              <p className="goto-hint">{highlightRepo.description || 'No description'}</p>
+              {highlightRepo.description && <p className="goto-hint">{highlightRepo.description}</p>}
               <p className="goto-hint">
                 {highlightRepo.isPrivate ? 'private' : 'public'}
                 {highlightRepo.isFork ? ' · fork' : ''}

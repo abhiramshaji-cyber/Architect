@@ -111,6 +111,14 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('await_proposal'), cwd: z.string(), proposalId: z.string() }),
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
+  z.object({
+    id: z.string(),
+    op: z.literal('session-event'),
+    cwd: z.string(),
+    event: z.string(),
+    session: z.string().optional(),
+    file: z.string().optional(),
+  }),
 ])
 
 export type Request = z.infer<typeof requestSchema>
@@ -129,6 +137,8 @@ export type ContractState =
   | { status: 'ready' }
   | { status: 'missing' }
   | { status: 'invalid'; error: string }
+
+export type SessionTouch = { root: string; file: string }
 
 export type ProjectSummary = { root: string; title: string; contract: ContractState }
 
@@ -160,53 +170,7 @@ export type Worktree = {
   bare: boolean
   locked: boolean
   prunable: boolean
-  exists: boolean
 }
-
-export type WorktreeBroken = 'missing' | 'not-git' | 'unregistered' | 'unlisted' | 'unreadable'
-
-export type ClaudeWorktree = {
-  repo: string
-  name: string
-  path: string
-  branch: string | null
-  dirty: boolean
-  changedAt: number | null
-  broken: WorktreeBroken | null
-  claude: boolean
-}
-
-export type WorktreeSettings = { worktreeRoots: string[]; worktreeScanDepth: number; worktreeFolders: string[] }
-
-export type SettingsProblem = {
-  field: keyof WorktreeSettings
-  value: string
-  kind: 'not-list' | 'relative' | 'missing' | 'not-folder' | 'duplicate' | 'escapes' | 'empty' | 'depth'
-}
-
-export type SettingsResult = { ok: true; value: WorktreeSettings } | { ok: false; error: SettingsProblem[] }
-
-export type WorktreeRemoval =
-  | { kind: 'remove'; dirty: number; unpushed: number; branch: string | null; base: string | null; merged: boolean }
-  | { kind: 'prune' }
-  | { kind: 'trash' }
-
-export type RemovalChoice = { force: boolean; branch: boolean }
-
-export type RemovalLeft = 'both' | 'folder' | 'registration' | 'neither'
-
-export type RemovalFailure =
-  | { kind: 'open'; path: string }
-  | { kind: 'outside'; path: string }
-  | { kind: 'main'; path: string }
-  | { kind: 'holds'; path: string; worktree: string }
-  | { kind: 'unregistered'; path: string; repo: string }
-  | { kind: 'trash-failed'; path: string; message: string }
-  | { kind: 'git'; error: GitFailure; left: RemovalLeft }
-
-export type WorktreeRemoved = { how: WorktreeRemoval['kind']; branch: string | null; branchError: GitFailure | null }
-
-export type RemovalResult<T> = { ok: true; value: T } | { ok: false; error: RemovalFailure }
 
 export type BaseDistance = { base: string; ahead: number; behind: number }
 
@@ -215,8 +179,6 @@ export type LocalBranch = { name: string; commit: string; upstream: string | nul
 export type RemoteBranch = { name: string; commit: string }
 
 export type DefaultBranch = { remote: string; branch: string }
-
-export type WorktreeCreated = { path: string; branch: string; base: string }
 
 export type OpenRisk = {
   tracking: string
@@ -254,10 +216,6 @@ export type GitFailure =
   | { kind: 'invalid-branch'; name: string }
   | { kind: 'branch-exists'; name: string }
   | { kind: 'branch-checked-out'; name: string; path: string }
-  | { kind: 'worktree-exists'; path: string }
-  | { kind: 'no-worktree'; path: string }
-  | { kind: 'main-worktree'; path: string }
-  | { kind: 'locked-worktree'; path: string }
   | { kind: 'dirty'; root: string }
   | { kind: 'clone-dirs-taken'; repo: string }
   | { kind: 'no-tracking'; tracking: string }
@@ -442,6 +400,7 @@ export type ArchitectApi = {
   onPending(fn: (p: Pending[]) => void): void
   onProjects(fn: (p: ProjectSummary[]) => void): void
   onCodeMap(fn: (root: string, map: CodeMap) => void): void
+  onTouch(fn: (touch: SessionTouch) => void): void
   ptySpawn(spec: PtySpec): Promise<PtySession>
   ptyWrite(id: string, data: string): Promise<boolean>
   ptyResize(id: string, cols: number, rows: number): Promise<boolean>
@@ -451,18 +410,8 @@ export type ArchitectApi = {
   gitDefaultBranch(root: string): Promise<GitResult<DefaultBranch>>
   gitLocalBranches(root: string): Promise<GitResult<LocalBranch[]>>
   gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
-  gitWorktrees(root: string): Promise<GitResult<Worktree[]>>
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
   gitDistance(root: string): Promise<GitResult<BaseDistance>>
-  claudeWorktrees(repos: string[], scan: boolean): Promise<ClaudeWorktree[]>
-  claudeWorktreeSurvey(repo: string, path: string): Promise<RemovalResult<WorktreeRemoval>>
-  claudeWorktreeRemove(repo: string, path: string, choice: RemovalChoice): Promise<RemovalResult<WorktreeRemoved>>
-  worktreeSettings(): Promise<WorktreeSettings>
-  saveWorktreeSettings(settings: WorktreeSettings): Promise<SettingsResult>
-  pickFolder(): Promise<string | null>
-  gitCreateWorktree(root: string, path: string, name: string, base?: string): Promise<GitResult<WorktreeCreated>>
-  gitRemoveWorktree(root: string, path: string): Promise<GitResult<{ path: string }>>
-  gitPruneWorktrees(root: string): Promise<GitResult<Worktree[]>>
   gitChanges(root: string): Promise<GitResult<DiffChanges>>
   gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
   gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>

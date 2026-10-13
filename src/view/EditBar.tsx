@@ -7,8 +7,8 @@ export default function EditBar({ onAddComponent }: { onAddComponent: () => void
   return (
     <div className="edit-bar">
       <div className="edit-bar-label">
-        Editing {draft.id} · {draft.status === 'handed' ? 'handed, read only' : 'draft'}
-        {dirty && ' · unsaved changes'}
+        <strong>{draft.id}</strong> · {draft.status === 'handed' ? 'read only' : 'draft'}
+        {dirty && ' · unsaved'}
       </div>
       <div className="edit-bar-actions">
         {draft.status === 'draft' && (
@@ -19,7 +19,7 @@ export default function EditBar({ onAddComponent }: { onAddComponent: () => void
             <button className="primary" onClick={saveEdit} disabled={busy}>
               Save
             </button>
-            <button className="hand" onClick={handEdit} disabled={busy}>
+            <button onClick={handEdit} disabled={busy}>
               Hand to Claude
             </button>
           </>
@@ -28,7 +28,7 @@ export default function EditBar({ onAddComponent }: { onAddComponent: () => void
           Close
         </button>
         <button className="ghost" onClick={removeEdit} disabled={busy}>
-          Delete edit
+          Delete
         </button>
       </div>
       {message && <div className={message.error ? 'edit-bar-message error' : 'edit-bar-message'}>{message.text}</div>}

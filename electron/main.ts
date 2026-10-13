@@ -1,6 +1,5 @@
-import os from 'node:os'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
 import { spawn as spawnPty } from 'node-pty'
 import { SOCKET_PATH } from '../shared/socket'
 import {
@@ -21,12 +20,10 @@ import {
   type PtyEvent,
   type PtySpec,
   type PullDraft,
-  type RemovalChoice,
 } from '../shared/types'
 import { createDaemon } from './daemon'
 import { loginPath } from './env'
 import * as message from './draft/message'
-import * as claude from './git/claude'
 import * as diff from './git/diff'
 import * as git from './git/git'
 import * as open from './git/open'
@@ -45,7 +42,6 @@ const daemon = createDaemon({
 let tray: Tray | null = null
 
 const TABBED = process.platform === 'darwin'
-const SETTINGS = path.join(os.homedir(), '.architect', 'settings.json')
 
 const tabs: BrowserWindow[] = []
 const hosts = new Map<number, ReturnType<typeof createPtyHost>>()
@@ -96,7 +92,7 @@ function onChord(window: BrowserWindow, event: Electron.Event, input: Electron.I
   if (index !== null) tabs[index]?.focus()
 }
 
-function createWindow(sibling: BrowserWindow | null): BrowserWindow {
+function createWindow(sibling: BrowserWindow | null, bound?: { root: string; touch: string }): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -118,9 +114,11 @@ function createWindow(sibling: BrowserWindow | null): BrowserWindow {
   if (TABBED && sibling && !sibling.isDestroyed()) sibling.addTabbedWindow(window)
 
   if (process.env.ELECTRON_RENDERER_URL) {
-    window.loadURL(process.env.ELECTRON_RENDERER_URL)
+    const url = new URL(process.env.ELECTRON_RENDERER_URL)
+    for (const [key, value] of Object.entries(bound ?? {})) url.searchParams.set(key, value)
+    window.loadURL(url.toString())
   } else {
-    window.loadFile(path.join(import.meta.dirname, '../renderer/index.html'))
+    window.loadFile(path.join(import.meta.dirname, '../renderer/index.html'), { query: bound ?? {} })
   }
 
   window.on('closed', () => forget(window))
@@ -131,6 +129,15 @@ function createWindow(sibling: BrowserWindow | null): BrowserWindow {
   window.webContents.on('before-input-event', (event, input) => onChord(window, event, input))
 
   return window
+}
+
+function onSession(root: string, file: string): void {
+  const held = owner(claims, root)
+  const holder = tabs.find((tab) => tab.id === held && !tab.isDestroyed())
+  if (holder) return holder.webContents.send('architect:touch', { root, file })
+
+  const window = createWindow(tabs.filter((tab) => !tab.isDestroyed()).at(-1) ?? null, { root, touch: file })
+  claim(claims, (id) => tabs.some((tab) => tab.id === id), window.id, root)
 }
 
 function updateTray(pending: Pending[]) {
@@ -245,36 +252,8 @@ function wireIpc() {
   handle('architect:git-default-branch', (root: string) => git.defaultBranch(root))
   handle('architect:git-local-branches', (root: string) => git.localBranches(root))
   handle('architect:git-remote-branches', (root: string) => git.remoteBranches(root))
-  handle('architect:git-worktrees', (root: string) => git.worktrees(root))
   handle('architect:git-fetch', (root: string) => git.fetch(root))
   handle('architect:git-distance', (root: string) => git.distance(root))
-  handle('architect:claude-worktrees', async (repos: string[], scan: boolean) =>
-    claude.discover([...repos, ...daemon.projects().map((project) => project.root)], scan, await claude.readSettings(SETTINGS)),
-  )
-  handle('architect:claude-worktree-survey', async (repo: string, target: string) =>
-    claude.survey(repo, target, [...claims.values()], (await claude.readSettings(SETTINGS)).worktreeFolders),
-  )
-  handle('architect:claude-worktree-remove', async (repo: string, target: string, choice: RemovalChoice) => {
-    const { worktreeFolders } = await claude.readSettings(SETTINGS)
-    const removed = await claude.remove(repo, target, choice, [...claims.values()], worktreeFolders, (item: string) => shell.trashItem(item))
-    if (removed.ok) {
-      for (const project of daemon.projects()) if (claude.within(project.root, target)) daemon.closeProject(project.root)
-    }
-    return removed
-  })
-  handle('architect:worktree-settings', () => claude.readSettings(SETTINGS))
-  handle('architect:worktree-settings-save', (settings: unknown) => claude.saveSettings(SETTINGS, settings))
-  handleIn('architect:pick-folder', async (window) => {
-    const picked = await dialog.showOpenDialog(window, { properties: ['openDirectory'] })
-    return picked.canceled ? null : (picked.filePaths[0] ?? null)
-  })
-  handle('architect:git-create-worktree', (root: string, target: string, name: string, base?: string) =>
-    git.createWorktree(root, target, name, base),
-  )
-  handle('architect:git-remove-worktree', (root: string, target: string) =>
-    git.removeWorktree(root, target),
-  )
-  handle('architect:git-prune-worktrees', (root: string) => git.pruneWorktrees(root))
   handle('architect:git-changes', (root: string) => diff.changes(root))
   handle('architect:git-file-diff', (root: string, section: DiffSection, file: ChangedFile, full?: boolean) =>
     diff.fileDiff(root, section, file, full),
@@ -355,6 +334,7 @@ app.whenReady().then(async () => {
   daemon.onCodeMap((root: string, map: CodeMap) => {
     broadcast('architect:code-map-update', root, map)
   })
+  daemon.onSession(onSession)
 
   try {
     await daemon.listen()

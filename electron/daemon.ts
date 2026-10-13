@@ -36,6 +36,7 @@ import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
 import { IGNORED_DIRS, scan } from './scan/scan'
+import { locateSession } from './git/session'
 
 const MAP_VERSION = 3
 
@@ -327,6 +328,8 @@ export function createDaemon(options: DaemonOptions = {}) {
   let pendingListener: ((p: Pending[]) => void) | null = null
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null
   let codeMapListener: ((root: string, map: CodeMap) => void) | null = null
+  let sessionListener: ((root: string, file: string) => void) | null = null
+  const sessionCwds = new Map<string, string>()
   let server: net.Server | null = null
 
   async function locate(root: string, file: string): Promise<{ base: string; target: string } | 'unreadable' | 'outside'> {
@@ -628,6 +631,24 @@ export function createDaemon(options: DaemonOptions = {}) {
       state.rescanAgain = false
       scheduleRescan(state)
     }
+  }
+
+  async function touchSession(cwd: string, session: string | undefined, file: string | undefined): Promise<string | null> {
+    if (!file) {
+      if (session) sessionCwds.set(session, cwd)
+      return null
+    }
+
+    const located = await locateSession((session && sessionCwds.get(session)) || cwd, file)
+    if (!located?.file) return null
+
+    const state = loadProject(located.root)
+    if (state.rescanTimer) clearTimeout(state.rescanTimer)
+    state.rescanTimer = null
+    void runRescan(state)
+
+    sessionListener?.(located.root, path.relative(located.root, located.file).split(path.sep).join('/'))
+    return located.root
   }
 
   function teardown(state: ProjectState) {
@@ -982,6 +1003,10 @@ export function createDaemon(options: DaemonOptions = {}) {
           return { id: req.id, ok: true, result: decision }
         }
 
+        if (req.op === 'session-event') {
+          return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file) }
+        }
+
         if (req.op === 'await_proposal') {
           const decision = await awaitProposal(req.proposalId, (cancel) => cancels.add(cancel))
           return { id: req.id, ok: true, result: decision }
@@ -1148,6 +1173,9 @@ export function createDaemon(options: DaemonOptions = {}) {
     },
     onCodeMap: (fn: (root: string, map: CodeMap) => void) => {
       codeMapListener = fn
+    },
+    onSession: (fn: (root: string, file: string) => void) => {
+      sessionListener = fn
     },
   }
 }

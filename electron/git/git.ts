@@ -15,7 +15,6 @@ import type {
   Pushed,
   RemoteBranch,
   Worktree,
-  WorktreeCreated,
 } from '../../shared/types'
 
 const run = promisify(execFile)
@@ -183,9 +182,9 @@ export function parseStatus(stdout: string): GitStatus {
   }
 }
 
-export function parseWorktrees(stdout: string): Omit<Worktree, 'exists'>[] {
-  const found: Omit<Worktree, 'exists'>[] = []
-  let current: Omit<Worktree, 'exists'> | null = null
+export function parseWorktrees(stdout: string): Worktree[] {
+  const found: Worktree[] = []
+  let current: Worktree | null = null
 
   for (const line of stdout.split('\n')) {
     if (line === '') continue
@@ -221,24 +220,6 @@ export async function status(root: string): Promise<GitResult<GitStatus>> {
 export async function head(root: string): Promise<GitResult<Head>> {
   const out = await status(root)
   return out.ok ? { ok: true, value: out.value.head } : out
-}
-
-export async function worktrees(root: string): Promise<GitResult<Worktree[]>> {
-  const out = await git(root, ['worktree', 'list', '--porcelain'])
-  if (!out.ok) return out
-
-  const listed = parseWorktrees(out.value)
-  const value = await Promise.all(
-    listed.map(async (entry) => ({
-      ...entry,
-      exists: await fs.stat(entry.path).then(
-        (stat) => stat.isDirectory(),
-        () => false,
-      ),
-    })),
-  )
-
-  return { ok: true, value }
 }
 
 async function remoteName(root: string): Promise<GitResult<string>> {
@@ -365,20 +346,6 @@ async function defaultStart(root: string): Promise<GitResult<string>> {
   return { ok: true, value: `${base.value.remote}/${base.value.branch}` }
 }
 
-async function resolveStart(root: string, ref: string): Promise<GitResult<string>> {
-  if (badArgument(ref)) return { ok: false, error: { kind: 'bad-argument', value: ref } }
-
-  const commit = `${ref}^{commit}`
-  if (await succeeds(root, ['rev-parse', '--verify', '--quiet', commit])) return { ok: true, value: ref }
-
-  const fetched = await fetch(root)
-  if (!fetched.ok && fetched.error.kind !== 'no-remote') return fetched
-
-  return (await succeeds(root, ['rev-parse', '--verify', '--quiet', commit]))
-    ? { ok: true, value: ref }
-    : { ok: false, error: { kind: 'bad-ref', ref } }
-}
-
 export async function createBranch(root: string, name: string): Promise<GitResult<{ branch: string; base: string }>> {
   const claimed = await claimBranch(root, name)
   if (claimed) return { ok: false, error: claimed }
@@ -394,65 +361,6 @@ export async function createBranch(root: string, name: string): Promise<GitResul
   if (!checkout.ok) return checkout
 
   return { ok: true, value: { branch: name, base: startPoint.value } }
-}
-
-export async function createWorktree(
-  root: string,
-  worktreePath: string,
-  name: string,
-  base?: string,
-): Promise<GitResult<WorktreeCreated>> {
-  if (badArgument(worktreePath)) return { ok: false, error: { kind: 'bad-argument', value: worktreePath } }
-
-  const occupied = await fs.stat(worktreePath).then(
-    () => true,
-    () => false,
-  )
-  if (occupied) return { ok: false, error: { kind: 'worktree-exists', path: worktreePath } }
-
-  const claimed = await claimBranch(root, name)
-  if (claimed) return { ok: false, error: claimed }
-
-  const startPoint = base === undefined ? await defaultStart(root) : await resolveStart(root, base)
-  if (!startPoint.ok) return startPoint
-
-  const added = await git(root, ['worktree', 'add', '-b', name, worktreePath, startPoint.value])
-  if (!added.ok) return added
-
-  return { ok: true, value: { path: worktreePath, branch: name, base: startPoint.value } }
-}
-
-export async function pruneWorktrees(root: string): Promise<GitResult<Worktree[]>> {
-  const pruned = await git(root, ['worktree', 'prune'])
-  if (!pruned.ok) return pruned
-
-  return worktrees(root)
-}
-
-export async function removeWorktree(root: string, worktreePath: string): Promise<GitResult<{ path: string }>> {
-  if (badArgument(worktreePath)) return { ok: false, error: { kind: 'bad-argument', value: worktreePath } }
-
-  const listed = await worktrees(root)
-  if (!listed.ok) return listed
-
-  const entry = listed.value.find((candidate) => candidate.path === worktreePath)
-  if (!entry) return { ok: false, error: { kind: 'no-worktree', path: worktreePath } }
-  if (entry === listed.value[0]) return { ok: false, error: { kind: 'main-worktree', path: worktreePath } }
-  if (entry.locked) return { ok: false, error: { kind: 'locked-worktree', path: worktreePath } }
-
-  if (entry.exists) {
-    const removed = await git(root, ['worktree', 'remove', worktreePath])
-    if (!removed.ok) {
-      const state = await status(worktreePath)
-      if (state.ok && state.value.dirty) return { ok: false, error: { kind: 'dirty', root: worktreePath } }
-      return removed
-    }
-  }
-
-  const pruned = await git(root, ['worktree', 'prune'])
-  if (!pruned.ok) return pruned
-
-  return { ok: true, value: { path: worktreePath } }
 }
 
 export async function gitInput(root: string, args: string[], input: string): Promise<GitResult<string>> {

@@ -3,6 +3,7 @@ import type { Architecture, DraftFailure } from '../../shared/types'
 import Canvas from './Canvas'
 import EditBar from './EditBar'
 import EditList from './EditList'
+import Icon from './Icon'
 import PendingInbox from './PendingInbox'
 import { addComponent, type OpResult } from '../model/edit-ops'
 import { draftMessage } from '../model/picker'
@@ -36,11 +37,11 @@ function placeholderId(a: Architecture): string {
 }
 
 function draftNote(failure: DraftFailure): string {
-  if (failure.kind === 'not-installed') return 'Claude Code is not on your PATH, so there is nobody to ask yet.'
-  if (failure.kind === 'nothing-to-draft') return 'Architect found no source it recognises here, so there is nothing to draft from.'
-  if (failure.kind === 'timed-out') return 'Claude took too long to answer, so nothing was drafted.'
-  if (failure.kind === 'unusable') return `Claude replied with something that is not a contract, so nothing was drafted (${failure.detail}).`
-  return `Claude could not finish the draft: ${draftMessage(failure)}`
+  if (failure.kind === 'not-installed') return 'Claude Code is not on PATH'
+  if (failure.kind === 'nothing-to-draft') return 'No source to draft from'
+  if (failure.kind === 'timed-out') return 'Claude timed out'
+  if (failure.kind === 'unusable') return `Unusable draft: ${failure.detail}`
+  return `Draft failed: ${draftMessage(failure)}`
 }
 
 export default function ContractView({ theme }: ViewProps) {
@@ -117,13 +118,13 @@ export default function ContractView({ theme }: ViewProps) {
 
       <aside className={rail.open ? 'contract-rail' : 'contract-rail closed'}>
         <button
-          className="rail-handle"
+          className="icon-button rail-handle"
           onClick={flipRail}
           aria-expanded={rail.open}
           aria-label={rail.open ? 'Hide edits and approvals' : 'Show edits and approvals'}
           title={rail.open ? 'Hide edits and approvals' : 'Show edits and approvals'}
         >
-          {rail.open ? '›' : '‹'}
+          <Icon name={rail.open ? 'chevron-right' : 'chevron-left'} />
         </button>
         {rail.open && (
           <div className="rail-body">
@@ -138,32 +139,28 @@ export default function ContractView({ theme }: ViewProps) {
   function blank() {
     const loadError = loadErrorOf(project)
     if (loadError) return <div className="empty-state">{loadError}</div>
-    if (parseErrorOf(project)) return <div className="empty-state">Fix architect.md to see this architecture.</div>
-    if (!currentRoot) return <div className="empty-state">Select a project to open its architecture</div>
-    if (contract?.status !== 'missing') return <div className="empty-state">Opening this project…</div>
+    if (parseErrorOf(project)) return <div className="empty-state">architect.md has errors</div>
+    if (!currentRoot) return null
+    if (contract?.status !== 'missing') return <div className="empty-state">Opening…</div>
 
     const waiting = pendingHere(project).some((p) => p.proposal.kind === 'contract')
 
     return (
       <div className="empty-state blank-contract">
-        <h2>No architect.md here yet</h2>
-        <p>
-          Write a starter contract from the folders Architect scanned, or have Claude draft one from the code. Nothing
-          is written until you approve it.
-        </p>
+        <h2>No architect.md</h2>
 
         <div className="blank-actions">
           <button className="primary" onClick={createContract} disabled={busy || drafting}>
             Create architect.md
           </button>
           <button onClick={draftContract} disabled={busy || drafting}>
-            Ask Claude to draft one
+            Draft with Claude
           </button>
         </div>
 
-        {drafting && <p className="blank-note">Claude is reading the code and writing a draft.</p>}
-        {!drafting && waiting && <p className="blank-note">Claude's draft is waiting in the approval inbox.</p>}
-        {!drafting && draftError && <p className="blank-note">{draftNote(draftError)} You can still write one yourself.</p>}
+        {drafting && <p className="blank-note">Drafting…</p>}
+        {!drafting && waiting && <p className="blank-note">Draft waiting in inbox</p>}
+        {!drafting && draftError && <p className="blank-note">{draftNote(draftError)}</p>}
       </div>
     )
   }

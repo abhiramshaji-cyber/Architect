@@ -123,7 +123,7 @@ function OwnershipPanel({ ownership }: { ownership: Ownership }) {
         </span>
       </summary>
       {flags === 0 ? (
-        <p className="owns-clean">Every scanned file is owned by exactly one component.</p>
+        <p className="owns-clean">All files owned</p>
       ) : (
         <div className="owns-lists">
           {ownership.dead.length > 0 && (
@@ -140,7 +140,7 @@ function OwnershipPanel({ ownership }: { ownership: Ownership }) {
           )}
           {ownership.multi.length > 0 && (
             <section>
-              <h4>Claimed by more than one component</h4>
+              <h4>Multi-owned</h4>
               <ul>
                 {ownership.multi.map((m) => (
                   <li key={m.path}>
@@ -152,7 +152,7 @@ function OwnershipPanel({ ownership }: { ownership: Ownership }) {
           )}
           {ownership.unowned.length > 0 && (
             <section>
-              <h4>Owned by no component</h4>
+              <h4>Unowned</h4>
               <ul>
                 {ownership.unowned.map((u) => (
                   <li key={u}>

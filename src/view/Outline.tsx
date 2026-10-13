@@ -40,7 +40,7 @@ export default function Outline({ entries, currentId, onSelect, onGoto, returnFo
         <h3>Outline</h3>
       </div>
       {entries.length === 0 ? (
-        <p className="outline-empty">No symbols in this file</p>
+        <p className="outline-empty">No symbols</p>
       ) : (
         <div ref={list} className="outline-list" role="listbox" aria-label="Symbols in this file">
           {entries.map((entry) => (

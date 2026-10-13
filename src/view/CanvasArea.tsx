@@ -5,10 +5,18 @@ import { useCommands, type Command } from '../shell/commands'
 import { close, focusDir, type Dir, type Pane, type Path } from '../shell/pane-tree'
 import { PANE_BINDINGS, PANE_COMMAND_LABELS, viewAt, type usePanes } from '../shell/usePanes'
 import { useLeaderKeys } from '../shell/useLeaderKeys'
-import { VIEW_IDS, views, type ViewId } from '../shell/views'
+import { PROJECT_VIEWS, shownView, views, type ViewId } from '../shell/views'
+import { useProject } from '../model/store'
 import CommandPalette from './CommandPalette'
+import Icon, { type IconName } from './Icon'
 
 const PALETTE_KEYS = ['Space']
+
+const PANE_ACTIONS: { command: string; label: string; chord: string; icon: IconName }[] = [
+  { command: 'pane.split.right', label: 'Split right', chord: 'space p v', icon: 'split-right' },
+  { command: 'pane.split.down', label: 'Split down', chord: 'space p s', icon: 'split-down' },
+  { command: 'pane.close', label: 'Close pane', chord: 'space p q', icon: 'close' },
+]
 
 const MOVES: Record<string, Dir> = {
   'pane.focus.left': 'left',
@@ -28,8 +36,9 @@ type Panes = ReturnType<typeof usePanes>
 
 export default function CanvasArea({ theme, panes }: { theme: string; panes: Panes }) {
   const { tree, focus, commands, focusPane, setRatio, showView } = panes
+  const rooted = useProject().currentRoot !== null
   const [palette, setPalette] = useState(false)
-  const scope = viewAt(tree, focus)
+  const scope = shownView(viewAt(tree, focus), rooted)
 
   const registry = useMemo<Command[]>(() => {
     const bound = new Map(PANE_BINDINGS.map((binding) => [binding.command, binding]))
@@ -52,39 +61,45 @@ export default function CanvasArea({ theme, panes }: { theme: string; panes: Pan
   const { steps } = useLeaderKeys(scope)
 
   const renderLeaf = useCallback(
-    (view: ViewId, path: Path) => {
+    (stored: ViewId, path: Path) => {
+      const view = shownView(stored, rooted)
       const View = views[view].component
       return (
         <>
           <div className="pane-bar">
-            <div className="mode-toggle">
-              {VIEW_IDS.map((id) => (
+            {rooted && (
+              <nav className="mode-toggle">
+                {PROJECT_VIEWS.map((id) => (
+                  <button
+                    key={id}
+                    className={id === view ? 'mode active' : 'mode'}
+                    aria-current={id === view ? 'page' : undefined}
+                    onClick={() => showView(path, id)}
+                  >
+                    {views[id].label}
+                  </button>
+                ))}
+              </nav>
+            )}
+            <div className="pane-actions">
+              {PANE_ACTIONS.map((action) => (
                 <button
-                  key={id}
-                  className={id === view ? 'mode active' : 'mode'}
-                  onClick={() => showView(path, id)}
+                  key={action.command}
+                  className="icon-button"
+                  aria-label={action.label}
+                  title={`${action.label} (${action.chord})`}
+                  onClick={commands[action.command]}
                 >
-                  {views[id].label}
+                  <Icon name={action.icon} />
                 </button>
               ))}
-            </div>
-            <div className="pane-actions">
-              <button className="pane-action" title="Split right (space p v)" onClick={commands['pane.split.right']}>
-                Split right
-              </button>
-              <button className="pane-action" title="Split down (space p s)" onClick={commands['pane.split.down']}>
-                Split down
-              </button>
-              <button className="pane-action" title="Close pane (space p q)" onClick={commands['pane.close']}>
-                Close
-              </button>
             </div>
           </div>
           <View theme={theme} />
         </>
       )
     },
-    [theme, commands, showView]
+    [theme, commands, showView, rooted]
   )
 
   return (

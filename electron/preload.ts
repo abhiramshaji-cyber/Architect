@@ -8,6 +8,7 @@ import type {
   Pending,
   ProjectSummary,
   PtyEvent,
+  SessionTouch,
 } from '../shared/types'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -54,6 +55,9 @@ const architect: ArchitectApi = {
   onCodeMap: (fn: (root: string, map: CodeMap) => void) => {
     ipcRenderer.on('architect:code-map-update', (_event, root: string, map: CodeMap) => fn(root, map))
   },
+  onTouch: (fn: (touch: SessionTouch) => void) => {
+    ipcRenderer.on('architect:touch', (_event, touch: SessionTouch) => fn(touch))
+  },
   ptySpawn: (spec) => invoke('architect:pty-spawn', spec),
   ptyWrite: (id, data) => invoke('architect:pty-write', id, data),
   ptyResize: (id, cols, rows) => invoke('architect:pty-resize', id, cols, rows),
@@ -67,19 +71,8 @@ const architect: ArchitectApi = {
   gitDefaultBranch: (root) => invoke('architect:git-default-branch', root),
   gitLocalBranches: (root) => invoke('architect:git-local-branches', root),
   gitRemoteBranches: (root) => invoke('architect:git-remote-branches', root),
-  gitWorktrees: (root) => invoke('architect:git-worktrees', root),
   gitFetch: (root) => invoke('architect:git-fetch', root),
   gitDistance: (root) => invoke('architect:git-distance', root),
-  claudeWorktrees: (repos, scan) => invoke('architect:claude-worktrees', repos, scan),
-  claudeWorktreeSurvey: (repo, path) => invoke('architect:claude-worktree-survey', repo, path),
-  claudeWorktreeRemove: (repo, path, choice) => invoke('architect:claude-worktree-remove', repo, path, choice),
-  worktreeSettings: () => invoke('architect:worktree-settings'),
-  saveWorktreeSettings: (settings) => invoke('architect:worktree-settings-save', settings),
-  pickFolder: () => invoke('architect:pick-folder'),
-  gitCreateWorktree: (root, path, name, base) =>
-    invoke('architect:git-create-worktree', root, path, name, base),
-  gitRemoveWorktree: (root, path) => invoke('architect:git-remove-worktree', root, path),
-  gitPruneWorktrees: (root) => invoke('architect:git-prune-worktrees', root),
   gitChanges: (root) => invoke('architect:git-changes', root),
   gitFileDiff: (root, section, file, full) => invoke('architect:git-file-diff', root, section, file, full),
   gitStageFile: (root, file) => invoke('architect:git-stage-file', root, file),

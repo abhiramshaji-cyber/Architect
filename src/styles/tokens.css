@@ -1,0 +1,105 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --panel: #0f0f10;
+  --raise: #161617;
+  --sunken: #0b0b0c;
+  --hover: #1b1b1d;
+  --border: #232325;
+  --line: rgb(255 255 255 / 0.06);
+  --text: #ededed;
+  --text-2: #b4b4b4;
+  --text-dim: #8a8a8a;
+  --text-faint: #5a5a5c;
+  --accent: #f2f2f2;
+  --on-accent: #0b0b0c;
+  --active-bg: #1f1f21;
+  --active-border: #3a3a3d;
+  --danger: #d98a84;
+  --ok: #9fbfa6;
+  --propose: #c8c8c8;
+  --node-bg: #141415;
+  --shadow: rgb(0 0 0 / 0.4);
+  --ink: #6e6e72;
+  --label-bg: #0f0f10;
+  --dots: #222224;
+  --folder: var(--text);
+  --fn: var(--text);
+  --code-bg: #0d0d0e;
+  --syn-keyword: #f5f5f5;
+  --syn-string: #a6a6a6;
+  --syn-comment: #5c5c5f;
+  --syn-number: #cfcfcf;
+  --syn-type: #dcdcdc;
+  --syn-name: #c4c4c4;
+  --syn-punct: #7a7a7d;
+  --diff-add: rgb(159 191 166 / 0.12);
+  --diff-del: rgb(217 138 132 / 0.12);
+  --ring: rgb(255 255 255 / 0.18);
+
+  --font:
+    'Geist Variable', -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
+    sans-serif;
+  --mono: 'Geist Mono Variable', 'SF Mono', ui-monospace, monospace;
+
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 22px;
+  --fs-code: 13px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --control: 34px;
+
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --fast: 140ms;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #fafafa;
+  --panel: #ffffff;
+  --raise: #f4f4f4;
+  --sunken: #f6f6f6;
+  --hover: #f0f0f0;
+  --border: #e6e6e6;
+  --line: rgb(0 0 0 / 0.06);
+  --text: #111111;
+  --text-2: #3d3d3d;
+  --text-dim: #6f6f6f;
+  --text-faint: #a3a3a3;
+  --accent: #111111;
+  --on-accent: #ffffff;
+  --active-bg: #ededed;
+  --active-border: #cfcfcf;
+  --danger: #a3443d;
+  --ok: #3f6b4a;
+  --propose: #4a4a4a;
+  --node-bg: #ffffff;
+  --shadow: rgb(0 0 0 / 0.06);
+  --ink: #9a9a9a;
+  --label-bg: #ffffff;
+  --dots: #e2e2e2;
+  --code-bg: #fcfcfc;
+  --syn-keyword: #111111;
+  --syn-string: #5e5e5e;
+  --syn-comment: #a6a6a6;
+  --syn-number: #333333;
+  --syn-type: #2a2a2a;
+  --syn-name: #3a3a3a;
+  --syn-punct: #8a8a8a;
+  --diff-add: rgb(63 107 74 / 0.09);
+  --diff-del: rgb(163 68 61 / 0.09);
+  --ring: rgb(0 0 0 / 0.14);
+}
