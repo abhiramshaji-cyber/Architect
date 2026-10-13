@@ -29,10 +29,12 @@ import {
   type CodeNodeData
 } from '../model/codemap'
 import { gotoSymbol, type Located, type SymbolRef } from '../model/goto'
+import { addedIds, liveClass } from '../model/live/recent'
 import { outlineFor } from '../model/outline'
-import { openFile } from '../model/store'
+import { openFile, useProject } from '../model/store'
 import { CodeInspector } from './Inspector'
 import GotoPanel from './GotoPanel'
+import Follow from './live/Follow'
 import Outline from './Outline'
 
 type CodeCanvasProps = {
@@ -191,6 +193,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
   const [gotoRef, setGotoRef] = useState<SymbolRef | null>(null)
   const stage = useRef<HTMLDivElement | null>(null)
   const pendingSelect = useRef<string | null>(null)
+  const { recent } = useProject()
 
   const colors = useMemo(() => ({ dots: cssVar('--dots'), ink: cssVar('--ink') }), [theme])
   const outline = useMemo(() => outlineFor(map, path), [map, path])
@@ -208,6 +211,8 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
     const logical = worldNodes(folderIndex(map), path)
     return { nodes: toFlow(logical, codePositions(logical)), links: [] }
   }, [map, path, file, index])
+
+  const nodes = useMemo(() => world.nodes.map((n) => ({ ...n, className: liveClass(recent, n.id) })), [world, recent])
 
   const edges = useMemo<Edge[]>(
     () =>
@@ -297,7 +302,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
           <Goto.Provider value={setGotoRef}>
             <ReactFlow
               key={path}
-              nodes={world.nodes}
+              nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
               nodesDraggable={false}
@@ -313,6 +318,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
               }}
               onPaneClick={close}
             >
+              <Follow ids={addedIds(recent)} />
               <Background gap={26} size={1} color={colors.dots} />
               <Controls showInteractive={false} />
             </ReactFlow>
@@ -321,7 +327,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
       </Picked.Provider>
       {world.nodes.length === 0 && (
         <div className="empty-state code-empty">
-          {file ? 'This file has no functions' : 'No code here yet'}
+          {file ? 'No functions' : 'Empty'}
         </div>
       )}
       {selected && <CodeInspector key={selectedId} node={selected} source={source} onClose={close} />}

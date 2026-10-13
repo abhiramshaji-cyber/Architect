@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   ChangedFile,
   DiffChanges,
-  DiffHunk,
-  DiffRow,
   DiffSection,
   FileDiff,
   GitResult,
@@ -13,13 +11,14 @@ import type {
 import { draftMessage, githubMessage, gitMessage } from '../model/picker'
 import { useProject } from '../model/store'
 import type { ViewProps } from '../shell/views'
+import { flatten, SplitDiff } from './SplitDiff'
 
 const ROW_PAGE = 400
 
-const SECTIONS: { id: DiffSection; label: string; hint: string }[] = [
-  { id: 'branch', label: 'On this branch', hint: 'committed since the merge base' },
-  { id: 'staged', label: 'Staged', hint: 'in the index, ready to commit' },
-  { id: 'unstaged', label: 'Unstaged', hint: 'in the working tree' },
+const SECTIONS: { id: DiffSection; label: string }[] = [
+  { id: 'branch', label: 'Branch' },
+  { id: 'staged', label: 'Staged' },
+  { id: 'unstaged', label: 'Unstaged' },
 ]
 
 const MARK: Record<ChangedFile['status'], string> = {
@@ -34,15 +33,6 @@ const MARK: Record<ChangedFile['status'], string> = {
 }
 
 type Selected = { section: DiffSection; file: ChangedFile }
-
-type Entry = { kind: 'hunk'; header: string } | { kind: 'row'; row: DiffRow }
-
-function flatten(hunks: DiffHunk[]): Entry[] {
-  return hunks.flatMap((hunk) => [
-    { kind: 'hunk' as const, header: hunk.header },
-    ...hunk.rows.map((row) => ({ kind: 'row' as const, row })),
-  ])
-}
 
 function sameFile(a: Selected | null, section: DiffSection, file: ChangedFile): boolean {
   return a !== null && a.section === section && a.file.path === file.path
@@ -73,7 +63,7 @@ function Files({
   onStage: ((section: DiffSection, file: ChangedFile) => void) | null
 }) {
   if (!result.ok) return <p className="diff-section-note error">{gitMessage(result.error)}</p>
-  if (result.value.length === 0) return <p className="diff-section-note">Nothing here</p>
+  if (result.value.length === 0) return <p className="diff-section-note">None</p>
 
   return (
     <ul className="diff-files">
@@ -98,35 +88,6 @@ function Files({
         </li>
       ))}
     </ul>
-  )
-}
-
-function Rows({ entries, shown }: { entries: Entry[]; shown: number }) {
-  return (
-    <div className="diff-grid">
-      {entries.slice(0, shown).map((entry, index) =>
-        entry.kind === 'hunk' ? (
-          <div className="diff-hunk" key={index}>
-            {entry.header}
-          </div>
-        ) : (
-          <div className="diff-pair" key={index}>
-            <span className="diff-no">{entry.row.old?.line ?? ''}</span>
-            <span className={entry.row.old ? (entry.row.context ? 'diff-cell' : 'diff-cell del') : 'diff-cell blank'}>
-              {entry.row.old && <span className="diff-sign">{entry.row.context ? ' ' : '-'}</span>}
-              {entry.row.old?.text}
-              {entry.row.old?.noNewline && <span className="diff-eof"> no newline at end of file</span>}
-            </span>
-            <span className="diff-no">{entry.row.new?.line ?? ''}</span>
-            <span className={entry.row.new ? (entry.row.context ? 'diff-cell' : 'diff-cell add') : 'diff-cell blank'}>
-              {entry.row.new && <span className="diff-sign">{entry.row.context ? ' ' : '+'}</span>}
-              {entry.row.new?.text}
-              {entry.row.new?.noNewline && <span className="diff-eof"> no newline at end of file</span>}
-            </span>
-          </div>
-        ),
-      )}
-    </div>
   )
 }
 
@@ -169,7 +130,7 @@ function CommitBox({
   const detached = state.head.kind === 'detached'
   const nothingStaged = state.staged === 0
   const blocked =
-    nothingStaged ? 'Stage a file before you commit it' : title.trim() === '' ? 'A commit needs a summary' : null
+    nothingStaged ? 'Nothing staged' : title.trim() === '' ? 'Add a summary' : null
 
   return (
     <section className="commit-box">
@@ -241,11 +202,11 @@ function PullRequestBox({
 
   const blocked =
     state.upstream === null
-      ? `${target.branch} has not been pushed yet, so publish it first`
+      ? 'Publish the branch first'
       : !ahead
-        ? `${target.branch} has nothing on it that ${target.base} does not, so there is nothing to open`
+        ? `No commits ahead of ${target.base}`
         : title.trim() === ''
-          ? 'A pull request needs a title'
+          ? 'Add a title'
           : null
 
   return (
@@ -501,7 +462,7 @@ export default function DiffView(_props: ViewProps) {
 
   const entries = useMemo(() => (diff?.ok ? flatten(diff.value.hunks) : []), [diff])
 
-  if (!currentRoot) return <div className="empty-state">Select a project to see what changed</div>
+  if (!currentRoot) return null
 
   const state = changes?.ok ? changes.value.status : null
   const note = changes && !changes.ok ? gitMessage(changes.error) : message
@@ -523,9 +484,7 @@ export default function DiffView(_props: ViewProps) {
         {changes?.ok &&
           SECTIONS.map((section) => (
             <section className="diff-section" key={section.id}>
-              <h3>
-                {section.label} <span className="diff-section-hint">{section.hint}</span>
-              </h3>
+              <h3>{section.label}</h3>
               <Files
                 section={section.id}
                 result={changes.value[section.id]}
@@ -571,29 +530,29 @@ export default function DiffView(_props: ViewProps) {
       </div>
 
       <div className="diff-pane">
-        {!selected && <div className="empty-state">Pick a file to read its diff</div>}
-        {selected && diff === null && <div className="empty-state">Reading the diff…</div>}
+        {!selected && <div className="empty-state">No file selected</div>}
+        {selected && diff === null && <div className="empty-state">Loading…</div>}
         {diff && !diff.ok && <div className="empty-state">{gitMessage(diff.error)}</div>}
         {diff?.ok && diff.value.binary && <div className="empty-state">{diff.value.path} is binary</div>}
         {diff?.ok && diff.value.oversize && (
           <div className="empty-state">
             <p>
-              This diff is {Math.round(diff.value.bytes / 1024)} KB. Rendering it will be slow.
+              Large diff, {Math.round(diff.value.bytes / 1024)} KB
             </p>
             <button className="primary" onClick={() => load(true)}>
-              Load it anyway
+              Load anyway
             </button>
           </div>
         )}
         {diff?.ok && !diff.value.binary && !diff.value.oversize && entries.length === 0 && (
-          <div className="empty-state">No line changes in {diff.value.path}</div>
+          <div className="empty-state">No line changes</div>
         )}
         {entries.length > 0 && (
           <>
-            <Rows entries={entries} shown={shown} />
+            <SplitDiff entries={entries} shown={shown} />
             {entries.length > shown && (
               <button className="ghost diff-more" onClick={() => setShown(shown + ROW_PAGE)}>
-                Show {Math.min(ROW_PAGE, entries.length - shown)} more of {entries.length} rows
+                Show {Math.min(ROW_PAGE, entries.length - shown)} more
               </button>
             )}
           </>

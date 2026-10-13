@@ -27,8 +27,7 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     claimRoot: vi.fn().mockResolvedValue(true),
     releaseRoot: vi.fn().mockResolvedValue(undefined),
     focusRoot: vi.fn().mockResolvedValue(true),
-    pending: vi.fn().mockResolvedValue([]),
-    decide: vi.fn().mockResolvedValue(undefined),
+    history: vi.fn().mockResolvedValue([]),
     createContract: vi.fn(),
     draftContract: vi.fn(),
     edits: vi.fn().mockResolvedValue([]),
@@ -44,10 +43,12 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     openSource: vi.fn(),
     writeSource: vi.fn(),
     readTree: vi.fn(),
+    search: vi.fn(),
     onChange: vi.fn(),
-    onPending: vi.fn(),
+    onHistory: vi.fn().mockReturnValue(() => {}),
     onProjects: vi.fn(),
     onCodeMap: vi.fn(),
+    onTouch: vi.fn(),
     ptySpawn: vi.fn(),
     ptyWrite: vi.fn(),
     ptyResize: vi.fn(),
@@ -57,18 +58,8 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     gitDefaultBranch: vi.fn(),
     gitLocalBranches: vi.fn(),
     gitRemoteBranches: vi.fn(),
-    gitWorktrees: vi.fn(),
     gitFetch: vi.fn(),
     gitDistance: vi.fn(),
-    claudeWorktrees: vi.fn(),
-    claudeWorktreeSurvey: vi.fn(),
-    claudeWorktreeRemove: vi.fn(),
-    worktreeSettings: vi.fn(),
-    saveWorktreeSettings: vi.fn(),
-    pickFolder: vi.fn(),
-    gitCreateWorktree: vi.fn(),
-    gitRemoveWorktree: vi.fn(),
-    gitPruneWorktrees: vi.fn(),
     gitChanges: vi.fn(),
     gitFileDiff: vi.fn(),
     gitStageFile: vi.fn(),
@@ -229,6 +220,42 @@ describe('one project per tab', () => {
 
     expect(architect.claimRoot).toHaveBeenCalledTimes(1)
     expect(Object.keys(getSnapshot().entries)).toEqual(['/a'])
+  })
+})
+
+describe('live updates', () => {
+  it('applies a change to the project it came from, never the one on screen', async () => {
+    architect.open = vi.fn().mockImplementation((root: string) => Promise.resolve(opened(root)))
+    const { start, openProject, getSnapshot } = await import('./store')
+    start()
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+    openProject('/b')
+    await vi.waitFor(() => expect(getSnapshot().entries['/b']?.status).toBe('ready'))
+
+    const onChange = vi.mocked(architect.onChange).mock.calls[0]![0]
+    onChange('/a', arch('A2'))
+
+    expect(getSnapshot().entries['/a']?.architecture?.title).toBe('A2')
+    expect(getSnapshot().architecture?.title).toBe('/b')
+  })
+
+  it('records a history entry and marks its ids only on the project it belongs to', async () => {
+    architect.open = vi.fn().mockResolvedValue(opened('A'))
+    const { start, openProject, getSnapshot } = await import('./store')
+    start()
+    openProject('/a')
+    await vi.waitFor(() => expect(getSnapshot().entries['/a']?.status).toBe('ready'))
+
+    const onHistory = vi.mocked(architect.onHistory).mock.calls[0]![0]
+    const entry = { id: 'h1', root: '/a', at: 1, source: 'code' as const, added: [], changed: ['codefile:src/x.ts'], removed: [], file: 'src/x.ts' }
+    onHistory(entry)
+    onHistory({ ...entry, id: 'h2', root: '/elsewhere' })
+
+    expect(getSnapshot().history).toEqual([entry])
+    expect(getSnapshot().recent['codefile:src/x.ts']?.kind).toBe('changed')
+    expect(getSnapshot().touched).toBe('src/x.ts')
+    expect(getSnapshot().entries['/elsewhere']).toBeUndefined()
   })
 })
 
@@ -395,7 +422,7 @@ describe('contract state', () => {
     expect(architect.createContract).not.toHaveBeenCalled()
   })
 
-  it('asks for a drafted contract and leaves the project empty until the draft is approved', async () => {
+  it('asks for a drafted contract and leaves the project empty until Claude writes it', async () => {
     architect.open = vi.fn().mockResolvedValue({ contract: { status: 'missing' }, architecture: null })
     architect.draftContract = vi.fn().mockResolvedValue({ ok: true, value: '# drafted' })
     const { openProject, draftContract, getSnapshot } = await import('./store')

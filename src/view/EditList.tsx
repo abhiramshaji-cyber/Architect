@@ -1,14 +1,23 @@
 import { newEdit, openEdit, useProject } from '../model/store'
+import Icon from './Icon'
 
 export default function EditList() {
   const { edits, draft, currentRoot, architecture, busy } = useProject()
 
   return (
     <div className="rail-section">
-      <h2>Edits</h2>
-      <button className="action" onClick={newEdit} disabled={!currentRoot || !architecture || busy}>
-        New edit
-      </button>
+      <div className="rail-head">
+        <h2>Edits</h2>
+        <button
+          className="icon-button"
+          onClick={newEdit}
+          disabled={!currentRoot || !architecture || busy}
+          aria-label="New edit"
+          title="New edit"
+        >
+          <Icon name="plus" />
+        </button>
+      </div>
       <ul className="edits-list">
         {edits.map((e) => (
           <li key={e.id}>
@@ -23,7 +32,6 @@ export default function EditList() {
             {e.error !== undefined && <div className="edit-error">{e.error}</div>}
           </li>
         ))}
-        {edits.length === 0 && <li className="empty">No edits yet</li>}
       </ul>
     </div>
   )

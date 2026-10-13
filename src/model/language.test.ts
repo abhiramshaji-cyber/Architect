@@ -37,6 +37,8 @@ describe('languageFor', () => {
       'a.md',
       'a.markdown',
       'a.css',
+      'a.html',
+      'a.py',
     ]) {
       await expect(languageFor(path)).resolves.not.toBeNull()
     }

@@ -1,6 +1,4 @@
-import { folderName } from './layout'
 import type {
-  ClaudeWorktree,
   DraftFailure,
   GitFailure,
   GithubAuth,
@@ -8,11 +6,6 @@ import type {
   GithubRepo,
   OpenFailure,
   OpenRisk,
-  RemovalFailure,
-  RemovalLeft,
-  SettingsProblem,
-  WorktreeBroken,
-  WorktreeRemoved,
 } from '../../shared/types'
 
 export type Stage = { kind: 'repos' } | { kind: 'branches'; repo: GithubRepo }
@@ -126,10 +119,6 @@ export function gitMessage(error: GitFailure): string {
   if (error.kind === 'invalid-branch') return `${error.name} is not a valid branch name`
   if (error.kind === 'branch-exists') return `${error.name} already exists`
   if (error.kind === 'branch-checked-out') return `${error.name} is already checked out at ${error.path}`
-  if (error.kind === 'worktree-exists') return `${error.path} is already there`
-  if (error.kind === 'no-worktree') return `No worktree at ${error.path}`
-  if (error.kind === 'main-worktree') return `${error.path} is the clone itself`
-  if (error.kind === 'locked-worktree') return `${error.path} is locked`
   if (error.kind === 'dirty') return `${error.root} has uncommitted changes`
   if (error.kind === 'clone-dirs-taken') return `Every clone dir for ${error.repo} is taken by another repo`
   if (error.kind === 'no-tracking') return `No ${error.tracking} to reset onto: left the branch untouched`
@@ -184,85 +173,4 @@ export function distanceText(distance: { ahead: number; behind: number } | undef
   return [distance.ahead > 0 ? `${distance.ahead} ahead` : '', distance.behind > 0 ? `${distance.behind} behind` : '']
     .filter((part) => part !== '')
     .join(' · ')
-}
-
-export function agoText(at: number | null, now: number): string {
-  if (at === null) return 'never changed'
-
-  const minutes = Math.floor((now - at) / 60_000)
-  if (minutes < 1) return 'changed just now'
-  if (minutes < 60) return `changed ${minutes} min ago`
-  if (minutes < 1440) return `changed ${Math.floor(minutes / 60)}h ago`
-
-  const days = Math.floor(minutes / 1440)
-  if (days === 1) return 'changed yesterday'
-  if (days < 30) return `changed ${days} days ago`
-
-  return `changed ${new Date(at).toLocaleDateString()}`
-}
-
-export const BROKEN_TEXT: Record<WorktreeBroken, string> = {
-  missing: 'its folder is gone',
-  'not-git': 'the folder has no git checkout',
-  unregistered: 'the repo does not list it as a worktree',
-  unlisted: 'the repo could not list its worktrees',
-  unreadable: 'git cannot read it',
-}
-
-export function worktreeText(worktree: ClaudeWorktree, now: number): string {
-  if (worktree.broken) return `broken · ${BROKEN_TEXT[worktree.broken]}`
-
-  return [worktree.branch ?? 'detached', worktree.dirty ? 'uncommitted changes' : 'clean', agoText(worktree.changedAt, now)].join(' · ')
-}
-
-export function isClaudeWorktree(value: unknown): value is ClaudeWorktree {
-  const row = value as Partial<ClaudeWorktree> | null
-  return typeof row?.repo === 'string' && typeof row.name === 'string' && typeof row.path === 'string' && typeof row.claude === 'boolean'
-}
-
-const PROBLEM_TEXT: Record<SettingsProblem['kind'], string> = {
-  'not-list': 'is not a list of paths',
-  relative: 'is not an absolute path',
-  missing: 'does not exist',
-  'not-folder': 'is a file, not a folder',
-  duplicate: 'is already in the list',
-  escapes: 'points outside the repo',
-  empty: 'is empty',
-  depth: 'is not a whole number of zero or more',
-}
-
-const FIELD_TEXT: Record<SettingsProblem['field'], string> = {
-  worktreeRoots: 'Scan folder',
-  worktreeFolders: 'Worktree folder',
-  worktreeScanDepth: 'Scan depth',
-}
-
-export function settingsMessage(problem: SettingsProblem): string {
-  const value = problem.value === '' ? '' : ` ${problem.value}`
-  return `${FIELD_TEXT[problem.field]}${value} ${PROBLEM_TEXT[problem.kind]}`
-}
-
-const LEFT_TEXT: Record<RemovalLeft, string> = {
-  both: 'Nothing was deleted',
-  folder: 'Now git no longer lists it, but its folder is still there',
-  registration: 'Now its folder is gone, but git still lists it',
-  neither: 'Now git no longer lists it and its folder is gone',
-}
-
-export function removedText(worktree: ClaudeWorktree, removed: WorktreeRemoved): string {
-  const how = { remove: 'Deleted', prune: 'Pruned', trash: 'Moved to the Trash:' }[removed.how]
-  const done = `${how} ${folderName(worktree.repo)} / ${worktree.name}`
-  if (removed.branchError) return `${done}, but kept its branch: ${gitMessage(removed.branchError)}`
-  return removed.branch ? `${done} and its branch ${removed.branch}` : done
-}
-
-export function removalMessage(failure: RemovalFailure): string {
-  if (failure.kind === 'open') return `${failure.path} is open in Architect. Close it first, then delete it.`
-  if (failure.kind === 'outside') return `${failure.path} is neither a worktree git lists for this repo nor a folder inside a worktree folder, so it was left alone`
-  if (failure.kind === 'main') return `${failure.path} is the repo's main worktree or holds it, so it was left alone`
-  if (failure.kind === 'holds') return `${failure.path} holds the worktree ${failure.worktree}, so it was left alone`
-  if (failure.kind === 'unregistered') return `${failure.path} has its own .git but ${failure.repo} does not list it as a worktree, so it was left alone`
-  if (failure.kind === 'trash-failed') return `Could not move ${failure.path} to the Trash: ${failure.message}`
-
-  return `${gitMessage(failure.error)}. ${LEFT_TEXT[failure.left]}.`
 }

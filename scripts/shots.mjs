@@ -35,13 +35,6 @@ const open = async (name) => {
 await page.goto(`http://localhost:${port}`)
 await page.waitForSelector('.react-flow__node', { timeout: 15000 })
 await page.waitForTimeout(900)
-await shot('approval-gate')
-
-// clear-inbox
-await page.evaluate(async () => {
-  for (const p of [...(await window.architect.pending())]) await window.architect.decide(p.id, false, 'demo reset')
-})
-await page.waitForTimeout(600)
 await shot('contract-canvas')
 
 // code-mode

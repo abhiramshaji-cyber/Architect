@@ -4,7 +4,7 @@
 
 **Draw your architecture. Make your AI follow it.**
 
-Coding agents generate structure faster than anyone reviews it. Architect puts the engineer back in control: you draw the system, the agent has to read it, and every structural change it wants comes back to you for approval on the canvas.
+Coding agents generate structure faster than anyone reviews it. Architect puts the engineer back in control: you draw the system, the agent has to read it, and every structural change it makes lands on your canvas live, highlighted as it arrives and kept in a history.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-8A2BE2.svg)](https://modelcontextprotocol.io)
@@ -15,13 +15,9 @@ Coding agents generate structure faster than anyone reviews it. Architect puts t
 
 ## What it looks like
 
-![The approval gate](docs/screenshots/approval-gate.png)
-
-*Five blocked calls waiting in the inbox, each one already drawn on the canvas as a dashed ghost. The `db -> api` edge would close a cycle, so the cycle lights up red.*
-
 ![The contract canvas](docs/screenshots/contract-canvas.png)
 
-*The same project once the inbox is clear: the architecture as you drew it, reading top to bottom.*
+*The architecture as you drew it, reading top to bottom.*
 
 ![Code mode, folders](docs/screenshots/code-folders.png)
 
@@ -58,20 +54,20 @@ claude: check_change({ from: 'api', to: 'search' })
         -> UNKNOWN-COMPONENT  'search' is not on the canvas, it proposes the component
 
 claude: propose_change({ kind: 'component', id: 'search', ... })
-        -> blocks
+        -> APPROVED           written to architect.md at once
 
 claude: check_change({ from: 'ui', to: 'billing' })
         -> UNDRAWN-EDGE       both components exist, no edge between them, it proposes the edge
 
 claude: propose_change({ kind: 'edge', from: 'ui', to: 'billing', ... })
-        -> blocks
+        -> APPROVED           written to architect.md at once
 ```
 
-At that moment a dashed ghost node appears on your canvas, sitting exactly where the new component would live, with its edges drawn in. If it would create a cycle, the cycle lights up red. You approve or reject in one click, and the blocked call returns.
+There is no approval step. The change lands in `architect.md` immediately and shows up on your canvas as it happens, with new components and edges highlighted as they arrive. Every change, to the contract or to the code, is kept in a history you can scroll back through. A change that would close a cycle, name an unknown component or cross a forbidden rule is rejected with the reason, and the file is left alone.
 
-**You never approve a text diff. You approve a picture of your system with the change in it.**
+**You never read a text diff. You watch a picture of your system change.**
 
-## What needs your approval
+## What shows up on the canvas
 
 - **A new component.** The largest source of sprawl.
 - **A new edge.** How a clean graph quietly becomes a mesh.
@@ -122,9 +118,11 @@ npm run install:local
 
 That installs the app and writes the MCP bridge to `~/.architect/bin/architect-mcp.mjs`, outside the app bundle, because Node cannot execute a file inside `app.asar`. If that file is missing, `npm run install:local` has not run yet and no client can reach Architect.
 
-Register the bridge once, with whichever client you use.
+For Claude Code, the install also registers the bridge (`claude mcp add --scope user architect`) when the `claude` CLI is present, and merges two hooks into `~/.claude/settings.json`: `SessionStart`, and `PostToolUse` on `Edit|Write|MultiEdit|NotebookEdit`. Both run `node ~/.architect/bin/architect-mcp.mjs hook`. Existing hooks are kept and reinstalling never duplicates them. With these in place every Claude Code session opens an Architect tab bound to the folder it works in (or the matching folder of a worktree it edits), and that tab rescans and marks each edited file live. The hook exits at once and stays silent when Architect is not running.
 
-Claude Code, in any terminal:
+Other clients register the bridge by hand.
+
+Claude Code, if the CLI was not on your PATH during install:
 
 ```bash
 claude mcp add --scope user architect -- node ~/.architect/bin/architect-mcp.mjs
@@ -167,27 +165,11 @@ node /path/to/architect/out/lsp/server.js --stdio
 
 In Neovim that is `vim.lsp.start({ cmd = { 'node', '/path/to/architect/out/lsp/server.js', '--stdio' }, filetypes = { 'markdown' } })`. In VS Code it is the `serverOptions.command` of a `LanguageClient`. The server only answers for a document named `architect.md`, so pointing it at markdown in general is safe.
 
-## Worktrees
-
-The Worktrees tab lists the git worktrees on your machine so you can open one or delete it. Git decides what a worktree is: Architect finds your repos, asks each one for `git worktree list`, and shows every linked worktree it reports, wherever it lives. The main checkout of a repo is never listed.
-
-By default the tab shows only Claude worktrees, meaning the ones inside a worktree folder. Switch the header button to All worktrees to see the rest, such as a sibling folder made with `git worktree add ../app-feature`.
-
-Open Locations in the tab header to change where Architect looks. Changes are saved to `~/.architect/settings.json` and trigger a full rescan.
-
-- Scan folders (`worktreeRoots`) are the folders searched for repos. The default is your home folder. Add one with the native folder picker, for example a drive outside your home. With no scan folders, only projects you have open are checked.
-- Depth (`worktreeScanDepth`) is how many folders deep the scan goes below each scan folder. The default is 6.
-- Worktree folders (`worktreeFolders`) mark where Claude worktrees live. The default is `.claude/worktrees`, which is where Claude Code creates them. A relative folder is taken inside each repo and may not point outside it. An absolute folder, such as `~/worktrees` expanded to its full path, counts for every repo.
-
-A plain folder inside a relative worktree folder that git does not know about is still listed as broken, so you can clear it out. Heavy folders such as `node_modules`, `Library` and `AppData` are always skipped, and symlinks are not followed.
-
-Deleting follows git too. Any linked worktree git reports for the repo can be deleted with `git worktree remove`, after the same confirmations for uncommitted files, unpushed commits and merged branches. The main worktree, a folder that holds it or another worktree, and a project open in any window are always refused. A plain folder git does not know moves to the Trash only when it sits directly inside a relative worktree folder of that repo.
-
 ## Status
 
 V1 is in active development. It is deliberately small:
 
-**In:** the canvas, the four gated operations, ghost previews, cycle detection, multi project, and the four MCP tools that close the read plus approve loop.
+**In:** the canvas, the four structural operations, live change highlighting with a history, cycle detection, multi project, and the MCP tools the agent reads and writes the contract through.
 
 **Out, on purpose:** no import verification yet, no drift report, no decision log, no cloud, no accounts. Those are V2, and they are tracked as issues.
 

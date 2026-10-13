@@ -14,8 +14,6 @@ import {
   NODE_SEP,
   DEFAULT_STAGE_W,
   roleOf,
-  statusOf,
-  NODE_BADGES_H,
   NODE_BASE_H,
   NODE_PURPOSE_H,
   NODE_W,
@@ -38,7 +36,7 @@ function architecture(components: string[], edges: [string, string][]): Architec
 }
 
 function layout(a: Architecture) {
-  const { nodes, links } = build(a, [])
+  const { nodes, links } = build(a)
   return positions(nodes, links)
 }
 
@@ -80,31 +78,6 @@ describe('folderName', () => {
 
   it('falls back to the root itself when there is no segment', () => {
     expect(folderName('/')).toBe('/')
-  })
-})
-
-describe('statusOf', () => {
-  const data = (over: Partial<NodeData>): NodeData => ({
-    kind: 'component',
-    label: 'a',
-    purpose: '',
-    owns: [],
-    ghost: false,
-    role: 'middle',
-    badges: [],
-    ...over
-  })
-
-  it('reports the role of a drawn component', () => {
-    expect(statusOf(data({ role: 'entry' }))).toBe('entry')
-  })
-
-  it('reports a ghost as proposed', () => {
-    expect(statusOf(data({ ghost: true }))).toBe('proposed')
-  })
-
-  it('reports an unowned file proposal as having no owner', () => {
-    expect(statusOf(data({ kind: 'file', ghost: true, unassigned: true }))).toBe('no owner')
   })
 })
 
@@ -256,7 +229,7 @@ describe('packing', () => {
 
   it('never packs a block wider than the stage can draw a legible card in', () => {
     const at = positions(...(() => {
-      const { nodes, links } = build(architecture(ids(200), []), [])
+      const { nodes, links } = build(architecture(ids(200), []))
       return [nodes, links, undefined, 1600] as const
     })())
 
@@ -266,13 +239,10 @@ describe('packing', () => {
 
 describe('heightOf', () => {
   const data = (over: Partial<NodeData>): NodeData => ({
-    kind: 'component',
     label: 'a',
     purpose: '',
     owns: [],
-    ghost: false,
     role: 'middle',
-    badges: [],
     ...over
   })
 
@@ -286,18 +256,12 @@ describe('heightOf', () => {
     expect(heightOf(data({ purpose: 'word '.repeat(400) }))).toBe(short)
   })
 
-  it('adds one badge row however many badges there are', () => {
-    const one = heightOf(data({ badges: ['zod'] }))
-    expect(one).toBe(NODE_BASE_H + NODE_BADGES_H)
-    expect(heightOf(data({ badges: ['zod', 'pg', 'express', 'chokidar'] }))).toBe(one)
-  })
-
   it('ignores owns, which the card no longer draws', () => {
     expect(heightOf(data({ owns: ['src/**', 'migrations/*.sql'] }))).toBe(NODE_BASE_H)
   })
 
   it('stays under the function card it sits beside', () => {
-    expect(heightOf(data({ purpose: 'p', badges: ['zod'] }))).toBeLessThan(NODE_W)
+    expect(heightOf(data({ purpose: 'p' }))).toBeLessThan(NODE_W)
   })
 })
 
@@ -315,20 +279,12 @@ describe('reserved geometry', () => {
       edges: [{ from: 'ui', to: 'db' }]
     }
 
-    const { nodes, links } = build(a, [
-      {
-        id: 'p1',
-        projectRoot: '/r',
-        proposal: { kind: 'package', name: 'zod', component: 'ui' },
-        rationale: '',
-        createdAt: 0
-      }
-    ])
+    const { nodes, links } = build(a)
     const at = positions(nodes, links)
     const ui = nodes.find((n) => n.id === 'ui')!
     const db = nodes.find((n) => n.id === 'db')!
 
-    expect(heightOf(ui.data)).toBe(NODE_BASE_H + NODE_PURPOSE_H + NODE_BADGES_H)
+    expect(heightOf(ui.data)).toBe(NODE_BASE_H + NODE_PURPOSE_H)
     expect(heightOf(db.data)).toBe(NODE_BASE_H)
     expect(at.get('db')!.y - (at.get('ui')!.y + heightOf(ui.data))).toBeGreaterThan(0)
   })
@@ -345,7 +301,7 @@ describe('reserved geometry', () => {
       ['cache', 'log']
     ])
 
-    const { nodes, links } = build(a, [])
+    const { nodes, links } = build(a)
     const boxes = nodes.map((n) => {
       const p = positions(nodes, links).get(n.id)!
       return { x0: p.x, x1: p.x + NODE_W, y0: p.y, y1: p.y + heightOf(n.data) }
@@ -427,7 +383,7 @@ describe('positions with a stored layout', () => {
     ['ui', 'api'],
     ['api', 'db']
   ])
-  const { nodes, links } = build(a, [])
+  const { nodes, links } = build(a)
 
   const boxes = (at: Map<string, { x: number; y: number }>) =>
     nodes.map((n) => {
@@ -496,19 +452,10 @@ describe('positions with a stored layout', () => {
   it('ignores a stored position for a node that is not on the canvas', () => {
     expect(positions(nodes, links, { ghost: { x: 5, y: 5 } })).toEqual(positions(nodes, links))
   })
-
-  it('auto places a ghost node beside the stored ones', () => {
-    const { nodes: withGhost, links: ghostLinks } = build(a, [
-      {
-        id: 'p1',
-        projectRoot: '/r',
-        proposal: { kind: 'component', id: 'cache', purpose: 'Caches.', owns: [] },
-        rationale: '',
-        createdAt: 0
-      }
-    ])
-    const at = positions(withGhost, ghostLinks, { ui: { x: 0, y: 0 }, api: { x: 0, y: 200 }, db: { x: 0, y: 400 } })
-    expect(at.size).toBe(withGhost.length)
-    for (const id of withGhost.map((n) => n.id)) expect(at.get(id)).toBeDefined()
+  it('auto places a new component beside the stored ones', () => {
+    const { nodes: grown, links: grownLinks } = build(architecture(['ui', 'api', 'db', 'cache'], [['ui', 'api'], ['api', 'db']]))
+    const at = positions(grown, grownLinks, { ui: { x: 0, y: 0 }, api: { x: 0, y: 200 }, db: { x: 0, y: 400 } })
+    expect(at.size).toBe(grown.length)
+    for (const id of grown.map((n) => n.id)) expect(at.get(id)).toBeDefined()
   })
 })

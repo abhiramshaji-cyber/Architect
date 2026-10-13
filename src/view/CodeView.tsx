@@ -22,14 +22,13 @@ export default function CodeView({ theme }: ViewProps) {
   const trail = crumbs(currentRoot ? folderName(currentRoot) : 'root', codeWorld)
   const goUp = useCallback(() => setCodePath(parentOf(codeWorld)), [codeWorld])
 
-  if (!currentRoot) return <div className="empty-state">Select a project to open its code map</div>
+  if (!currentRoot) return null
 
   return (
     <>
       <header className="canvas-header">
         <h2>{shown ? shown.title : folderName(currentRoot)}</h2>
         <p className="canvas-path">{currentRoot}</p>
-        <p>Every folder, file and function in this project.</p>
       </header>
 
       {codeMap && (
@@ -61,16 +60,16 @@ export default function CodeView({ theme }: ViewProps) {
       ) : (
         <div className="empty-state code-blank">
           {codeBusy ? (
-            <p>Scanning the project. This reads every file and can take a while.</p>
+            <p>Scanning…</p>
           ) : codeMap === null ? (
             <>
-              <p>This project has not been scanned yet.</p>
+              <p>Not scanned</p>
               <button className="primary" onClick={rescan}>
-                Scan project
+                Scan
               </button>
             </>
           ) : (
-            <p>Loading the code map…</p>
+            <p>Loading…</p>
           )}
           {codeError && <p className="code-error">{codeError}</p>}
         </div>

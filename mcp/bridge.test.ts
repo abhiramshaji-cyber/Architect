@@ -9,7 +9,6 @@ import {
   getArchitecture,
   checkChange,
   proposeChange,
-  awaitProposal,
   listEdits,
   getEdit,
 } from './bridge.js'
@@ -210,21 +209,6 @@ describe('bridge', () => {
     const proposal: Proposal = { kind: 'component', id: 'x', purpose: 'p', owns: ['o'] }
     await proposeChange(proposal, 'because', path)
     expect(seenReq).toMatchObject({ op: 'propose_change', proposal, rationale: 'because' })
-
-    stopServer(server, path)
-  })
-
-  it('maps await_proposal to op await_proposal with proposalId', async () => {
-    let seenReq: Request | undefined
-    const { server, path } = startServer((socket) => {
-      readRequests(socket, (req, s) => {
-        seenReq = req
-        s.write(JSON.stringify({ id: req.id, ok: true, result: { status: 'approved' } }) + '\n')
-      })
-    })
-
-    await awaitProposal('p1', path)
-    expect(seenReq).toMatchObject({ op: 'await_proposal', proposalId: 'p1' })
 
     stopServer(server, path)
   })

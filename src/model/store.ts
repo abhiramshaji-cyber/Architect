@@ -6,12 +6,14 @@ import type {
   DraftFailure,
   Edit,
   EditSummary,
+  HistoryEntry,
   Ownership,
-  Pending,
   ProjectSummary,
 } from '../../shared/types'
 import { isDirty, refusalOf, type Buffer } from './buffer'
 import type { OpResult } from './edit-ops'
+import { merge } from './live/history'
+import { absorb, prune, LIVE_MS, type Recent } from './live/recent'
 
 export type ProjectEntry = {
   status: 'loading' | 'ready' | 'error'
@@ -32,14 +34,15 @@ export type ProjectEntry = {
   fileLine: number | null
   fileBusy: boolean
   fileNotice: { text: string; error: boolean } | null
+  touched: string | null
+  history: HistoryEntry[]
+  recent: Recent
 }
 
 export type ProjectState = {
   projects: ProjectSummary[]
   currentRoot: string | null
   entries: Record<string, ProjectEntry>
-  pending: Pending[]
-  reassign: Record<string, string>
   message: { text: string; error: boolean } | null
   architecture: Architecture | null
   contract: ContractState | null
@@ -57,6 +60,9 @@ export type ProjectState = {
   fileLine: number | null
   fileBusy: boolean
   fileNotice: { text: string; error: boolean } | null
+  touched: string | null
+  history: HistoryEntry[]
+  recent: Recent
 }
 
 function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
@@ -79,6 +85,9 @@ function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
     fileLine: null,
     fileBusy: false,
     fileNotice: null,
+    touched: null,
+    history: [],
+    recent: {},
   }
 }
 
@@ -101,6 +110,9 @@ function activeView(entries: Record<string, ProjectEntry>, root: string | null) 
     fileLine: entry?.fileLine ?? null,
     fileBusy: entry?.fileBusy ?? false,
     fileNotice: entry?.fileNotice ?? null,
+    touched: entry?.touched ?? null,
+    history: entry?.history ?? [],
+    recent: entry?.recent ?? {},
   }
 }
 
@@ -108,8 +120,6 @@ let state: ProjectState = {
   projects: [],
   currentRoot: null,
   entries: {},
-  pending: [],
-  reassign: {},
   message: null,
   ...activeView({}, null),
 }
@@ -156,16 +166,6 @@ export function loadErrorOf(s: ProjectState): string | null {
   return s.currentRoot ? s.entries[s.currentRoot]?.error ?? null : null
 }
 
-export function pendingHere(s: ProjectState): Pending[] {
-  return s.pending
-    .filter((p) => p.projectRoot === s.currentRoot)
-    .map((p) => {
-      const reassigned = p.proposal.kind === 'file' ? s.reassign[p.id] : undefined
-      if (!reassigned || p.proposal.kind !== 'file') return p
-      return { ...p, proposal: { ...p.proposal, component: reassigned } }
-    })
-}
-
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -190,41 +190,59 @@ function discardOk(entry: ProjectEntry | undefined): boolean {
 }
 
 let started = false
+let bound: string | null = null
+let boundTouch: string | null = null
 
 export function start(): void {
   if (started) return
   started = true
 
+  const query = new URLSearchParams(globalThis.location?.search)
+  bound = query.get('root')
+  boundTouch = query.get('touch')
+  if (bound) adoptProject(bound)
+
   window.architect.projects().then(loadedProjects)
-  window.architect.pending().then(loadedPending)
-  window.architect.onChange((a) => {
-    const root = state.currentRoot
-    if (!root || !state.entries[root]) return
-    patchEntry(root, { architecture: a })
+  window.architect.onChange((root, architecture) => {
+    if (!state.entries[root]) return
+    patchEntry(root, { architecture })
     loadOwners(root)
   })
-  window.architect.onPending(loadedPending)
+  window.architect.onHistory(arrived)
   window.architect.onProjects(loadedProjects)
+  window.architect.onCodeMap((root, codeMap) => {
+    if (!state.entries[root]) return
+    patchEntry(root, { codeMap })
+    loadOwners(root)
+  })
+  window.architect.onTouch(({ root, file }) => patchEntry(root, { touched: file }))
 }
 
 function loadedProjects(projects: ProjectSummary[]): void {
   const entries = { ...state.entries }
   for (const p of projects) {
     const entry = entries[p.root]
-    if (entry?.status === 'ready') entries[p.root] = { ...entry, contract: p.contract }
+    if (entry?.status !== 'ready') continue
+    entries[p.root] = { ...entry, contract: p.contract, drafting: p.drafting ?? false, draftError: p.draftError ?? null }
   }
   set({ projects, entries })
-  if (Object.keys(state.entries).length > 0) return
+  if (bound || Object.keys(state.entries).length > 0) return
 
-  const preferred = state.pending[0]?.projectRoot ?? projects[0]?.root
+  const preferred = projects[0]?.root
   if (preferred) adoptProject(preferred)
 }
 
-function loadedPending(pending: Pending[]): void {
-  set({ pending })
-  if (Object.keys(state.entries).length > 0) return
-  const root = pending[0]?.projectRoot
-  if (root) adoptProject(root)
+function arrived(entry: HistoryEntry): void {
+  const existing = state.entries[entry.root]
+  if (!existing) return
+  const at = Date.now()
+  const touched = entry.source === 'code' && entry.file ? entry.file : existing.touched
+  patchEntry(entry.root, { history: merge(existing.history, [entry]), recent: absorb(existing.recent, entry, at), touched })
+
+  setTimeout(() => {
+    const now = state.entries[entry.root]
+    if (now) patchEntry(entry.root, { recent: prune(now.recent, Math.max(Date.now(), at + LIVE_MS)) })
+  }, LIVE_MS)
 }
 
 export function openProject(root: string): void {
@@ -244,7 +262,7 @@ function enterProject(root: string): void {
   const existing = state.entries[root]
   const loaded = !!existing && existing.status !== 'error'
   set({
-    entries: { ...state.entries, [root]: existing ?? emptyEntry() },
+    entries: { ...state.entries, [root]: existing ?? { ...emptyEntry(), touched: root === bound ? boundTouch : null } },
     currentRoot: root,
     message: null,
   })
@@ -257,6 +275,7 @@ function enterProject(root: string): void {
       if (!loaded) {
         loadEdits(root)
         loadOwners(root)
+        loadHistory(root)
       }
     })
     .catch((err: unknown) => {
@@ -317,6 +336,18 @@ function loadEdits(root: string): void {
     })
 }
 
+function loadHistory(root: string): void {
+  window.architect
+    .history(root)
+    .then((history) => {
+      const entry = state.entries[root]
+      if (entry) patchEntry(root, { history: merge(entry.history, history) })
+    })
+    .catch((err: unknown) => {
+      if (state.entries[root]) fail(err)
+    })
+}
+
 function loadOwners(root: string): void {
   window.architect
     .ownership(root)
@@ -358,14 +389,6 @@ export function rescan(): void {
       if (!state.entries[root]) return
       patchEntry(root, { codeError: errorText(err), codeBusy: false })
     })
-}
-
-export function reassignFile(id: string, component: string): void {
-  set({ reassign: { ...state.reassign, [id]: component } })
-}
-
-export function decide(id: string, approved: boolean, reason?: string, component?: string): void {
-  void window.architect.decide(id, approved, reason, component)
 }
 
 export function newEdit(): void {

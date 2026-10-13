@@ -1,32 +1,57 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Editor from './Editor'
+import { useNavigator } from './editor/useNavigator'
 import FileTree from './FileTree'
+import SearchPanel from './search/SearchPanel'
 import { isDirty, refusalOf } from '../model/buffer'
-import { closeFile, editFile, openFile, reloadFile, revertFile, saveFile, useProject } from '../model/store'
+import { closeFile, editFile, loadCodeMap, openFile, reloadFile, revertFile, saveFile, useProject } from '../model/store'
 
 export default function FilesView() {
-  const { currentRoot, file, fileLine, fileBusy, fileNotice } = useProject()
+  const { currentRoot, file, fileLine, fileBusy, fileNotice, touched, codeMap } = useProject()
   const dirty = isDirty(file)
+  const pane = useRef<HTMLDivElement | null>(null)
+  const { onAction, quickOpen, overlay } = useNavigator(currentRoot, file?.path ?? null, codeMap)
+  const open = useRef(quickOpen)
+  const [searching, setSearching] = useState(false)
+
+  open.current = quickOpen
+
+  useEffect(() => {
+    loadCodeMap()
+  }, [currentRoot, codeMap])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 's' || !(e.metaKey || e.ctrlKey)) return
-      e.preventDefault()
-      saveFile()
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      if (e.shiftKey) {
+        if (e.code !== 'KeyF' || !pane.current?.contains(document.activeElement)) return
+        e.preventDefault()
+        setSearching(true)
+      } else if (e.key === 's') {
+        e.preventDefault()
+        saveFile()
+      } else if (e.key === 'p' && pane.current?.contains(document.activeElement)) {
+        e.preventDefault()
+        open.current()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  if (!currentRoot) return <div className="empty-state">Select a project to browse its files</div>
+  if (!currentRoot) return null
 
   return (
-    <div className="files">
-      <FileTree root={currentRoot} current={file?.path ?? null} onOpen={openFile} />
+    <div className="files" ref={pane}>
+      {searching ? (
+        <SearchPanel onClose={() => setSearching(false)} />
+      ) : (
+        <FileTree root={currentRoot} current={file?.path ?? null} touched={touched} onOpen={openFile} />
+      )}
 
       <div className="files-pane">
         {file === null ? (
-          <div className="empty-state">{fileBusy ? 'Opening…' : 'Select a file to read or edit it'}</div>
+          <div className="empty-state">{fileBusy ? 'Opening…' : 'No file open'}</div>
         ) : (
           <>
             <div className="files-bar">
@@ -64,11 +89,14 @@ export default function FilesView() {
                 line={fileLine}
                 editable={!fileBusy}
                 onChange={editFile}
+                onAction={(action, view) => (action === 'search' ? setSearching(true) : onAction(action, view))}
               />
             )}
           </>
         )}
       </div>
+
+      {overlay}
     </div>
   )
 }

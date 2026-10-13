@@ -38,15 +38,16 @@ function Owner({ owners }: { owners: string[] }) {
   )
 }
 
-function Row({ row, active, onOpen, onToggle }: {
+function Row({ row, active, live, onOpen, onToggle }: {
   row: TreeRow
   active: boolean
+  live: boolean
   onOpen: (row: TreeRow) => void
   onToggle: (row: TreeRow) => void
 }) {
   return (
     <div
-      className={active ? 'tree-row active' : 'tree-row'}
+      className={['tree-row', active && 'active', live && 'live'].filter(Boolean).join(' ')}
       style={{ height: ROW_H, paddingLeft: 6 + row.depth * 12 }}
       role="treeitem"
       aria-selected={active}
@@ -61,9 +62,10 @@ function Row({ row, active, onOpen, onToggle }: {
   )
 }
 
-export default function FileTree({ root, current, onOpen }: {
+export default function FileTree({ root, current, touched, onOpen }: {
   root: string
   current: string | null
+  touched: string | null
   onOpen: (path: string) => void
 }) {
   const [listings, setListings] = useState<Listings>({})
@@ -202,12 +204,13 @@ export default function FileTree({ root, current, onOpen }: {
           key={row.path}
           row={row}
           active={row.path === focus || row.path === current}
+          live={touched !== null && (row.path === touched || touched.startsWith(`${row.path}/`))}
           onOpen={openRow}
           onToggle={(target) => toggle(target.path)}
         />
       ))}
       <div style={{ height: shown.after }} />
-      {all.length === 0 && listings[''] !== undefined && <div className="tree-empty">This project has no visible files</div>}
+      {all.length === 0 && listings[''] !== undefined && <div className="tree-empty">No files</div>}
     </div>
   )
 }

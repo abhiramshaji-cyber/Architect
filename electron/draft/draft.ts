@@ -13,13 +13,14 @@ const MAX_STDERR = 400
 
 export type ClaudeOutput = { code: number | 'missing' | 'timeout'; stdout: string; stderr: string }
 
-export type ClaudeRun = (prompt: string, cwd: string, timeoutMs?: number) => Promise<ClaudeOutput>
+export type ClaudeRun = (prompt: string, cwd: string, timeoutMs?: number, model?: string) => Promise<ClaudeOutput>
 
-export const runClaude: ClaudeRun = (prompt, cwd, timeoutMs = TIMEOUT_MS) =>
+export const runClaude: ClaudeRun = (prompt, cwd, timeoutMs = TIMEOUT_MS, model) =>
   new Promise((resolve) => {
     const options = { cwd, maxBuffer: MAX_OUTPUT, timeout: timeoutMs, windowsHide: true }
+    const args = model ? ['--model', model, '--print', prompt] : ['--print', prompt]
 
-    execFile('claude', ['--print', prompt], options, (error, stdout, stderr) => {
+    execFile('claude', args, options, (error, stdout, stderr) => {
       if (!error) return resolve({ code: 0, stdout, stderr })
 
       const failure = error as { code?: unknown; killed?: boolean }
@@ -269,12 +270,17 @@ export function skeleton(map: CodeMap): Component[] {
   }))
 }
 
-export async function draft(root: string, map: CodeMap, run: ClaudeRun = runClaude): Promise<DraftResult<string>> {
+export async function draft(
+  root: string,
+  map: CodeMap,
+  run: ClaudeRun = runClaude,
+  model?: string,
+): Promise<DraftResult<string>> {
   const found = evidence(map)
   if (found.components.length === 0) return { ok: false, error: { kind: 'nothing-to-draft' } }
 
   const title = path.basename(root)
-  const out = await run(promptFor(found, title), root)
+  const out = await run(promptFor(found, title), root, undefined, model)
 
   if (out.code === 'missing') return { ok: false, error: { kind: 'not-installed' } }
   if (out.code === 'timeout') return { ok: false, error: { kind: 'timed-out' } }

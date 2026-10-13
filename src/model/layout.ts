@@ -1,29 +1,22 @@
 import dagre from '@dagrejs/dagre'
-import { isPt, type Architecture, type Edge, type Layout, type Pending, type Proposal, type Pt } from '../../shared/types'
+import { isPt, type Architecture, type Edge, type Layout, type Pt } from '../../shared/types'
 
 export type Role = 'entry' | 'foundation' | 'middle'
 
 export type NodeData = {
-  kind: 'component' | 'file'
   label: string
   purpose: string
   owns: string[]
-  ghost: boolean
   role: Role
-  badges: string[]
   files?: number
-  unassigned?: boolean
 }
 
 export const NODE_W = 220
 export const NODE_BASE_H = 37
 export const NODE_PURPOSE_H = 30
-export const NODE_BADGES_H = 24
 
 export function heightOf(data: NodeData): number {
-  const purpose = data.purpose === '' ? 0 : NODE_PURPOSE_H
-  const badges = data.badges.length === 0 ? 0 : NODE_BADGES_H
-  return NODE_BASE_H + purpose + badges
+  return data.purpose === '' ? NODE_BASE_H : NODE_BASE_H + NODE_PURPOSE_H
 }
 
 const RANK_SEP = 44
@@ -53,47 +46,6 @@ export function clampInspectorWidth(px: number, stage: number): number {
   return Math.round(Math.min(Math.max(px, min), max))
 }
 
-export function findCycleEdges(edges: Edge[], from: string, to: string): Edge[] | null {
-  if (from === to) return []
-
-  const queue = [to]
-  const visited = new Set([to])
-  const parent = new Map<string, Edge>()
-
-  while (queue.length > 0) {
-    const current = queue.shift() as string
-    if (current === from) {
-      const path: Edge[] = []
-      let node = from
-      while (node !== to) {
-        const edge = parent.get(node)
-        if (!edge) break
-        path.push(edge)
-        node = edge.from
-      }
-      return path
-    }
-    for (const e of edges) {
-      if (e.from === current && !visited.has(e.to)) {
-        visited.add(e.to)
-        parent.set(e.to, e)
-        queue.push(e.to)
-      }
-    }
-  }
-  return null
-}
-
-export function hasCycle(edges: Edge[], from: string, to: string): boolean {
-  return findCycleEdges(edges, from, to) !== null
-}
-
-export function statusOf(data: NodeData): string {
-  if (data.unassigned) return 'no owner'
-  if (data.ghost) return 'proposed'
-  return data.role
-}
-
 export function folderName(root: string): string {
   const segments = root.split(/[/\\]/).filter(Boolean)
   return segments[segments.length - 1] ?? root
@@ -107,93 +59,16 @@ export function roleOf(id: string, edges: Edge[]): Role {
   return 'middle'
 }
 
-function packageBadges(componentId: string, pending: Pending[]): string[] {
-  return pending
-    .filter((p) => p.proposal.kind === 'package' && p.proposal.component === componentId)
-    .map((p) => (p.proposal as Extract<Proposal, { kind: 'package' }>).name)
-}
-
 export type Logical = { id: string; data: NodeData }
-export type Link = { id: string; from: string; to: string; kind: 'real' | 'proposed' | 'owns'; cyclical: boolean }
+export type Link = { id: string; from: string; to: string }
 
-export function build(architecture: Architecture, pending: Pending[]) {
-  const ids = new Set(architecture.components.map((c) => c.id))
-
+export function build(architecture: Architecture) {
   const nodes: Logical[] = architecture.components.map((c) => ({
     id: c.id,
-    data: {
-      kind: 'component',
-      label: c.id,
-      purpose: c.purpose,
-      owns: c.owns,
-      ghost: false,
-      role: roleOf(c.id, architecture.edges),
-      badges: packageBadges(c.id, pending)
-    }
+    data: { label: c.id, purpose: c.purpose, owns: c.owns, role: roleOf(c.id, architecture.edges) }
   }))
 
-  const links: Link[] = architecture.edges.map((e) => ({
-    id: `${e.from}->${e.to}`,
-    from: e.from,
-    to: e.to,
-    kind: 'real',
-    cyclical: false
-  }))
-
-  for (const p of pending) {
-    if (p.proposal.kind === 'component') {
-      const proposal = p.proposal
-      nodes.push({
-        id: `ghost-component-${p.id}`,
-        data: {
-          kind: 'component',
-          label: proposal.id,
-          purpose: proposal.purpose,
-          owns: proposal.owns,
-          ghost: true,
-          role: 'middle',
-          badges: []
-        }
-      })
-    }
-
-    if (p.proposal.kind === 'file') {
-      const proposal = p.proposal
-      const owned = ids.has(proposal.component)
-      const id = `ghost-file-${p.id}`
-      nodes.push({
-        id,
-        data: {
-          kind: 'file',
-          label: proposal.path.split('/').pop() ?? proposal.path,
-          purpose: proposal.path,
-          owns: [],
-          ghost: true,
-          role: 'middle',
-          badges: [],
-          unassigned: !owned
-        }
-      })
-      if (owned) links.push({ id: `owns-${p.id}`, from: proposal.component, to: id, kind: 'owns', cyclical: false })
-    }
-
-    if (p.proposal.kind === 'edge') {
-      const proposal = p.proposal
-      if (!ids.has(proposal.from) || !ids.has(proposal.to)) continue
-      const cyclePath = findCycleEdges(architecture.edges, proposal.from, proposal.to)
-      if (cyclePath) {
-        const inCycle = new Set(cyclePath.map((e) => `${e.from}->${e.to}`))
-        for (const link of links) if (inCycle.has(link.id)) link.cyclical = true
-      }
-      links.push({
-        id: `proposed-${p.id}`,
-        from: proposal.from,
-        to: proposal.to,
-        kind: 'proposed',
-        cyclical: cyclePath !== null
-      })
-    }
-  }
+  const links: Link[] = architecture.edges.map((e) => ({ id: `${e.from}->${e.to}`, from: e.from, to: e.to }))
 
   return { nodes, links }
 }

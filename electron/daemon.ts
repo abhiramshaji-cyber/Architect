@@ -6,18 +6,18 @@ import path from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { SOCKET_PATH } from '../shared/socket'
 import {
-  PROPOSAL_TIMEOUT_MS,
   type Architecture,
   type CodeMap,
   type ContractState,
   type Decision,
+  type DraftFailure,
   type DraftResult,
   type Edit,
   type EditSummary,
+  type HistoryEntry,
+  historyEntrySchema,
   type OpenedProject,
   type Ownership,
-  type Pending,
-  pendingSchema,
   type ProjectSummary,
   type Proposal,
   requestSchema,
@@ -35,7 +35,10 @@ import { describe, type DescriptionCache } from './scan/describe'
 import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
+import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
+import { locateSession } from './git/session'
+import { AUTO_DRAFT_MODEL, placeOf, placeSkip, sizeSkip } from './autodraft/skip'
 
 const MAP_VERSION = 3
 
@@ -57,6 +60,12 @@ function cacheKey(root: string): string {
 function mapPath(dir: string, root: string) {
   return path.join(dir, 'maps', `${cacheKey(root)}.json`)
 }
+
+function historyPath(dir: string, root: string) {
+  return path.join(dir, 'history', `${cacheKey(root)}.json`)
+}
+
+const HISTORY_LIMIT = 200
 
 function isCallRef(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
@@ -264,10 +273,6 @@ function watchSources(root: string, changed: () => void): Closable {
   return sources
 }
 
-type Waiter = { resolve: (decision: Decision) => void; timer: ReturnType<typeof setTimeout> }
-
-type PendingEntry = { pending: Pending; waiters: Set<Waiter> }
-
 type ProjectState = {
   root: string
   architecture: Architecture | null
@@ -277,12 +282,12 @@ type ProjectState = {
   rescanTimer: ReturnType<typeof setTimeout> | null
   rescanning: boolean
   rescanAgain: boolean
+  touched: Set<string>
   lastWrittenContent: string | null
 }
 
 type DaemonOptions = {
   socketPath?: string
-  proposalTimeoutMs?: number
   rescanDebounceMs?: number
   claude?: ClaudeRun
 }
@@ -316,17 +321,20 @@ function recoverId(value: unknown): string | null {
 export function createDaemon(options: DaemonOptions = {}) {
   const socketPath = options.socketPath ?? process.env.ARCHITECT_SOCKET ?? SOCKET_PATH
   const cacheDir = path.dirname(socketPath)
-  const proposalTimeoutMs = options.proposalTimeoutMs ?? PROPOSAL_TIMEOUT_MS
   const rescanDebounceMs = options.rescanDebounceMs ?? RESCAN_DEBOUNCE_MS
   const claude = options.claude ?? runClaude
 
   const projects = new Map<string, ProjectState>()
-  const pending = new Map<string, PendingEntry>()
-  let activeRoot: string | null = null
-  let changeListener: ((a: Architecture) => void) | null = null
-  let pendingListener: ((p: Pending[]) => void) | null = null
+  const histories = new Map<string, HistoryEntry[]>()
+  let changeListener: ((root: string, architecture: Architecture) => void) | null = null
+  let historyListener: ((entry: HistoryEntry) => void) | null = null
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null
   let codeMapListener: ((root: string, map: CodeMap) => void) | null = null
+  let sessionListener: ((root: string, file: string) => void) | null = null
+  const sessionCwds = new Map<string, string>()
+  const drafting = new Map<string, Promise<DraftResult<string>>>()
+  const draftFailures = new Map<string, DraftFailure>()
+  const autoTried = new Set<string>()
   let server: net.Server | null = null
 
   async function locate(root: string, file: string): Promise<{ base: string; target: string } | 'unreadable' | 'outside'> {
@@ -530,48 +538,49 @@ export function createDaemon(options: DaemonOptions = {}) {
     saveProjects()
   }
 
-  const pendingPath = path.join(path.dirname(socketPath), 'pending.json')
+  function historyOf(root: string): HistoryEntry[] {
+    const known = histories.get(root)
+    if (known) return known
 
-  function listPending() {
-    return [...pending.values()].map((e) => e.pending)
-  }
-
-  function savePending() {
-    try {
-      fs.mkdirSync(path.dirname(pendingPath), { recursive: true })
-      fs.writeFileSync(pendingPath, JSON.stringify(listPending(), null, 2))
-    } catch (err) {
-      console.error('could not persist pending proposals:', err instanceof Error ? err.message : err)
-    }
-  }
-
-  function restorePending() {
     let stored: unknown
     try {
-      stored = JSON.parse(fs.readFileSync(pendingPath, 'utf8'))
+      stored = JSON.parse(fs.readFileSync(historyPath(cacheDir, root), 'utf8'))
     } catch {
-      return
+      stored = []
     }
-    if (!Array.isArray(stored)) return
-
-    for (const raw of stored) {
-      const parsed = pendingSchema.safeParse(raw)
-      if (!parsed.success || pending.has(parsed.data.id)) continue
-      pending.set(parsed.data.id, { pending: parsed.data, waiters: new Set() })
-    }
+    const entries = Array.isArray(stored) ? stored.flatMap((raw) => historyEntrySchema.safeParse(raw).data ?? []) : []
+    histories.set(root, entries)
+    return entries
   }
 
-  function notifyPending() {
-    savePending()
-    pendingListener?.(listPending())
+  function record(root: string, source: HistoryEntry['source'], diff: Diff, file?: string) {
+    if (isEmpty(diff)) return
+
+    const entry: HistoryEntry = { id: randomUUID(), root, at: Date.now(), source, ...diff, ...(file === undefined ? {} : { file }) }
+    const entries = [entry, ...historyOf(root)].slice(0, HISTORY_LIMIT)
+    histories.set(root, entries)
+
+    try {
+      const target = historyPath(cacheDir, root)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.writeFileSync(target, JSON.stringify(entries))
+    } catch (err) {
+      console.error('could not persist history:', errorText(err))
+    }
+    historyListener?.(entry)
   }
 
   function listProjects(): ProjectSummary[] {
-    return [...projects.values()].map((p) => ({
-      root: p.root,
-      title: p.architecture?.title ?? path.basename(p.root),
-      contract: p.contract,
-    }))
+    return [...projects.values()].map((p) => {
+      const failure = draftFailures.get(p.root)
+      return {
+        root: p.root,
+        title: p.architecture?.title ?? path.basename(p.root),
+        contract: p.contract,
+        ...(drafting.has(p.root) ? { drafting: true as const } : {}),
+        ...(failure ? { draftError: failure } : {}),
+      }
+    })
   }
 
   function notifyProjects() {
@@ -588,9 +597,10 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  async function rescanProject(root: string): Promise<CodeMap> {
+  async function rescanProject(root: string, touched: string[] = []): Promise<CodeMap> {
     const stored = readStoredMap(cacheDir, root)
     const described = await describe(await scan(root), root, stored?.cache)
+    if (stored?.map) record(root, 'code', codeDiff(stored.map, described.map, touched), touched.at(-1))
 
     try {
       writeStoredMap(cacheDir, root, described)
@@ -616,8 +626,10 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
 
     state.rescanning = true
+    const touched = [...state.touched]
+    state.touched.clear()
     try {
-      const map = await rescanProject(state.root)
+      const map = await rescanProject(state.root, touched)
       if (projects.get(state.root) === state) codeMapListener?.(state.root, map)
     } catch (err) {
       console.error(`could not rescan ${state.root}:`, errorText(err))
@@ -628,6 +640,37 @@ export function createDaemon(options: DaemonOptions = {}) {
       state.rescanAgain = false
       scheduleRescan(state)
     }
+  }
+
+  async function touchSession(cwd: string, session: string | undefined, file: string | undefined): Promise<string | null> {
+    if (!file) {
+      if (session) sessionCwds.set(session, cwd)
+      return null
+    }
+
+    const located = await locateSession((session && sessionCwds.get(session)) || cwd, file)
+    if (!located?.file) return null
+
+    const state = loadProject(located.root)
+    const relative = path.relative(located.root, located.file).split(path.sep).join('/')
+    state.touched.add(relative)
+    if (state.rescanTimer) clearTimeout(state.rescanTimer)
+    state.rescanTimer = null
+    void runRescan(state)
+
+    sessionListener?.(located.root, relative)
+    autoDraft(located.root).catch((err) => {
+      if (projects.get(located.root)?.contract.status === 'missing') console.error('auto draft failed:', errorText(err))
+    })
+    return located.root
+  }
+
+  async function autoDraft(root: string) {
+    if (autoTried.has(root) || drafting.has(root) || loadProject(root).contract.status !== 'missing') return
+    autoTried.add(root)
+    if (placeSkip(await placeOf(root)) || sizeSkip(await mapOf(root))) return
+    if (drafting.has(root) || projects.get(root)?.contract.status !== 'missing') return
+    await draftContract(root, AUTO_DRAFT_MODEL)
   }
 
   function teardown(state: ProjectState) {
@@ -645,8 +688,6 @@ export function createDaemon(options: DaemonOptions = {}) {
     projects.delete(root)
     remembered.delete(root)
     saveProjects()
-
-    if (activeRoot === root) activeRoot = null
     notifyProjects()
   }
 
@@ -666,6 +707,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       rescanTimer: null,
       rescanning: false,
       rescanAgain: false,
+      touched: new Set(),
     }
 
     function absorb(content: string) {
@@ -712,9 +754,8 @@ export function createDaemon(options: DaemonOptions = {}) {
       if (sameContract(contract, state.contract) && architecture === state.architecture) return
 
       notifyProjects()
-      if (state.root === activeRoot && state.contract.status === 'ready' && state.architecture) {
-        changeListener?.(state.architecture)
-      }
+      record(state.root, 'contract', contractDiff(architecture, state.architecture))
+      if (state.contract.status === 'ready' && state.architecture) changeListener?.(state.root, state.architecture)
     })
     state.watcher = watcher
 
@@ -727,188 +768,53 @@ export function createDaemon(options: DaemonOptions = {}) {
     return state
   }
 
-  function reopen(root: string): ProjectState | undefined {
-    try {
-      return loadProject(root)
-    } catch {
-      return undefined
-    }
-  }
-
-  function sameProposal(a: Proposal, b: Proposal): boolean {
-    if (a.kind !== b.kind) return false
-    if (a.kind === 'component' && b.kind === 'component') return a.id === b.id
-    if (a.kind === 'remove_component' && b.kind === 'remove_component') return a.id === b.id
-    if (a.kind === 'edge' && b.kind === 'edge') return a.from === b.from && a.to === b.to
-    if (a.kind === 'package' && b.kind === 'package') return a.name === b.name && a.component === b.component
-    if (a.kind === 'file' && b.kind === 'file') return a.path === b.path && a.component === b.component
-    if (a.kind === 'contract' && b.kind === 'contract') return a.markdown === b.markdown
-    return false
-  }
-
-  function findPendingEntry(root: string, proposal: Proposal): PendingEntry | undefined {
-    for (const entry of pending.values()) {
-      if (entry.pending.projectRoot === root && sameProposal(entry.pending.proposal, proposal)) return entry
-    }
-    return undefined
-  }
-
-  function waitForDecision(
-    entry: PendingEntry,
-    id: string,
-    registerCancel: (cancel: () => void) => void,
-  ): Promise<Decision> {
-    return new Promise((resolve) => {
-      function cleanup() {
-        clearTimeout(waiter.timer)
-        entry.waiters.delete(waiter)
-      }
-      const waiter: Waiter = {
-        resolve: (decision) => {
-          cleanup()
-          resolve(decision)
-        },
-        timer: setTimeout(() => {
-          cleanup()
-          resolve({ status: 'pending', id })
-        }, proposalTimeoutMs),
-      }
-      entry.waiters.add(waiter)
-      registerCancel(() => {
-        cleanup()
-        resolve({ status: 'pending', id })
-      })
-    })
-  }
-
-  function queue(root: string, proposal: Proposal, rationale: string): PendingEntry {
-    loadProject(root)
-    const existing = findPendingEntry(root, proposal)
-    if (existing) return existing
-
-    const id = randomUUID()
-    const entry: PendingEntry = {
-      pending: { id, projectRoot: root, proposal, rationale, createdAt: Date.now() },
-      waiters: new Set(),
-    }
-    pending.set(id, entry)
-    notifyPending()
-    return entry
-  }
-
-  function proposeChange(
-    root: string,
-    proposal: Proposal,
-    rationale: string,
-    registerCancel: (cancel: () => void) => void,
-  ): Promise<Decision> {
-    const entry = queue(root, proposal, rationale)
-    return waitForDecision(entry, entry.pending.id, registerCancel)
-  }
-
-  function awaitProposal(proposalId: string, registerCancel: (cancel: () => void) => void): Promise<Decision> {
-    const entry = pending.get(proposalId)
-    if (!entry) return Promise.reject(new Error(`no pending proposal: ${proposalId}`))
-    return waitForDecision(entry, proposalId, registerCancel)
-  }
-
-  function resolveWaiters(entry: PendingEntry, decision: Decision) {
-    for (const waiter of [...entry.waiters]) {
-      clearTimeout(waiter.timer)
-      waiter.resolve(decision)
-    }
-  }
-
   function writeContract(state: ProjectState, architecture: Architecture, content: string, exclusive = false) {
     fs.writeFileSync(architectMdPath(state.root), content, exclusive ? { flag: 'wx' } : undefined)
+    const before = state.architecture
     state.lastWrittenContent = content
     state.architecture = architecture
     state.contract = { status: 'ready' }
     notifyProjects()
-    if (state.root === activeRoot) changeListener?.(architecture)
+    record(state.root, 'contract', contractDiff(before, architecture))
+    changeListener?.(state.root, architecture)
   }
 
-  function settleContract(entry: PendingEntry, approved: boolean, reason?: string) {
-    const proposal = entry.pending.proposal
-    if (proposal.kind !== 'contract') return
+  function adopt(state: ProjectState, markdown: string): Decision {
+    const taken: Decision = { status: 'rejected', reason: `${state.root} already has an architect.md` }
+    if (state.contract.status !== 'missing') return taken
 
-    const root = entry.pending.projectRoot
-    const project = approved ? reopen(root) : undefined
+    try {
+      writeContract(state, parse(markdown), markdown, true)
+      return { status: 'approved' }
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === 'EEXIST' ? taken : { status: 'rejected', reason: errorText(err) }
+    }
+  }
 
-    if (!approved) {
-      resolveWaiters(entry, { status: 'rejected', reason: reason ?? '' })
-      return
-    }
-    if (!project) {
-      resolveWaiters(entry, { status: 'rejected', reason: `could not open ${root}` })
-      return
-    }
-    if (project.contract.status !== 'missing') {
-      resolveWaiters(entry, { status: 'rejected', reason: `${root} already has an architect.md` })
-      return
+  function proposeChange(root: string, proposal: Proposal): Decision {
+    const state = loadProject(root)
+    if (proposal.kind === 'contract') return adopt(state, proposal.markdown)
+    if (state.contract.status === 'invalid') return { status: 'rejected', reason: state.contract.error }
+    if (!state.architecture) return { status: 'rejected', reason: `${root} has no architect.md` }
+
+    if (proposal.kind === 'edge') {
+      const verdict = check(state.architecture, proposal.from, proposal.to)
+      if (verdict.status === 'forbidden') {
+        return { status: 'rejected', reason: `${proposal.from} -> ${proposal.to} is forbidden: ${verdict.reason}` }
+      }
     }
 
     try {
-      writeContract(project, parse(proposal.markdown), proposal.markdown, true)
-      resolveWaiters(entry, { status: 'approved' })
+      const content = serialize(apply(state.architecture, proposal))
+      if (content !== serialize(state.architecture)) writeContract(state, parse(content), content)
+      return { status: 'approved' }
     } catch (err) {
-      const taken = (err as NodeJS.ErrnoException).code === 'EEXIST'
-      resolveWaiters(entry, {
-        status: 'rejected',
-        reason: taken ? `${root} already has an architect.md` : errorText(err),
-      })
+      return { status: 'rejected', reason: errorText(err) }
     }
-  }
-
-  async function decide(id: string, approved: boolean, reason?: string, component?: string): Promise<void> {
-    const entry = pending.get(id)
-    if (!entry) return
-
-    if (entry.pending.proposal.kind === 'contract') {
-      settleContract(entry, approved, reason)
-      pending.delete(id)
-      notifyPending()
-      return
-    }
-
-    const root = entry.pending.projectRoot
-    const project = approved ? reopen(root) : undefined
-
-    const blocked =
-      project?.contract.status === 'invalid'
-        ? project.contract.error
-        : project?.contract.status === 'missing'
-          ? `${root} has no architect.md`
-          : null
-
-    if (approved && blocked !== null) {
-      resolveWaiters(entry, { status: 'rejected', reason: blocked })
-    } else if (approved && project && project.architecture) {
-      let proposal = entry.pending.proposal
-      if (component && proposal.kind === 'file') proposal = { ...proposal, component }
-
-      try {
-        const next = apply(project.architecture, proposal)
-        const content = serialize(next)
-        project.lastWrittenContent = content
-        fs.writeFileSync(architectMdPath(project.root), content)
-        project.architecture = next
-        if (project.root === activeRoot) changeListener?.(next)
-        resolveWaiters(entry, { status: 'approved' })
-      } catch (err) {
-        resolveWaiters(entry, { status: 'rejected', reason: err instanceof Error ? err.message : String(err) })
-      }
-    } else {
-      resolveWaiters(entry, { status: 'rejected', reason: reason ?? (approved ? `could not open ${root}` : '') })
-    }
-
-    pending.delete(id)
-    notifyPending()
   }
 
   async function open(root: string): Promise<OpenedProject> {
     const state = loadProject(root)
-    activeRoot = root
     return { contract: state.contract, architecture: state.architecture }
   }
 
@@ -921,20 +827,40 @@ export function createDaemon(options: DaemonOptions = {}) {
     return architecture
   }
 
-  async function draftContract(root: string): Promise<DraftResult<string>> {
+  async function mapOf(root: string): Promise<CodeMap> {
+    return readStoredMap(cacheDir, root)?.map ?? (await rescanProject(root))
+  }
+
+  async function draftContract(root: string, model?: string): Promise<DraftResult<string>> {
+    const running = drafting.get(root)
+    if (running) return running
+
+    const job = runDraft(root, model)
+    drafting.set(root, job)
+    draftFailures.delete(root)
+    notifyProjects()
+    try {
+      const result = await job
+      if (!result.ok) draftFailures.set(root, result.error)
+      return result
+    } catch (err) {
+      draftFailures.set(root, { kind: 'failed', code: 1, stderr: errorText(err) })
+      throw err
+    } finally {
+      drafting.delete(root)
+      notifyProjects()
+    }
+  }
+
+  async function runDraft(root: string, model?: string): Promise<DraftResult<string>> {
     const state = loadProject(root)
     if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
 
-    const drafted = await draft(root, readStoredMap(cacheDir, root)?.map ?? (await rescanProject(root)), claude)
+    const drafted = await draft(root, await mapOf(root), claude, model)
     if (!drafted.ok) return drafted
 
-    for (const [id, entry] of [...pending]) {
-      if (entry.pending.projectRoot !== root || entry.pending.proposal.kind !== 'contract') continue
-      resolveWaiters(entry, { status: 'rejected', reason: 'replaced by a newer draft' })
-      pending.delete(id)
-    }
-
-    queue(root, { kind: 'contract', markdown: drafted.value }, 'A first contract drafted by Claude from the scanned code.')
+    const adopted = adopt(state, drafted.value)
+    if (adopted.status === 'rejected') throw new Error(adopted.reason)
     return drafted
   }
 
@@ -953,7 +879,6 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   function handleConnection(socket: net.Socket) {
     let buf = ''
-    const cancels = new Set<() => void>()
 
     async function handleRequest(req: Request): Promise<Response> {
       try {
@@ -978,13 +903,11 @@ export function createDaemon(options: DaemonOptions = {}) {
         if (req.op === 'propose_change') {
           const root = resolveRoot(req.cwd)
           if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
-          const decision = await proposeChange(root, req.proposal, req.rationale, (cancel) => cancels.add(cancel))
-          return { id: req.id, ok: true, result: decision }
+          return { id: req.id, ok: true, result: proposeChange(root, req.proposal) }
         }
 
-        if (req.op === 'await_proposal') {
-          const decision = await awaitProposal(req.proposalId, (cancel) => cancels.add(cancel))
-          return { id: req.id, ok: true, result: decision }
+        if (req.op === 'session-event') {
+          return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file) }
         }
 
         const root = resolveRoot(req.cwd)
@@ -1040,11 +963,6 @@ export function createDaemon(options: DaemonOptions = {}) {
       }
     })
 
-    socket.on('close', () => {
-      for (const cancel of cancels) cancel()
-      cancels.clear()
-    })
-
     socket.on('error', () => {})
   }
 
@@ -1061,7 +979,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   async function listen(): Promise<void> {
     restoreProjects()
-    restorePending()
+    fs.rm(path.join(cacheDir, 'pending.json'), { force: true }, () => {})
 
     if (process.platform !== 'win32') {
       fs.mkdirSync(path.dirname(socketPath), { recursive: true })
@@ -1097,9 +1015,8 @@ export function createDaemon(options: DaemonOptions = {}) {
     projects: listProjects,
     open,
     createContract,
-    draftContract,
-    pending: listPending,
-    decide,
+    draftContract: (root: string) => draftContract(root),
+    history: (root: string): HistoryEntry[] => historyOf(root),
     edits: (root: string): EditSummary[] => {
       loadProject(root)
       return listEdits(root)
@@ -1137,17 +1054,20 @@ export function createDaemon(options: DaemonOptions = {}) {
     writeSource,
     readTree,
     rescan: rescanProject,
-    onChange: (fn: (a: Architecture) => void) => {
+    onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },
-    onPending: (fn: (p: Pending[]) => void) => {
-      pendingListener = fn
+    onHistory: (fn: (entry: HistoryEntry) => void) => {
+      historyListener = fn
     },
     onProjects: (fn: (p: ProjectSummary[]) => void) => {
       projectsListener = fn
     },
     onCodeMap: (fn: (root: string, map: CodeMap) => void) => {
       codeMapListener = fn
+    },
+    onSession: (fn: (root: string, file: string) => void) => {
+      sessionListener = fn
     },
   }
 }

@@ -4,10 +4,11 @@ import type {
   ArchitectApi,
   CodeMap,
   GithubCompared,
+  HistoryEntry,
   IpcResult,
-  Pending,
   ProjectSummary,
   PtyEvent,
+  SessionTouch,
 } from '../shared/types'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -25,8 +26,7 @@ const architect: ArchitectApi = {
   claimRoot: (root) => invoke('architect:claim-root', root),
   releaseRoot: () => invoke('architect:release-root'),
   focusRoot: (root) => invoke('architect:focus-root', root),
-  pending: () => invoke('architect:pending'),
-  decide: (id, approved, reason, component) => invoke('architect:decide', id, approved, reason, component),
+  history: (root) => invoke('architect:history', root),
   edits: (root) => invoke('architect:edits', root),
   edit: (root, id) => invoke('architect:edit', root, id),
   createEdit: (root, architecture) => invoke('architect:create-edit', root, architecture),
@@ -42,17 +42,23 @@ const architect: ArchitectApi = {
   writeSource: (root, file, text, baseline) =>
     invoke('architect:write-source', root, file, text, baseline),
   readTree: (root, dir) => invoke('architect:read-tree', root, dir),
-  onChange: (fn: (a: Architecture) => void) => {
-    ipcRenderer.on('architect:change', (_event, architecture: Architecture) => fn(architecture))
+  search: (query) => invoke('architect:search', query),
+  onChange: (fn: (root: string, architecture: Architecture) => void) => {
+    ipcRenderer.on('architect:change', (_event, root: string, architecture: Architecture) => fn(root, architecture))
   },
-  onPending: (fn: (p: Pending[]) => void) => {
-    ipcRenderer.on('architect:pending-update', (_event, pending: Pending[]) => fn(pending))
+  onHistory: (fn: (entry: HistoryEntry) => void) => {
+    const listener = (_event: unknown, entry: HistoryEntry) => fn(entry)
+    ipcRenderer.on('architect:history', listener)
+    return () => ipcRenderer.off('architect:history', listener)
   },
   onProjects: (fn: (p: ProjectSummary[]) => void) => {
     ipcRenderer.on('architect:projects-update', (_event, projects: ProjectSummary[]) => fn(projects))
   },
   onCodeMap: (fn: (root: string, map: CodeMap) => void) => {
     ipcRenderer.on('architect:code-map-update', (_event, root: string, map: CodeMap) => fn(root, map))
+  },
+  onTouch: (fn: (touch: SessionTouch) => void) => {
+    ipcRenderer.on('architect:touch', (_event, touch: SessionTouch) => fn(touch))
   },
   ptySpawn: (spec) => invoke('architect:pty-spawn', spec),
   ptyWrite: (id, data) => invoke('architect:pty-write', id, data),
@@ -67,19 +73,8 @@ const architect: ArchitectApi = {
   gitDefaultBranch: (root) => invoke('architect:git-default-branch', root),
   gitLocalBranches: (root) => invoke('architect:git-local-branches', root),
   gitRemoteBranches: (root) => invoke('architect:git-remote-branches', root),
-  gitWorktrees: (root) => invoke('architect:git-worktrees', root),
   gitFetch: (root) => invoke('architect:git-fetch', root),
   gitDistance: (root) => invoke('architect:git-distance', root),
-  claudeWorktrees: (repos, scan) => invoke('architect:claude-worktrees', repos, scan),
-  claudeWorktreeSurvey: (repo, path) => invoke('architect:claude-worktree-survey', repo, path),
-  claudeWorktreeRemove: (repo, path, choice) => invoke('architect:claude-worktree-remove', repo, path, choice),
-  worktreeSettings: () => invoke('architect:worktree-settings'),
-  saveWorktreeSettings: (settings) => invoke('architect:worktree-settings-save', settings),
-  pickFolder: () => invoke('architect:pick-folder'),
-  gitCreateWorktree: (root, path, name, base) =>
-    invoke('architect:git-create-worktree', root, path, name, base),
-  gitRemoveWorktree: (root, path) => invoke('architect:git-remove-worktree', root, path),
-  gitPruneWorktrees: (root) => invoke('architect:git-prune-worktrees', root),
   gitChanges: (root) => invoke('architect:git-changes', root),
   gitFileDiff: (root, section, file, full) => invoke('architect:git-file-diff', root, section, file, full),
   gitStageFile: (root, file) => invoke('architect:git-stage-file', root, file),

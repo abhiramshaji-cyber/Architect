@@ -1,4 +1,4 @@
-import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, GitFailure, Ownership, Pending, Proposal } from '../../shared/types'
+import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, GitFailure, HistoryEntry, Ownership } from '../../shared/types'
 
 declare global {
   interface Window {
@@ -44,52 +44,12 @@ export function installMock() {
     }
   }
 
-  const pendingByRoot: Record<string, Pending[]> = {
+  const historyByRoot: Record<string, HistoryEntry[]> = {
     '/Users/demo/code/architect': [
-      {
-        id: 'p1',
-        projectRoot: '/Users/demo/code/architect',
-        proposal: { kind: 'component', id: 'cache', purpose: 'Redis cache layer', owns: ['src/cache/**'] },
-        rationale: 'Repeated db reads on hot paths need caching.',
-        createdAt: Date.now() - 60_000
-      },
-      {
-        id: 'p2',
-        projectRoot: '/Users/demo/code/architect',
-        proposal: { kind: 'edge', from: 'db', to: 'api' },
-        rationale: 'db needs to call back into the api client for notifications.',
-        createdAt: Date.now() - 50_000
-      },
-      {
-        id: 'p3',
-        projectRoot: '/Users/demo/code/architect',
-        proposal: { kind: 'package', name: 'zod', component: 'api' },
-        rationale: 'Request validation at the boundary.',
-        createdAt: Date.now() - 40_000
-      },
-      {
-        id: 'p4',
-        projectRoot: '/Users/demo/code/architect',
-        proposal: { kind: 'file', path: 'src/api/routes/users.ts', component: 'api' },
-        rationale: 'New route file for the users resource.',
-        createdAt: Date.now() - 30_000
-      },
-      {
-        id: 'p5',
-        projectRoot: '/Users/demo/code/architect',
-        proposal: { kind: 'file', path: 'src/legacy/old.ts', component: 'legacy' },
-        rationale: 'Migrated file with no clear owner yet.',
-        createdAt: Date.now() - 20_000
-      },
-      {
-        id: 'p6',
-        projectRoot: '/Users/demo/code/architect',
-        proposal: { kind: 'edge', from: 'ghost-comp', to: 'api' },
-        rationale: 'Stale proposal referencing a component that was since removed.',
-        createdAt: Date.now() - 10_000
-      }
-    ],
-    '/Users/demo/code/architect-docs': []
+      { id: 'h2', root: '/Users/demo/code/architect', at: Date.now() - 30_000, source: 'code', added: [], changed: ['codefile:mcp/server.ts', 'folder:mcp'], removed: [], file: 'mcp/server.ts' },
+      { id: 'h1', root: '/Users/demo/code/architect', at: Date.now() - 60_000, source: 'contract', added: ['worker', 'worker->db'], changed: [], removed: [] },
+      { id: 'h0', root: '/Users/demo/code/architect', at: Date.now() - 14 * 60_000, source: 'contract', added: [], changed: ['db'], removed: ['legacy'] }
+    ]
   }
 
   const editsByRoot: Record<string, Edit[]> = {
@@ -187,14 +147,10 @@ export function installMock() {
             {
               path: 'src/layout.ts',
               functions: [
-                fn('findCycleEdges', 22, 51, 'Walks the edge list backwards to find the path that would close a cycle.'),
-                fn('hasCycle', 53, 55, 'True when adding this edge would close a cycle.', ['findCycleEdges']),
-                fn('statusOf', 57, 61, 'The badge word shown on a node.'),
                 fn('folderName', 63, 66, 'Last path segment of a project root.'),
                 fn('roleOf', 68, 74, 'Classifies a component as entry, foundation or middle.'),
                 fn('sides', 76, 81, ''),
-                fn('packageBadges', 83, 90, 'Pending package proposals attached to one component.'),
-                fn('build', 92, 175, 'Turns an architecture plus its pending proposals into nodes and links.', ['roleOf', 'packageBadges', 'hasCycle', 'statusOf']),
+                                fn('build', 92, 175, 'Turns an architecture into nodes and links.', ['roleOf']),
                 fn('positions', 177, 184, 'Runs dagre and returns a top left point per node.', ['anchorTop', 'anchorBottom']),
                 fn('anchorTop', 186, 189, 'Pins entry points to the first rank.'),
                 fn('anchorBottom', 191, 194, 'Pins foundations to the last rank.')
@@ -304,13 +260,12 @@ export function installMock() {
               functions: [
                 fn('getArchitecture', 14, 30, 'Returns the current architecture for a working directory.', ['send']),
                 fn('checkChange', 32, 49, 'Answers whether one component may depend on another.', ['send']),
-                fn('proposeChange', 51, 72, 'Queues a proposal for human approval.', ['send']),
-                fn('awaitProposal', 74, 94, 'Blocks until the human approves or rejects.', ['send']),
+                fn('proposeChange', 51, 72, 'Applies a proposal to architect.md at once.', ['send']),
                 fn('listEdits', 96, 110, 'Every draft and handed edit for a project.', ['send']),
                 fn('getEdit', 112, 128, 'One edit by id.', ['send']),
                 fn('connect', 130, 146, 'Opens the unix socket to the desktop app.'),
                 fn('send', 148, 168, '', ['connect']),
-                fn('main', 170, 186, 'Starts the stdio transport.', ['getArchitecture', 'checkChange', 'proposeChange', 'awaitProposal', 'listEdits', 'getEdit'])
+                fn('main', 170, 186, 'Starts the stdio transport.', ['getArchitecture', 'checkChange', 'proposeChange', 'listEdits', 'getEdit'])
               ]
             }
           ]
@@ -374,25 +329,22 @@ export function installMock() {
     }
   }
 
-  const changeListeners = new Set<(a: Architecture) => void>()
-  const pendingListeners = new Set<(p: Pending[]) => void>()
+  const changeListeners = new Set<(root: string, a: Architecture) => void>()
+  const historyListeners = new Set<(entry: HistoryEntry) => void>()
 
-  function apply(root: string, proposal: Proposal) {
+  function grow() {
+    const root = '/Users/demo/code/architect'
     const arch = architectures[root]
-    if (!arch) return
-    if (proposal.kind === 'component') {
-      arch.components.push({
-        id: proposal.id,
-        purpose: proposal.purpose,
-        owns: proposal.owns
-      })
-    } else if (proposal.kind === 'edge') {
-      arch.edges.push({ from: proposal.from, to: proposal.to })
-    } else if (proposal.kind === 'package') {
-      if (!arch.packages.includes(proposal.name)) arch.packages.push(proposal.name)
-    }
-    changeListeners.forEach((fn) => fn(arch))
+    if (!arch || arch.components.some((c) => c.id === 'cache')) return
+    arch.components.push({ id: 'cache', purpose: 'Redis cache layer', owns: ['src/cache/**'] })
+    arch.edges.push({ from: 'api', to: 'cache' })
+    const entry: HistoryEntry = { id: `h${Date.now()}`, root, at: Date.now(), source: 'contract', added: ['cache', 'api->cache'], changed: ['api'], removed: [] }
+    historyByRoot[root]?.unshift(entry)
+    changeListeners.forEach((fn) => fn(root, { ...arch, components: [...arch.components], edges: [...arch.edges] }))
+    historyListeners.forEach((fn) => fn(entry))
   }
+
+  setTimeout(grow, 3000)
 
   function demoGit(root: string): { ok: false; error: GitFailure } {
     return { ok: false, error: { kind: 'not-a-repo', root } }
@@ -423,27 +375,8 @@ export function installMock() {
     async focusRoot() {
       return true
     },
-    async pending() {
-      return pendingByRoot['/Users/demo/code/architect'] ?? []
-    },
-    async decide(id, approved, reason, component) {
-      for (const root of Object.keys(pendingByRoot)) {
-        const list = pendingByRoot[root]
-        if (!list) continue
-        const index = list.findIndex((p) => p.id === id)
-        if (index === -1) continue
-        const [item] = list.splice(index, 1)
-        if (item && approved) {
-          const proposal =
-            item.proposal.kind === 'file' && component
-              ? { ...item.proposal, component }
-              : item.proposal
-          apply(root, proposal)
-        }
-        pendingListeners.forEach((fn) => fn([...list]))
-        return
-      }
-      void reason
+    async history(root) {
+      return historyByRoot[root] ?? []
     },
     async edits(root) {
       return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({
@@ -500,6 +433,9 @@ export function installMock() {
       edited[`${root}:${file}`] = text
       return { hash: String(text.length), error: null }
     },
+    async search() {
+      return { hits: [], capped: false }
+    },
     async readTree(root, dir) {
       const map = codeMaps[root]
       if (!map) return { dir, entries: [], error: 'closed' }
@@ -536,13 +472,15 @@ export function installMock() {
     onChange(fn) {
       changeListeners.add(fn)
     },
-    onPending(fn) {
-      pendingListeners.add(fn)
+    onHistory(fn) {
+      historyListeners.add(fn)
+      return () => historyListeners.delete(fn)
     },
     onProjects(fn) {
       fn(Object.entries(roots).map(([root, title]) => ({ root, title, contract: { status: 'ready' } })))
     },
     onCodeMap() {},
+    onTouch() {},
     async ptySpawn() {
       throw new Error('no terminal in the demo')
     },
@@ -570,40 +508,10 @@ export function installMock() {
     async gitRemoteBranches(root) {
       return demoGit(root)
     },
-    async gitWorktrees(root) {
-      return demoGit(root)
-    },
     async gitFetch(root) {
       return demoGit(root)
     },
     async gitDistance(root) {
-      return demoGit(root)
-    },
-    async claudeWorktrees() {
-      return []
-    },
-    async claudeWorktreeSurvey(repo) {
-      return { ok: false, error: { kind: 'git', error: demoGit(repo).error, left: 'both' } }
-    },
-    async claudeWorktreeRemove(repo) {
-      return { ok: false, error: { kind: 'git', error: demoGit(repo).error, left: 'both' } }
-    },
-    async worktreeSettings() {
-      return { worktreeRoots: [], worktreeScanDepth: 6, worktreeFolders: ['.claude/worktrees'] }
-    },
-    async saveWorktreeSettings(settings) {
-      return { ok: true, value: settings }
-    },
-    async pickFolder() {
-      return null
-    },
-    async gitCreateWorktree(root) {
-      return demoGit(root)
-    },
-    async gitRemoveWorktree(root) {
-      return demoGit(root)
-    },
-    async gitPruneWorktrees(root) {
       return demoGit(root)
     },
     async gitChanges(root) {

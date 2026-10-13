@@ -1,9 +1,10 @@
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { history } from '@codemirror/commands'
 import { bracketMatching, foldGutter, indentOnInput } from '@codemirror/language'
 import { Compartment, EditorState } from '@codemirror/state'
-import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view'
+import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view'
 import { useEffect, useRef } from 'react'
 import { highlighting, languageFor } from '../model/language'
+import { vscodeKeys, type EditorAction } from './editor/keymap'
 
 const language = new Compartment()
 const writable = new Compartment()
@@ -12,16 +13,16 @@ const BASE = [
   lineNumbers(),
   foldGutter(),
   history(),
+  drawSelection(),
   indentOnInput(),
   bracketMatching(),
   highlightActiveLine(),
   highlightActiveLineGutter(),
   highlighting,
   EditorView.lineWrapping,
-  keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
 ]
 
-function scrollToLine(view: EditorView, line: number): void {
+export function scrollToLine(view: EditorView, line: number): void {
   const at = Math.min(Math.max(1, line), view.state.doc.lines)
   const target = view.state.doc.line(at)
   view.dispatch({
@@ -30,18 +31,21 @@ function scrollToLine(view: EditorView, line: number): void {
   })
 }
 
-export default function Editor({ path, text, line, editable, onChange }: {
+export default function Editor({ path, text, line, editable, onChange, onAction }: {
   path: string
   text: string
   line: number | null
   editable: boolean
   onChange: (next: string) => void
+  onAction: (action: EditorAction, view: EditorView) => void
 }) {
   const host = useRef<HTMLDivElement | null>(null)
   const view = useRef<EditorView | null>(null)
   const change = useRef(onChange)
+  const act = useRef(onAction)
 
   change.current = onChange
+  act.current = onAction
 
   useEffect(() => {
     if (!host.current) return
@@ -51,6 +55,7 @@ export default function Editor({ path, text, line, editable, onChange }: {
         doc: text,
         extensions: [
           ...BASE,
+          vscodeKeys((action, at) => act.current(action, at)),
           language.of([]),
           writable.of(EditorView.editable.of(editable)),
           EditorView.updateListener.of((update) => {
@@ -93,5 +98,5 @@ export default function Editor({ path, text, line, editable, onChange }: {
     view.current.focus()
   }, [line, path])
 
-  return <div ref={host} className="editor-host" />
+  return <div ref={host} className="editor-host" onKeyDown={(e) => e.defaultPrevented && e.stopPropagation()} />
 }
