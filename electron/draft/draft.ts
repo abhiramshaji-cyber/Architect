@@ -44,9 +44,10 @@ export type Candidate = { from: string; to: string; calls: number }
 
 export type Evidence = { components: Sketch[]; candidates: Candidate[] }
 
-function topOf(file: string): string | null {
-  const [top] = file.split('/')
-  return top === undefined || top === file ? null : top
+function topOf(file: string, base: string): string | null {
+  if (!file.startsWith(base)) return null
+  const [top] = file.slice(base.length).split('/')
+  return top === undefined || base + top === file ? null : top
 }
 
 function idOf(top: string): string {
@@ -74,20 +75,21 @@ function roundRobin(pools: string[][], limit: number): string[] {
   return taken
 }
 
-export function evidence(map: CodeMap): Evidence {
+export function evidence(map: CodeMap, scope = ''): Evidence {
+  const base = scope === '' ? '' : `${scope}/`
   const tops = new Map<string, { dirs: string[]; owns: string[]; files: number; functions: number; pools: string[][] }>()
   const ownerOf = new Map<string, string>()
 
   for (const folder of map.folders) {
     for (const file of folder.files) {
-      const top = topOf(file.path)
+      const top = topOf(file.path, base)
       if (top === null) continue
 
       const id = idOf(top)
       const entry = tops.get(id) ?? { dirs: [], owns: [], files: 0, functions: 0, pools: [] }
-      if (!entry.dirs.includes(top)) {
-        entry.dirs.push(top)
-        entry.owns.push(`${top}/**`)
+      if (!entry.dirs.includes(base + top)) {
+        entry.dirs.push(base + top)
+        entry.owns.push(`${base}${top}/**`)
       }
       entry.files += 1
       entry.functions += file.functions.length
@@ -143,7 +145,7 @@ function shown(found: Evidence): Sketch[] {
     .sort((a, b) => a.id.localeCompare(b.id))
 }
 
-export function promptFor(found: Evidence, title: string): string {
+export function promptFor(found: Evidence, title: string, scope = ''): string {
   const components = shown(found)
   const ids = new Set(components.map((c) => c.id))
   const candidates = found.candidates.filter((c) => ids.has(c.from) && ids.has(c.to)).slice(0, MAX_CANDIDATES)
@@ -160,9 +162,11 @@ export function promptFor(found: Evidence, title: string): string {
       : '- none'
 
   return [
-    `The repo "${title}" has no architect.md. Write the first one.`,
+    scope === ''
+      ? `The repo "${title}" has no architect.md. Write the first one.`
+      : `The repo has no architect.md. Write the first one for the project "${title}" at ${scope}/, where the current work lives. The rest of the repo is out of scope.`,
     '',
-    'Each block below is one top level source folder Architect scanned, with a sample of the generated descriptions of the functions inside it.',
+    `Each block below is one top level source folder ${scope === '' ? '' : `of ${scope}/ `}Architect scanned, with a sample of the generated descriptions of the functions inside it.`,
     '',
     blocks.join('\n\n'),
     '',
@@ -212,7 +216,7 @@ function sentence(raw: string, fallback: string): string {
   return text
 }
 
-export function validate(text: string, found: Evidence, title: string): DraftResult<string> {
+export function validate(text: string, found: Evidence, title: string, scope = ''): DraftResult<string> {
   const body = fenced(text)
   if (body === '') return { ok: false, error: { kind: 'unusable', detail: 'the reply was empty' } }
 
@@ -250,6 +254,7 @@ export function validate(text: string, found: Evidence, title: string): DraftRes
     edges,
     forbidden: [],
     packages: [],
+    ...(scope !== '' && { scope }),
   }
 
   const markdown = serialize(architecture)
@@ -275,12 +280,14 @@ export async function draft(
   map: CodeMap,
   run: ClaudeRun = runClaude,
   model?: string,
+  scope = '',
 ): Promise<DraftResult<string>> {
-  const found = evidence(map)
+  const found = evidence(map, scope)
+  if (found.components.length === 0 && scope !== '') return draft(root, map, run, model)
   if (found.components.length === 0) return { ok: false, error: { kind: 'nothing-to-draft' } }
 
-  const title = path.basename(root)
-  const out = await run(promptFor(found, title), root, undefined, model)
+  const title = path.basename(scope || root)
+  const out = await run(promptFor(found, title, scope), root, undefined, model)
 
   if (out.code === 'missing') return { ok: false, error: { kind: 'not-installed' } }
   if (out.code === 'timeout') return { ok: false, error: { kind: 'timed-out' } }
@@ -288,5 +295,5 @@ export async function draft(
     return { ok: false, error: { kind: 'failed', code: out.code, stderr: out.stderr.trim().slice(0, MAX_STDERR) } }
   }
 
-  return validate(out.stdout, found, title)
+  return validate(out.stdout, found, title, scope)
 }

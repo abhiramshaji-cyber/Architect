@@ -26,12 +26,12 @@ import Follow, { motionMs } from './live/Follow'
 import {
   build,
   dependency,
-  heightOf,
   positions,
   HANDLE_IN,
   HANDLE_OUT,
   FIT_PADDING,
   MIN_ZOOM,
+  NODE_H,
   NODE_W,
   type NodeData
 } from '../model/layout'
@@ -85,7 +85,6 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
         <span className="node-id">{data.label}</span>
         <span className="node-role">{data.files === undefined ? data.role : `${data.files} files`}</span>
       </div>
-      {data.purpose && <div className="node-purpose">{data.purpose}</div>}
     </div>
   )
 }
@@ -189,7 +188,7 @@ export default function Canvas({ architecture, ownership, recent, theme, selecte
       draggable: false,
       deletable: editing ? true : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
-      style: { width: NODE_W, height: heightOf(n.data) },
+      style: { width: NODE_W, height: NODE_H },
       data: counts.has(n.id) ? { ...n.data, files: counts.get(n.id) } : n.data
     }))
 

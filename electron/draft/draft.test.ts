@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
 import type { CodeMap, FileEntry } from '../../shared/types'
-import { parse } from '../contract/graph'
+import { ownership, parse } from '../contract/graph'
 import { type ClaudeOutput, draft, evidence, promptFor, validate } from './draft'
+import { scopeFor, scopeOf } from './scope'
 
 function fn(name: string, line: number, description: string, calls: { file: string; fn: number }[] = []) {
   return { name, line, endLine: line + 4, description, calls }
@@ -311,5 +316,196 @@ describe('draft', () => {
       return ok(reply)
     })
     expect(where).toBe('/repo')
+  })
+})
+
+const monorepo = map([
+  file('spec/bot/src/agent.ts', [fn('agent', 1, 'answers a shopper', [{ file: 'spec/frontend/src/app.ts', fn: 0 }])]),
+  file('spec/frontend/src/app.ts', [fn('app', 1, 'renders the portal')]),
+  file('spec/README.md', []),
+  file('zing/bot/src/main.ts', [fn('main', 1, 'runs another client')]),
+  file('adssys/index.ts', [fn('index', 1, 'serves ads')]),
+])
+
+const scopedReply = [
+  '```markdown',
+  '# spec',
+  '',
+  'A delivery bot and its portal.',
+  '',
+  '## Components',
+  '',
+  '### bot',
+  'Answers shoppers.',
+  'owns: `bot/**`',
+  '',
+  '### frontend',
+  'Renders the portal.',
+  'owns: `frontend/**`',
+  '',
+  '## Dependencies',
+  '',
+  '- bot -> frontend',
+  '```',
+].join('\n')
+
+describe('scoped draft', () => {
+  it('drafts only the folders under the scope with globs relative to the repo root', async () => {
+    let prompt = ''
+    const run = async (sent: string) => {
+      prompt = sent
+      return ok(scopedReply)
+    }
+    const result = await draft('/repo', monorepo, run, undefined, 'spec')
+    if (!result.ok) throw new Error('expected a draft')
+
+    const contract = parse(result.value)
+    expect(contract.scope).toBe('spec')
+    expect(contract.title).toBe('spec')
+    expect(contract.components.map((c) => [c.id, c.owns])).toEqual([
+      ['bot', ['spec/bot/**']],
+      ['frontend', ['spec/frontend/**']],
+    ])
+    expect(contract.edges).toEqual([{ from: 'bot', to: 'frontend' }])
+    expect(prompt).toContain('at spec/')
+    expect(prompt).not.toContain('zing')
+    expect(prompt).not.toContain('adssys')
+
+    const files = monorepo.folders.flatMap((f) => f.files.map((x) => x.path)).filter((x) => x.startsWith('spec/'))
+    expect(ownership(files, contract.components).dead).toEqual([])
+  })
+
+  it('drafts the whole repo with no scope, exactly as before', async () => {
+    expect(evidence(monorepo).components.map((c) => c.owns)).toEqual([['adssys/**'], ['spec/**'], ['zing/**']])
+    const result = await draft('/repo', sample, async () => ok(reply))
+    if (!result.ok) throw new Error('expected a draft')
+    expect(result.value).not.toContain('scope:')
+    expect(parse(result.value).scope).toBeUndefined()
+  })
+
+  it('falls back to the whole repo when the scope holds no folder to draft', async () => {
+    let prompt = ''
+    const run = async (sent: string) => {
+      prompt = sent
+      return ok(reply)
+    }
+    await draft('/repo', monorepo, run, undefined, 'spec/README.md')
+    expect(prompt).toContain('owns="zing/**"')
+  })
+})
+
+describe('scopeFor', () => {
+  const projects = new Set(['spec/bot', 'spec/frontend', 'zing', 'zing/bot'])
+  const isProject = (dir: string) => projects.has(dir)
+
+  it('scopes to the one project the changes sit in', () => {
+    expect(scopeFor(['spec/bot/src/a.ts', 'spec/bot/agent.config.ts'], isProject)).toBe('spec/bot')
+  })
+
+  it('scopes to the folder that holds every project the changes touch', () => {
+    expect(scopeFor(['spec/bot/src/a.ts', 'spec/frontend/src/format.ts'], isProject)).toBe('spec')
+    expect(scopeFor(['zing/bot/a.ts', 'zing/b.ts'], isProject)).toBe('zing')
+  })
+
+  it('keeps the whole repo when nothing changed', () => {
+    expect(scopeFor([], isProject)).toBe('')
+  })
+
+  it('keeps the whole repo when changes span unrelated projects', () => {
+    expect(scopeFor(['spec/bot/a.ts', 'zing/b.ts'], isProject)).toBe('')
+  })
+
+  it('keeps the whole repo when a change belongs to the root project', () => {
+    expect(scopeFor(['package.json'], isProject)).toBe('')
+    expect(scopeFor(['spec/bot/a.ts', 'docs/notes.md'], isProject)).toBe('')
+  })
+})
+
+describe('scopeOf', () => {
+  const roots: string[] = []
+  afterAll(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })))
+
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'Test',
+    GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test',
+    GIT_COMMITTER_EMAIL: 'test@example.com',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+  }
+  const sh = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env, encoding: 'utf8' })
+  const write = (root: string, rel: string, text = 'x\n') => {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
+    fs.writeFileSync(path.join(root, rel), text)
+  }
+  const tmp = () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'architect-scope-')))
+    roots.push(root)
+    return root
+  }
+
+  function repo(files: string[]): string {
+    const root = tmp()
+    sh(root, 'init', '-q', '-b', 'main')
+    for (const rel of files) write(root, rel)
+    sh(root, 'add', '-A')
+    sh(root, 'commit', '-q', '-m', 'init')
+    return root
+  }
+
+  const mono = [
+    'package.json',
+    'spec/bot/package.json',
+    'spec/bot/src/a.ts',
+    'spec/frontend/package.json',
+    'spec/frontend/src/b.ts',
+    'zing/package.json',
+    'zing/c.ts',
+  ]
+
+  it('keeps the whole repo when nothing changed', async () => {
+    expect(await scopeOf(repo(mono))).toBe('')
+  })
+
+  it('scopes a monorepo to the subprojects holding the uncommitted and untracked work', async () => {
+    const root = repo(mono)
+    write(root, 'spec/bot/src/a.ts', 'y\n')
+    write(root, 'spec/frontend/src/new.ts')
+    expect(await scopeOf(root)).toBe('spec')
+  })
+
+  it('scopes on a detached head with no trunk to diff against', async () => {
+    const root = repo(mono)
+    sh(root, 'checkout', '-q', '--detach')
+    write(root, 'spec/bot/src/a.ts', 'y\n')
+    expect(await scopeOf(root)).toBe('spec/bot')
+  })
+
+  it('scopes to the commits a branch made against its trunk', async () => {
+    const trunk = repo(mono)
+    const root = tmp()
+    sh(root, 'clone', '-q', trunk, '.')
+    sh(root, 'checkout', '-q', '-b', 'spec/bot')
+    write(root, 'spec/bot/src/a.ts', 'y\n')
+    sh(root, 'commit', '-q', '-am', 'work')
+    expect(await scopeOf(root)).toBe('spec/bot')
+  })
+
+  it('keeps the whole repo when the changes span unrelated projects or sit at the root', async () => {
+    const spread = repo(mono)
+    write(spread, 'spec/bot/src/a.ts', 'y\n')
+    write(spread, 'zing/c.ts', 'y\n')
+    expect(await scopeOf(spread)).toBe('')
+
+    const rooted = repo(mono)
+    write(rooted, 'package.json', '{}\n')
+    expect(await scopeOf(rooted)).toBe('')
+  })
+
+  it('keeps the whole repo for a plain single project repo', async () => {
+    const root = repo(['package.json', 'src/a.ts', 'src/deep/b.ts'])
+    write(root, 'src/deep/b.ts', 'y\n')
+    expect(await scopeOf(root)).toBe('')
   })
 })

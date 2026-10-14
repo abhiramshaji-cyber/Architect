@@ -17,6 +17,7 @@ const OWNS = /^(owns:\s*)`([^`]+)`\s*$/
 const EDGE = /^(-\s*)(\S+)(\s*->\s*)(\S+)\s*$/
 const FORBIDDEN = /^(-\s*)(\S+)(\s*->\s*)(\S+)\s*:\s*(.+)$/
 const PACKAGE = /^-\s*(.+)$/
+const SCOPE = /^scope:\s*`([^`]+)`\s*$/m
 
 type Line = { text: string; line: number; col: number }
 
@@ -88,6 +89,9 @@ export function scan(markdown: string): Scan {
   const afterTitle = titleMatch ? markdown.slice(markdown.indexOf(titleMatch[0]) + titleMatch[0].length) : markdown
   const summaryMatch = afterTitle.match(/^\s*\n+(.+)$/m)
   const summary = summaryMatch?.[1]?.trim() ?? ''
+
+  // scope
+  const scope = canonical(markdown.split(/^## /m)[0]?.match(SCOPE)?.[1] ?? '')
 
   // components
   const components: Component[] = []
@@ -188,7 +192,7 @@ export function scan(markdown: string): Scan {
   const layout = layoutHint(markdown, knownIds, refs)
 
   return {
-    architecture: { title, summary, components, edges, forbidden, packages, ...(layout && { layout }) },
+    architecture: { title, summary, components, edges, forbidden, packages, ...(layout && { layout }), ...(scope && { scope }) },
     problems,
     refs,
   }
@@ -203,7 +207,9 @@ export function parse(markdown: string): Architecture {
 
 export function serialize(architecture: Architecture): string {
   const lines: string[] = []
-  lines.push(`# ${architecture.title}`, '', architecture.summary, '', '## Components', '')
+  lines.push(`# ${architecture.title}`, '', architecture.summary, '')
+  if (architecture.scope) lines.push(`scope: \`${architecture.scope}\``, '')
+  lines.push('## Components', '')
 
   for (const c of architecture.components) {
     lines.push(`### ${c.id}`, c.purpose, ...c.owns.map((g) => `owns: \`${g}\``), '')
@@ -256,6 +262,7 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
     forbidden: [...architecture.forbidden],
     packages: [...architecture.packages],
     layout: architecture.layout,
+    scope: architecture.scope,
   }
 
   if (proposal.kind === 'contract') {

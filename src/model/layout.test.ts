@@ -7,21 +7,18 @@ import {
   HANDLE_IN,
   HANDLE_OUT,
   folderName,
-  heightOf,
   positions,
   columnsFor,
   MIN_ZOOM,
   NODE_SEP,
   DEFAULT_STAGE_W,
   roleOf,
-  NODE_BASE_H,
-  NODE_PURPOSE_H,
+  NODE_H,
   NODE_W,
   INSPECTOR_MAX_W,
   INSPECTOR_MIN_W,
   INSPECTOR_SHARE,
-  INSPECTOR_W,
-  type NodeData
+  INSPECTOR_W
 } from './layout'
 
 function architecture(components: string[], edges: [string, string][]): Architecture {
@@ -237,34 +234,6 @@ describe('packing', () => {
   })
 })
 
-describe('heightOf', () => {
-  const data = (over: Partial<NodeData>): NodeData => ({
-    label: 'a',
-    purpose: '',
-    owns: [],
-    role: 'middle',
-    ...over
-  })
-
-  it('is just the head when there is nothing else to draw', () => {
-    expect(heightOf(data({}))).toBe(NODE_BASE_H)
-  })
-
-  it('adds one clamped purpose block however long the purpose is', () => {
-    const short = heightOf(data({ purpose: 'hi' }))
-    expect(short).toBe(NODE_BASE_H + NODE_PURPOSE_H)
-    expect(heightOf(data({ purpose: 'word '.repeat(400) }))).toBe(short)
-  })
-
-  it('ignores owns, which the card no longer draws', () => {
-    expect(heightOf(data({ owns: ['src/**', 'migrations/*.sql'] }))).toBe(NODE_BASE_H)
-  })
-
-  it('stays under the function card it sits beside', () => {
-    expect(heightOf(data({ purpose: 'p' }))).toBeLessThan(NODE_W)
-  })
-})
-
 describe('reserved geometry', () => {
   it('reserves exactly the card each node renders', () => {
     const a: Architecture = {
@@ -281,12 +250,8 @@ describe('reserved geometry', () => {
 
     const { nodes, links } = build(a)
     const at = positions(nodes, links)
-    const ui = nodes.find((n) => n.id === 'ui')!
-    const db = nodes.find((n) => n.id === 'db')!
 
-    expect(heightOf(ui.data)).toBe(NODE_BASE_H + NODE_PURPOSE_H)
-    expect(heightOf(db.data)).toBe(NODE_BASE_H)
-    expect(at.get('db')!.y - (at.get('ui')!.y + heightOf(ui.data))).toBeGreaterThan(0)
+    expect(at.get('db')!.y - (at.get('ui')!.y + NODE_H)).toBeGreaterThan(0)
   })
 
   it('leaves no node overlapping another', () => {
@@ -304,7 +269,7 @@ describe('reserved geometry', () => {
     const { nodes, links } = build(a)
     const boxes = nodes.map((n) => {
       const p = positions(nodes, links).get(n.id)!
-      return { x0: p.x, x1: p.x + NODE_W, y0: p.y, y1: p.y + heightOf(n.data) }
+      return { x0: p.x, x1: p.x + NODE_W, y0: p.y, y1: p.y + NODE_H }
     })
 
     for (const [i, b] of boxes.entries()) {
@@ -388,7 +353,7 @@ describe('positions with a stored layout', () => {
   const boxes = (at: Map<string, { x: number; y: number }>) =>
     nodes.map((n) => {
       const p = at.get(n.id)!
-      return { id: n.id, x0: p.x, x1: p.x + NODE_W, y0: p.y, y1: p.y + heightOf(n.data) }
+      return { id: n.id, x0: p.x, x1: p.x + NODE_W, y0: p.y, y1: p.y + NODE_H }
     })
 
   const disjoint = (at: Map<string, { x: number; y: number }>) => {

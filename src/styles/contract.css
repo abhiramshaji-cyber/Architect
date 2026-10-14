@@ -427,18 +427,6 @@
   visibility: hidden;
 }
 
-.node-purpose {
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-top: 5px;
-  line-height: 1.2;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  max-height: 27px;
-  overflow: hidden;
-}
-
 .canvas-editing .react-flow__handle {
   opacity: 1;
   pointer-events: all;

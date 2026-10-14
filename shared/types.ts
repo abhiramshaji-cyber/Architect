@@ -28,6 +28,7 @@ export type Architecture = {
   forbidden: Forbidden[]
   packages: string[]
   layout?: Layout
+  scope?: string
 }
 
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
