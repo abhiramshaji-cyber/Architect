@@ -554,10 +554,10 @@ export function createDaemon(options: DaemonOptions = {}) {
     return entries
   }
 
-  function record(root: string, source: HistoryEntry['source'], diff: Diff, file?: string) {
+  function record(root: string, source: HistoryEntry['source'], diff: Diff, file?: string, at = Date.now()) {
     if (isEmpty(diff)) return
 
-    const entry: HistoryEntry = { id: randomUUID(), root, at: Date.now(), source, ...diff, ...(file === undefined ? {} : { file }) }
+    const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...diff, ...(file === undefined ? {} : { file }) }
     const entries = [entry, ...historyOf(root)].slice(0, HISTORY_LIMIT)
     histories.set(root, entries)
 
@@ -599,9 +599,10 @@ export function createDaemon(options: DaemonOptions = {}) {
   }
 
   async function rescanProject(root: string, touched: string[] = []): Promise<CodeMap> {
+    const seen = Date.now()
     const stored = readStoredMap(cacheDir, root)
     const described = await describe(await scan(root), root, stored?.cache)
-    if (stored?.map) record(root, 'code', codeDiff(stored.map, described.map, touched), touched.at(-1))
+    if (stored?.map) record(root, 'code', codeDiff(stored.map, described.map, touched), touched.at(-1), seen)
 
     try {
       writeStoredMap(cacheDir, root, described)

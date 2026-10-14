@@ -26,6 +26,7 @@ import { loginPath } from './env'
 import * as message from './draft/message'
 import * as diff from './git/diff'
 import * as git from './git/git'
+import { commitsSince } from './git/log'
 import * as open from './git/open'
 import * as github from './github/github'
 import { createPtyHost } from './pty/pty'
@@ -252,6 +253,7 @@ function wireIpc() {
   handle('architect:git-remote-branches', (root: string) => git.remoteBranches(root))
   handle('architect:git-fetch', (root: string) => git.fetch(root))
   handle('architect:git-distance', (root: string) => git.distance(root))
+  handle('architect:git-commits', (root: string, since: number) => commitsSince(root, since))
   handle('architect:git-changes', (root: string) => diff.changes(root))
   handle('architect:git-file-diff', (root: string, section: DiffSection, file: ChangedFile, full?: boolean) =>
     diff.fileDiff(root, section, file, full),
