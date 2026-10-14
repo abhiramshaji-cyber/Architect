@@ -502,6 +502,9 @@ export function installMock() {
     async gitDefaultBranch(root) {
       return demoGit(root)
     },
+    async gitCommits(root) {
+      return demoGit(root)
+    },
     async gitLocalBranches(root) {
       return demoGit(root)
     },

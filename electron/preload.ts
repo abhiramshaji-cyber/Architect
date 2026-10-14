@@ -75,6 +75,7 @@ const architect: ArchitectApi = {
   gitRemoteBranches: (root) => invoke('architect:git-remote-branches', root),
   gitFetch: (root) => invoke('architect:git-fetch', root),
   gitDistance: (root) => invoke('architect:git-distance', root),
+  gitCommits: (root, since) => invoke('architect:git-commits', root, since),
   gitChanges: (root) => invoke('architect:git-changes', root),
   gitFileDiff: (root, section, file, full) => invoke('architect:git-file-diff', root, section, file, full),
   gitStageFile: (root, file) => invoke('architect:git-stage-file', root, file),

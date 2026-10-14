@@ -246,6 +246,8 @@ export type GitResult<T> = { ok: true; value: T } | { ok: false; error: GitFailu
 
 export type Committed = { commit: string; branch: string | null }
 
+export type Commit = { sha: string; short: string; at: number; subject: string; files: string[] }
+
 export type Pushed = { remote: string; branch: string; setUpstream: boolean }
 
 export type Pulled = { remote: string; branch: string; changed: boolean }
@@ -424,6 +426,7 @@ export type ArchitectApi = {
   gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
   gitDistance(root: string): Promise<GitResult<BaseDistance>>
+  gitCommits(root: string, since: number): Promise<GitResult<Commit[]>>
   gitChanges(root: string): Promise<GitResult<DiffChanges>>
   gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
   gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>

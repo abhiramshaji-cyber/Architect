@@ -660,6 +660,49 @@ body.resizing .inspector-grip {
   color: var(--text-faint);
 }
 
+.history-commit-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.history-sha {
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+
+.history-subject {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+
+.history-ago {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-commit ul {
+  margin-left: var(--sp-1);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+}
+
+.history-commit.pending ul {
+  border-left-style: dashed;
+}
+
+.history-commit .history-item {
+  margin-left: 0;
+}
+
 .history-item {
   width: 100%;
   display: flex;
