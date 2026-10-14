@@ -33,6 +33,7 @@ import {
 } from '../shared/types'
 import { describe, type DescriptionCache } from './scan/describe'
 import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
+import { scopeOf } from './draft/scope'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
 import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
@@ -856,7 +857,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     const state = loadProject(root)
     if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
 
-    const drafted = await draft(root, await mapOf(root), claude, model)
+    const drafted = await draft(root, await mapOf(root), claude, model, await scopeOf(root))
     if (!drafted.ok) return drafted
 
     const adopted = adopt(state, drafted.value)
@@ -1047,7 +1048,8 @@ export function createDaemon(options: DaemonOptions = {}) {
       const architecture = loadProject(root).architecture
       if (!map || !architecture) return null
       const files = map.folders.flatMap((folder) => folder.files.map((file) => file.path))
-      return ownership(files, architecture.components)
+      const scoped = architecture.scope ? files.filter((file) => file.startsWith(`${architecture.scope}/`)) : files
+      return ownership(scoped, architecture.components)
     },
     readSource,
     openSource,

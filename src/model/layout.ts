@@ -12,12 +12,7 @@ export type NodeData = {
 }
 
 export const NODE_W = 220
-export const NODE_BASE_H = 37
-export const NODE_PURPOSE_H = 30
-
-export function heightOf(data: NodeData): number {
-  return data.purpose === '' ? NODE_BASE_H : NODE_BASE_H + NODE_PURPOSE_H
-}
+export const NODE_H = 37
 
 const RANK_SEP = 44
 export const NODE_SEP = 30
@@ -127,14 +122,14 @@ export function positions(nodes: Logical[], links: Link[], hint?: Layout, stage?
   g.setGraph({ rankdir: 'TB', ranksep: RANK_SEP, nodesep: NODE_SEP, marginx: 40, marginy: 40 })
   g.setDefaultEdgeLabel(() => ({}))
 
-  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: heightOf(n.data) })
+  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H })
   for (const l of links) g.setEdge(l.from, l.to)
 
   dagre.layout(g)
 
   const sized = nodes.map((n) => {
     const spot = g.node(n.id)
-    return { id: n.id, cx: spot.x, cy: spot.y, h: heightOf(n.data) }
+    return { id: n.id, cx: spot.x, cy: spot.y, h: NODE_H }
   })
 
   const packed = grid(sized, columnsFor(stage ?? DEFAULT_STAGE_W))
@@ -148,7 +143,7 @@ export function positions(nodes: Logical[], links: Link[], hint?: Layout, stage?
     const pt = hint?.[n.id]
     if (!isPt(pt)) continue
     at.set(n.id, pt)
-    taken.push({ x: pt.x, y: pt.y, w: NODE_W, h: heightOf(n.data) })
+    taken.push({ x: pt.x, y: pt.y, w: NODE_W, h: NODE_H })
   }
 
   if (at.size === 0) return auto
@@ -157,7 +152,7 @@ export function positions(nodes: Logical[], links: Link[], hint?: Layout, stage?
   for (const n of nodes) {
     if (at.has(n.id)) continue
     const from = auto.get(n.id) ?? { x: 0, y: 0 }
-    const box: Box = { x: from.x, y: from.y, w: NODE_W, h: heightOf(n.data) }
+    const box: Box = { x: from.x, y: from.y, w: NODE_W, h: NODE_H }
     for (;;) {
       const clash = taken.find((t) => hits(box, t))
       if (!clash) break
