@@ -529,6 +529,9 @@ export function installMock() {
     async gitUnstageFile(root) {
       return demoGit(root)
     },
+    async gitStageAll(root) {
+      return demoGit(root)
+    },
     async gitCommit(root) {
       return demoGit(root)
     },

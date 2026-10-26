@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
-import DiffView from '../view/DiffView'
+import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
 import RepoPicker from '../view/RepoPicker'
 import TerminalView, { PlainShell } from '../view/TerminalView'

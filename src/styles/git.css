@@ -185,31 +185,13 @@
   padding: 0 var(--sp-3);
 }
 
-.diff-track {
-  flex-basis: 100%;
-  order: 1;
-  margin: 0;
-  color: var(--text-dim);
-  font-size: var(--fs-sm);
-}
-
 .diff-header .diff-section-note {
-  order: 2;
   flex-basis: 100%;
   margin: 0;
 }
 
 .diff-section {
   padding: var(--sp-3) 0;
-}
-
-.diff-section h3,
-.commit-box h3 {
-  margin: 0;
-  padding: var(--sp-1) var(--sp-5);
-  color: var(--text-dim);
-  font-size: var(--fs-xs);
-  font-weight: 500;
 }
 
 .diff-section-note {
@@ -280,15 +262,69 @@
 }
 
 .diff-file-path {
+  display: flex;
   flex: 1;
+  align-items: baseline;
+  gap: var(--sp-2);
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.diff-file-from {
+.diff-file-name {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-file-dir {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+}
+
+.diff-file-tag {
+  flex: none;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+
+.diff-empty {
+  margin: var(--sp-3) var(--sp-5);
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+
+.diff-branch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-5) 0 var(--sp-3);
+}
+
+.diff-branch-row a {
   color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.diff-toggle {
+  flex: 1;
+  min-height: 30px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.diff-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 .diff-file-counts {
@@ -456,7 +492,6 @@
   border-top: 1px solid var(--line);
 }
 
-.commit-box h3,
 .commit-box .diff-section-note {
   margin: 0;
   padding: 0;
@@ -479,4 +514,15 @@
 
 .commit-box a {
   color: var(--text);
+}
+
+.commit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.commit-row .commit-title {
+  flex: 1;
+  min-width: 0;
 }

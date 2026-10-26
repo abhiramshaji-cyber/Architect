@@ -254,7 +254,7 @@ export type Pulled = { remote: string; branch: string; changed: boolean }
 
 export type BranchPatch = { base: string; branch: string; commits: number; log: string; patch: string }
 
-export type DiffSection = 'branch' | 'staged' | 'unstaged'
+export type DiffSection = 'branch' | 'local' | 'staged' | 'unstaged'
 
 export type ChangeStatus =
   | 'added'
@@ -278,8 +278,11 @@ export type ChangedFile = {
 
 export type DiffChanges = {
   status: GitStatus
+  prefix: string
   base: GitResult<string>
+  commits: number
   branch: GitResult<ChangedFile[]>
+  local: GitResult<ChangedFile[]>
   staged: GitResult<ChangedFile[]>
   unstaged: GitResult<ChangedFile[]>
 }
@@ -431,6 +434,7 @@ export type ArchitectApi = {
   gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
   gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
   gitUnstageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
+  gitStageAll(root: string): Promise<GitResult<string>>
   gitCommit(root: string, title: string, description: string): Promise<GitResult<Committed>>
   gitPush(root: string): Promise<GitResult<Pushed>>
   gitPull(root: string): Promise<GitResult<Pulled>>

@@ -80,6 +80,7 @@ const architect: ArchitectApi = {
   gitFileDiff: (root, section, file, full) => invoke('architect:git-file-diff', root, section, file, full),
   gitStageFile: (root, file) => invoke('architect:git-stage-file', root, file),
   gitUnstageFile: (root, file) => invoke('architect:git-unstage-file', root, file),
+  gitStageAll: (root) => invoke('architect:git-stage-all', root),
   gitCommit: (root, title, description) => invoke('architect:git-commit', root, title, description),
   gitPush: (root) => invoke('architect:git-push', root),
   gitPull: (root) => invoke('architect:git-pull', root),
