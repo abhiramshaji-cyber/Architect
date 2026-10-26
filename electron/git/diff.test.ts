@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MAX_DIFF_BYTES, type ChangedFile, type DiffSection } from '../../shared/types'
-import { branchPatch, changes, fileDiff, mergeBase, stagedPatch, stageFile, unstageFile } from './diff'
+import { branchPatch, changes, fileDiff, mergeBase, stageAll, stagedPatch, stageFile, unstageFile } from './diff'
 
 const roots: string[] = []
 
@@ -533,5 +533,109 @@ describe('branchPatch', () => {
     expect(out.ok && out.value.log).toContain('mine')
     expect(out.ok && out.value.log).not.toContain('theirs')
     expect(out.ok && out.value.patch).not.toContain('theirs')
+  })
+})
+
+describe('a project in a folder inside the repo', () => {
+  function nested(): { top: string; project: string } {
+    const top = tracked('nested')
+    write(top, 'pkg/bot/src/old.ts', 'a\nb\nc\nd\ne\n')
+    write(top, 'pkg/bot/src/edit.ts', 'one\n')
+    sh(top, 'add', '-A')
+    sh(top, 'commit', '-q', '-m', 'base')
+    sh(top, 'push', '-q', 'origin', 'main')
+    sh(top, 'checkout', '-q', '-b', 'feat')
+    return { top, project: path.join(top, 'pkg/bot') }
+  }
+
+  it('renders a new file at the project root and in a subfolder as every line added', async () => {
+    const { top, project } = nested()
+    write(top, 'pkg/bot/architect.md', 'x\n')
+    write(top, 'pkg/bot/src/deep/move.ts', 'y\n')
+
+    for (const file of ['pkg/bot/architect.md', 'pkg/bot/src/deep/move.ts']) {
+      const local = named(await section(project, 'local'), file)
+      expect(local.status).toBe('untracked')
+      const diff = await hunksOf(project, 'local', local)
+      expect(diff.hunks.flatMap((hunk) => hunk.rows).length).toBe(1)
+    }
+  })
+
+  it('shows the branch change for edited, added and renamed files', async () => {
+    const { top, project } = nested()
+    write(top, 'pkg/bot/src/edit.ts', 'one\ntwo\n')
+    write(top, 'pkg/bot/src/added.ts', 'new\n')
+    sh(top, 'mv', 'pkg/bot/src/old.ts', 'pkg/bot/src/renamed.ts')
+    write(top, 'pkg/bot/src/renamed.ts', 'a\nb\nC\nd\ne\n')
+    sh(top, 'add', '-A')
+    sh(top, 'commit', '-q', '-m', 'work')
+
+    const out = await changes(project)
+    expect(out.ok && out.value.commits).toBe(1)
+    expect(out.ok && out.value.prefix).toBe('pkg/bot/')
+
+    const branch = await section(project, 'branch')
+    expect(named(branch, 'pkg/bot/src/renamed.ts').from).toBe('pkg/bot/src/old.ts')
+    for (const file of ['pkg/bot/src/edit.ts', 'pkg/bot/src/added.ts', 'pkg/bot/src/renamed.ts']) {
+      const diff = await hunksOf(project, 'branch', named(branch, file))
+      expect(diff.hunks.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('shows staged, unstaged and deleted files as one local list against HEAD', async () => {
+    const { top, project } = nested()
+    write(top, 'pkg/bot/src/edit.ts', 'one\ntwo\n')
+    sh(top, 'add', '-A')
+    write(top, 'pkg/bot/src/edit.ts', 'one\ntwo\nthree\n')
+    fs.rmSync(path.join(top, 'pkg/bot/src/old.ts'))
+
+    const local = await section(project, 'local')
+    expect(named(local, 'pkg/bot/src/edit.ts')).toMatchObject({ status: 'modified', added: 2, removed: 0 })
+    expect(named(local, 'pkg/bot/src/old.ts').status).toBe('deleted')
+
+    const diff = await hunksOf(project, 'local', named(local, 'pkg/bot/src/old.ts'))
+    expect(diff.hunks.flatMap((hunk) => hunk.rows).every((row) => row.new === null)).toBe(true)
+  })
+
+  it('stages and unstages a file by its repo path', async () => {
+    const { top, project } = nested()
+    write(top, 'pkg/bot/src/a[1].ts', 'z\n')
+    const file = named(await section(project, 'local'), 'pkg/bot/src/a[1].ts')
+
+    expect((await stageFile(project, file)).ok).toBe(true)
+    expect((await section(project, 'staged')).map((f) => f.path)).toEqual(['pkg/bot/src/a[1].ts'])
+    expect((await unstageFile(project, { ...file, status: 'added' })).ok).toBe(true)
+    expect(await section(project, 'staged')).toEqual([])
+  })
+
+  it('stages everything in the repo, not only the project folder', async () => {
+    const { top, project } = nested()
+    write(top, 'elsewhere.txt', 'e\n')
+    write(top, 'pkg/bot/src/edit.ts', 'changed\n')
+
+    expect((await stageAll(project)).ok).toBe(true)
+    expect((await section(project, 'staged')).map((f) => f.path).sort()).toEqual(['elsewhere.txt', 'pkg/bot/src/edit.ts'])
+  })
+
+  it('says why when a new file cannot be read', async () => {
+    const { project } = nested()
+    const out = await fileDiff(project, 'local', {
+      path: 'pkg/bot/gone.md', from: null, status: 'untracked', similarity: null, added: null, removed: null, binary: false,
+    })
+
+    expect(out.ok).toBe(false)
+    expect(!out.ok && out.error.kind === 'failed' && out.error.stderr).toContain('ENOENT')
+  })
+
+  it('lists local changes in a repo with no commits yet', async () => {
+    const root = tmp('unborn')
+    sh(root, 'init', '-b', 'main', '.')
+    write(root, 'a.txt', 'a\n')
+    sh(root, 'add', '-A')
+    write(root, 'a.txt', 'a\nb\n')
+
+    const local = await section(root, 'local')
+    expect(named(local, 'a.txt')).toMatchObject({ status: 'added', added: 2 })
+    expect((await hunksOf(root, 'local', named(local, 'a.txt'))).hunks.length).toBe(1)
   })
 })

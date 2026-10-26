@@ -260,6 +260,7 @@ function wireIpc() {
   )
   handle('architect:git-stage-file', (root: string, file: ChangedFile) => diff.stageFile(root, file))
   handle('architect:git-unstage-file', (root: string, file: ChangedFile) => diff.unstageFile(root, file))
+  handle('architect:git-stage-all', (root: string) => diff.stageAll(root))
   handle('architect:git-commit', (root: string, title: string, description: string) =>
     git.commit(root, title, description),
   )
