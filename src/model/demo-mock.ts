@@ -488,7 +488,7 @@ export function installMock() {
           for (const call of entry.calls) callers.set(`${call.file}:${call.fn}`, (callers.get(`${call.file}:${call.fn}`) ?? 0) + 1)
         }
       }
-      return files.flatMap((file) =>
+      const rows = files.flatMap((file) =>
         file.functions.map((entry, at) => {
           const fanIn = callers.get(`${file.path}:${at}`) ?? 0
           return {
@@ -505,6 +505,26 @@ export function installMock() {
           }
         })
       )
+
+      const index = new Map<string, number>()
+      for (const file of files) file.functions.forEach((_, at) => index.set(`${file.path}:${at}`, index.size))
+      const calls = files.flatMap((file) => file.functions.map((entry) => entry.calls))
+      const children = rows.map((): number[] => [])
+      const starts = rows.flatMap((row, at) => (row.fanIn === 0 ? [at] : []))
+      const placed = new Set(starts)
+      const queue = [...starts]
+      for (let from = queue.shift(); from !== undefined; from = queue.shift()) {
+        for (const call of calls[from] ?? []) {
+          const to = index.get(`${call.file}:${call.fn}`)
+          if (to === undefined || placed.has(to)) continue
+          placed.add(to)
+          children[from]?.push(to)
+          queue.push(to)
+        }
+      }
+      const unreached = rows.flatMap((_, at) => (placed.has(at) ? [] : [at]))
+      const also = rows.map((row, at) => Math.max(0, row.fanIn - (starts.includes(at) || unreached.includes(at) ? 0 : 1)))
+      return { rows, tree: { starts, unreached, children, also } }
     },
     onTouch() {},
     async ptySpawn() {

@@ -321,11 +321,13 @@ describe("drafting a first contract", () => {
     const claude = vi.fn();
     daemon = createDaemon({ socketPath, claude });
 
-    const rows = await daemon.listFunctions(root);
+    const { rows, tree } = await daemon.listFunctions(root);
     expect(rows.map((r) => [r.file, r.name, r.fanIn, r.entry])).toEqual([
       ["api/handler.ts", "handler", 1, false],
       ["ui/page.ts", "page", 0, true],
     ]);
+    expect(tree.starts).toEqual([1]);
+    expect(tree.children[1]).toEqual([0]);
     expect(rows.every((r) => r.summary !== "" && r.importance >= 1 && r.importance <= 5)).toBe(true);
     expect(claude).not.toHaveBeenCalled();
   });

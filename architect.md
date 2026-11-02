@@ -25,7 +25,7 @@ Asks the Claude Code binary for a first `architect.md`, from a bounded summary o
 owns: `electron/draft/**`
 
 ### functions
-Lists every function in a project with facts measured from the scan (line count, how many functions call it, how many it calls, whether it is exported, whether its file is a starting point), an importance from 1 to 5 and a one line plain English summary. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. The summary is the author's own comment when there is one, otherwise a sentence built from the function's name, its kind and who uses it. Fully deterministic, no model calls, computed in one pass over the code map.
+Lists every function in a project with facts measured from the scan (line count, how many functions call it, how many it calls, whether it is exported, whether its file is a starting point), an importance from 1 to 5 and a one line plain English summary. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. The summary is the author's own comment when there is one, otherwise a sentence built from the function's name, its kind and who uses it. It also arranges the functions into a call tree for the org chart view: starting points that nothing calls sit at the top, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Fully deterministic, no model calls, computed in one pass over the code map.
 owns: `electron/functions/**`
 
 ### daemon
@@ -94,7 +94,7 @@ owns: `lsp/**`
 - canvas -> git : the renderer never shells out to git, results arrive over the preload bridge
 - canvas -> github : the renderer never shells out to gh and never holds a token, repos and branches arrive over the preload bridge
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
-- canvas -> functions : the renderer never ranks functions itself, the ranked list arrives over the preload bridge
+- canvas -> functions : the renderer never ranks or arranges functions itself, the ranked list and its call tree arrive over the preload bridge
 
 ## Packages
 
