@@ -396,6 +396,10 @@ export type Importance = 1 | 2 | 3 | 4 | 5
 
 export type FunctionRow = FunctionFacts & { importance: Importance; summary: string }
 
+export type FunctionTree = { starts: number[]; unreached: number[]; children: number[][]; also: number[] }
+
+export type FunctionList = { rows: FunctionRow[]; tree: FunctionTree }
+
 export type CommitDraft = { title: string; description: string }
 
 export type PullDraft = { title: string; body: string }
@@ -466,7 +470,7 @@ export type ArchitectApi = {
   gitPull(root: string): Promise<GitResult<Pulled>>
   draftCommitMessage(root: string): Promise<DraftResult<CommitDraft>>
   draftPullRequest(root: string): Promise<DraftResult<PullDraft>>
-  listFunctions(root: string): Promise<FunctionRow[]>
+  listFunctions(root: string): Promise<FunctionList>
   githubAuth(): Promise<GithubResult<GithubAuth>>
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
   githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>

@@ -16,8 +16,8 @@ const fn = (name: string, calls: { file: string; fn: number }[] = []) => ({
 
 describe('functionsOf', () => {
   it('returns nothing for an empty project and a full row for a single function', () => {
-    expect(functionsOf(mapOf([]), new Set())).toEqual([])
-    expect(functionsOf(mapOf([{ path: 'a.ts', functions: [fn('loadConfig')] }]), new Set())).toEqual([
+    expect(functionsOf(mapOf([]), new Set())).toEqual({ rows: [], tree: { starts: [], unreached: [], children: [], also: [] } })
+    expect(functionsOf(mapOf([{ path: 'a.ts', functions: [fn('loadConfig')] }]), new Set()).rows).toEqual([
       {
         file: 'a.ts',
         name: 'loadConfig',
@@ -38,7 +38,7 @@ describe('functionsOf', () => {
       { path: 'a.ts', imports: ['b.ts'], functions: [fn('run', [{ file: 'b.ts', fn: 0 }]), fn('run')] },
       { path: 'b.ts', imports: ['a.ts'], functions: [fn('ping', [{ file: 'b.ts', fn: 1 }]), fn('pong', [{ file: 'b.ts', fn: 0 }])] },
     ])
-    const rows = functionsOf(map, new Set())
+    const { rows } = functionsOf(map, new Set())
     expect(rows).toHaveLength(4)
     expect(rows.every((row) => row.summary !== '' && row.importance >= 1 && row.importance <= 5)).toBe(true)
     expect(rows.map((row) => row.fanIn)).toEqual([0, 0, 2, 1])
@@ -57,9 +57,10 @@ describe('functionsOf', () => {
       ),
     }))
     const started = performance.now()
-    const rows = functionsOf(mapOf(files), new Set())
+    const { rows, tree } = functionsOf(mapOf(files), new Set())
     const spent = performance.now() - started
     expect(rows).toHaveLength(1500)
+    expect(tree.children.flat().length + tree.starts.length + tree.unreached.length).toBe(1500)
     expect(new Set(rows.map((row) => row.importance)).size).toBeGreaterThan(1)
     expect(spent).toBeLessThan(250)
   })

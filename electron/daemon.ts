@@ -14,7 +14,7 @@ import {
   type DraftResult,
   type Edit,
   type EditSummary,
-  type FunctionRow,
+  type FunctionList,
   type HistoryEntry,
   historyEntrySchema,
   type OpenedProject,
@@ -1048,7 +1048,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     writeSource,
     readTree,
     rescan: rescanProject,
-    listFunctions: async (root: string): Promise<FunctionRow[]> => {
+    listFunctions: async (root: string): Promise<FunctionList> => {
       loadProject(root)
       return listFunctions(root, await mapOf(root))
     },

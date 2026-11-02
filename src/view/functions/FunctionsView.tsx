@@ -3,30 +3,39 @@ import type { FunctionRow } from '../../../shared/types'
 import { folderName } from '../../model/layout'
 import { loadCodeMap, openFile, useProject } from '../../model/store'
 import type { ViewProps } from '../../shell/views'
+import Mark, { plural } from './Mark'
 import { arrange, type SortKey } from './order'
+import FunctionTree from './tree/FunctionTree'
 import { useFunctions } from './useFunctions'
+
+type Mode = 'list' | 'tree'
+
+const MODES: { key: Mode; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'tree', label: 'Tree' },
+]
+
+const MODE_KEY = 'architect.functions.mode:'
+
+function storedMode(root: string | null): Mode {
+  try {
+    return root && localStorage.getItem(MODE_KEY + root) === 'tree' ? 'tree' : 'list'
+  } catch {
+    return 'list'
+  }
+}
+
+function storeMode(root: string | null, mode: Mode) {
+  try {
+    if (root) localStorage.setItem(MODE_KEY + root, mode)
+  } catch {}
+}
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: 'importance', label: 'Importance' },
   { key: 'lines', label: 'Lines' },
   { key: 'name', label: 'Name' },
 ]
-
-const STEPS = [1, 2, 3, 4, 5]
-
-function plural(count: number, word: string): string {
-  return `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`
-}
-
-function Mark({ importance }: { importance: number }) {
-  return (
-    <span className="fn-mark" role="img" aria-label={`importance ${importance} of 5`} title={`Importance ${importance} of 5`}>
-      {STEPS.map((step) => (
-        <span key={step} className={step <= importance ? 'fn-step on' : 'fn-step'} />
-      ))}
-    </span>
-  )
-}
 
 const Row = memo(function Row({ row, onOpen }: { row: FunctionRow; onOpen: (row: FunctionRow) => void }) {
   return (
@@ -52,7 +61,9 @@ const Row = memo(function Row({ row, onOpen }: { row: FunctionRow; onOpen: (row:
 
 export default function FunctionsView({ show }: ViewProps) {
   const { currentRoot, codeMap } = useProject()
-  const { rows, error } = useFunctions(currentRoot, codeMap)
+  const { list, error } = useFunctions(currentRoot, codeMap)
+  const rows = list?.rows ?? null
+  const [mode, setMode] = useState<Mode>(() => storedMode(currentRoot))
   const [sort, setSort] = useState<SortKey>('importance')
   const [query, setQuery] = useState('')
   const needle = useDeferredValue(query)
@@ -61,7 +72,19 @@ export default function FunctionsView({ show }: ViewProps) {
     loadCodeMap()
   }, [currentRoot, codeMap])
 
-  const placed = useMemo(() => (rows ? arrange(rows, sort, needle) : []), [rows, sort, needle])
+  useEffect(() => {
+    setMode(storedMode(currentRoot))
+  }, [currentRoot])
+
+  const pickMode = (next: Mode) => {
+    setMode(next)
+    storeMode(currentRoot, next)
+  }
+
+  const placed = useMemo(
+    () => (rows && mode === 'list' ? arrange(rows, sort, needle) : []),
+    [rows, mode, sort, needle],
+  )
 
   const showLatest = useRef(show)
   showLatest.current = show
@@ -83,18 +106,32 @@ export default function FunctionsView({ show }: ViewProps) {
         <p className="fn-count" aria-live="polite">
           {rows ? plural(rows.length, 'function') : 'Reading functions…'}
         </p>
-        <div className="fn-sort" role="group" aria-label="Sort by">
-          {SORTS.map(({ key, label }) => (
+        <div className="fn-sort" role="group" aria-label="View">
+          {MODES.map(({ key, label }) => (
             <button
               key={key}
-              className={key === sort ? 'mode active' : 'mode'}
-              aria-pressed={key === sort}
-              onClick={() => setSort(key)}
+              className={key === mode ? 'mode active' : 'mode'}
+              aria-pressed={key === mode}
+              onClick={() => pickMode(key)}
             >
               {label}
             </button>
           ))}
         </div>
+        {mode === 'list' && (
+          <div className="fn-sort" role="group" aria-label="Sort by">
+            {SORTS.map(({ key, label }) => (
+              <button
+                key={key}
+                className={key === sort ? 'mode active' : 'mode'}
+                aria-pressed={key === sort}
+                onClick={() => setSort(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <input
           className="search-input fn-search"
           type="search"
@@ -113,6 +150,8 @@ export default function FunctionsView({ show }: ViewProps) {
 
       {rows && rows.length === 0 ? (
         <p className="fn-empty">No functions found in this project.</p>
+      ) : list && mode === 'tree' ? (
+        <FunctionTree list={list} query={needle} project={folderName(currentRoot)} onOpen={onOpen} />
       ) : rows && placed.length === 0 ? (
         <p className="fn-empty">No functions match “{needle}”.</p>
       ) : (

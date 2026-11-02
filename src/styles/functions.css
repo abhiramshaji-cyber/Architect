@@ -157,3 +157,159 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-faint);
 }
+
+.fn-tree {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 420px;
+  --xy-background-pattern-color: var(--dots);
+}
+
+.fn-card {
+  position: relative;
+  width: 248px;
+  height: 132px;
+  display: flex;
+  flex-direction: column;
+  background: var(--node-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px var(--shadow);
+  color: var(--text);
+  transition: opacity var(--fast) ease, border-color var(--fast) ease;
+}
+
+.fn-card.focused {
+  border-color: var(--active-border);
+}
+
+.fn-card.dim {
+  opacity: 0.35;
+}
+
+.fn-card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: inherit;
+}
+
+button.fn-card-body {
+  cursor: pointer;
+}
+
+button.fn-card-body:hover {
+  background: var(--hover);
+}
+
+button.fn-card-body:focus-visible {
+  outline: 1px solid var(--active-border);
+  outline-offset: -1px;
+}
+
+.fn-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.fn-card-name,
+.fn-card-title,
+.fn-card-file {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fn-card-name {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+
+.fn-card-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.fn-card-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.fn-card-also {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.fn-card-foot {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: auto;
+  padding-right: 56px;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.fn-card-file {
+  flex: 0 1 auto;
+}
+
+.fn-card-lines {
+  flex: none;
+}
+
+.fn-card-toggle {
+  position: absolute;
+  right: var(--sp-2);
+  bottom: var(--sp-2);
+  height: 22px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  background: var(--raise);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.fn-card-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.fn-card-toggle[aria-expanded='true'] {
+  background: var(--active-bg);
+  border-color: var(--active-border);
+}
+
+.fn-card-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fn-tree .react-flow__edge.fn-tree-edge .react-flow__edge-path {
+  stroke: var(--border);
+  stroke-width: 1.25;
+}
+
+.fn-tree .react-flow__edge.fn-tree-edge.lit .react-flow__edge-path {
+  stroke: var(--text);
+  stroke-width: 1.75;
+}
