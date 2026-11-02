@@ -212,7 +212,7 @@ function wireIpc() {
   handle('architect:delete-edit', (root: string, id: string) => daemon.deleteEdit(root, id))
   handle('architect:code-map', (root: string) => daemon.codeMap(root))
   handle('architect:rescan', (root: string) => daemon.rescan(root))
-  handle('architect:list-functions', (root: string) => daemon.listFunctions(root))
+  handle('architect:list-functions', (root: string, scope?: unknown) => daemon.listFunctions(root, scope))
   handle('architect:ownership', (root: string) => daemon.ownership(root))
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),

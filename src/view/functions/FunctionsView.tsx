@@ -1,10 +1,14 @@
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { FunctionRow } from '../../../shared/types'
+import { baseName } from '../../model/codemap'
 import { folderName } from '../../model/layout'
 import { loadCodeMap, openFile, useProject } from '../../model/store'
 import type { ViewProps } from '../../shell/views'
-import Mark, { plural } from './Mark'
+import { plural } from './Mark'
+import Row from './Row'
 import { arrange, type SortKey } from './order'
+import ScopePicker from './scope/ScopePicker'
+import { storeScope, storedScope } from './scope/pick'
 import FunctionTree from './tree/FunctionTree'
 import { useFunctions } from './useFunctions'
 
@@ -37,32 +41,12 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: 'name', label: 'Name' },
 ]
 
-const Row = memo(function Row({ row, onOpen }: { row: FunctionRow; onOpen: (row: FunctionRow) => void }) {
-  return (
-    <li>
-      <button className="fn-row" onClick={() => onOpen(row)} title={`${row.file}:${row.line}`}>
-        <Mark importance={row.importance} />
-        <span className="fn-main">
-          <span className="fn-head">
-            <span className="fn-name">{row.name}</span>
-            <span className="fn-file">
-              <bdi>{row.file}</bdi>
-            </span>
-          </span>
-          <span className="fn-summary">{row.summary}</span>
-        </span>
-        <span className="fn-lines" aria-label={plural(row.lines, 'line')}>
-          {row.lines.toLocaleString()}
-        </span>
-      </button>
-    </li>
-  )
-})
-
 export default function FunctionsView({ show }: ViewProps) {
   const { currentRoot, codeMap } = useProject()
-  const { list, error } = useFunctions(currentRoot, codeMap)
+  const [scope, setScope] = useState(() => storedScope(currentRoot))
+  const { list, error, asked } = useFunctions(currentRoot, codeMap, scope)
   const rows = list?.rows ?? null
+  const shownScope = list?.scope ?? scope
   const [mode, setMode] = useState<Mode>(() => storedMode(currentRoot))
   const [sort, setSort] = useState<SortKey>('importance')
   const [query, setQuery] = useState('')
@@ -74,7 +58,20 @@ export default function FunctionsView({ show }: ViewProps) {
 
   useEffect(() => {
     setMode(storedMode(currentRoot))
+    setScope(storedScope(currentRoot))
   }, [currentRoot])
+
+  const pickScope = useCallback(
+    (next: string) => {
+      setScope(next)
+      storeScope(currentRoot, next)
+    },
+    [currentRoot],
+  )
+
+  useEffect(() => {
+    if (list && asked?.root === currentRoot && asked.scope === scope && list.scope !== scope) pickScope(list.scope)
+  }, [list, asked, currentRoot, scope, pickScope])
 
   const pickMode = (next: Mode) => {
     setMode(next)
@@ -104,8 +101,18 @@ export default function FunctionsView({ show }: ViewProps) {
 
       <div className="fn-bar">
         <p className="fn-count" aria-live="polite">
-          {rows ? plural(rows.length, 'function') : 'Reading functions…'}
+          {!rows
+            ? 'Reading functions…'
+            : shownScope === ''
+              ? plural(rows.length, 'function')
+              : `${plural(rows.length, 'function')} in ${shownScope}`}
         </p>
+        <ScopePicker
+          project={folderName(currentRoot)}
+          scope={shownScope}
+          folders={list?.folders ?? []}
+          onScope={pickScope}
+        />
         <div className="fn-sort" role="group" aria-label="View">
           {MODES.map(({ key, label }) => (
             <button
@@ -149,15 +156,23 @@ export default function FunctionsView({ show }: ViewProps) {
       )}
 
       {rows && rows.length === 0 ? (
-        <p className="fn-empty">No functions found in this project.</p>
+        <p className="fn-empty">
+          {shownScope === '' ? 'No functions found in this project.' : `No functions found in ${shownScope}.`}
+        </p>
       ) : list && mode === 'tree' ? (
-        <FunctionTree list={list} query={needle} project={folderName(currentRoot)} onOpen={onOpen} />
+        <FunctionTree
+          key={shownScope}
+          list={list}
+          query={needle}
+          project={shownScope === '' ? folderName(currentRoot) : baseName(shownScope)}
+          onOpen={onOpen}
+        />
       ) : rows && placed.length === 0 ? (
         <p className="fn-empty">No functions match “{needle}”.</p>
       ) : (
         <ul className="fn-list">
           {placed.map(({ row, key }) => (
-            <Row key={key} row={row} onOpen={onOpen} />
+            <Row key={key} row={row} onOpen={onOpen} onScope={pickScope} />
           ))}
         </ul>
       )}

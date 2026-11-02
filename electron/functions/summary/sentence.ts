@@ -1,11 +1,15 @@
 import path from 'node:path'
-import type { FunctionEntry, FunctionFacts } from '../../shared/types'
+import type { FunctionEntry, FunctionFacts } from '../../../shared/types'
 import { objectOf, verbPhrase, wordsOf } from './verbs'
 
-function usage(fact: FunctionFacts): string {
-  if (fact.entry && fact.fanIn === 0) return 'Starting point of the app.'
-  if (fact.fanIn === 1) return 'Used in 1 place.'
-  return fact.fanIn > 1 ? `Used in ${fact.fanIn.toLocaleString('en-US')} places.` : ''
+function places(fanIn: number): string {
+  if (fanIn === 1) return 'Used in 1 place.'
+  return fanIn > 1 ? `Used in ${fanIn.toLocaleString('en-US')} places.` : ''
+}
+
+function usage(fact: FunctionFacts, outside: number): string {
+  if (outside > 0) return fact.fanIn > 0 ? `${places(fact.fanIn)} Also used from outside this folder.` : 'Used only from outside this folder.'
+  return fact.entry && fact.fanIn === 0 ? 'Starting point of the app.' : places(fact.fanIn)
 }
 
 function phrased(entry: FunctionEntry, file: string): string {
@@ -33,6 +37,6 @@ function phrased(entry: FunctionEntry, file: string): string {
   return words.length > 0 ? `Works out ${objectOf(words)}.` : 'Does a small job.'
 }
 
-export function sentenceOf(entry: FunctionEntry, fact: FunctionFacts): string {
-  return [entry.doc ?? phrased(entry, fact.file), usage(fact)].filter((part) => part !== '').join(' ')
+export function sentenceOf(entry: FunctionEntry, fact: FunctionFacts, outside = 0): string {
+  return [entry.doc ?? phrased(entry, fact.file), usage(fact, outside)].filter((part) => part !== '').join(' ')
 }

@@ -15,7 +15,7 @@ export function rankOf(rows: FunctionRow[]): (a: number, b: number) => number {
   }
 }
 
-export function treeOf(rows: FunctionRow[], edges: number[][]): FunctionTree {
+export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): FunctionTree {
   const rank = rankOf(rows)
   const parent = new Array<number | null>(rows.length).fill(null)
   const seen = new Array<boolean>(rows.length).fill(false)
@@ -43,7 +43,7 @@ export function treeOf(rows: FunctionRow[], edges: number[][]): FunctionTree {
 
   const loose = all.filter((at) => !seen[at] && rows[at]?.fanIn === 0)
   walk(loose)
-  const unreached = [...loose]
+  const unreached = lifted ? [] : [...loose]
   for (const at of all) {
     if (seen[at]) continue
     unreached.push(at)
@@ -58,5 +58,5 @@ export function treeOf(rows: FunctionRow[], edges: number[][]): FunctionTree {
   }
 
   const also = rows.map((row, at) => Math.max(0, row.fanIn - (parent[at] === null ? 0 : 1)))
-  return { starts, unreached, children, also }
+  return { starts: lifted ? [...starts, ...loose] : starts, unreached, children, also }
 }

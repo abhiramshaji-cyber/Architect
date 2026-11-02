@@ -524,7 +524,7 @@ export function installMock() {
       }
       const unreached = rows.flatMap((_, at) => (placed.has(at) ? [] : [at]))
       const also = rows.map((row, at) => Math.max(0, row.fanIn - (starts.includes(at) || unreached.includes(at) ? 0 : 1)))
-      return { rows, tree: { starts, unreached, children, also } }
+      return { rows, tree: { starts, unreached, children, also }, scope: '', folders: [] }
     },
     onTouch() {},
     async ptySpawn() {
