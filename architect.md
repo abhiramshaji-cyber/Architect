@@ -25,7 +25,7 @@ Asks the Claude Code binary for a first `architect.md`, from a bounded summary o
 owns: `electron/draft/**`
 
 ### functions
-Lists every function in a project with facts measured from the scan (line count, how many functions call it, how many it calls, whether it is exported, whether its file is a starting point) and asks the Claude Code binary, one file at a time, for an importance from 1 to 5 and a one sentence plain English summary. Results are cached per file by a hash of its content, so an unchanged file is never asked about again, and progress streams to the renderer as each file finishes.
+Lists every function in a project with facts measured from the scan (line count, how many functions call it, how many it calls, whether it is exported, whether its file is a starting point), an importance from 1 to 5 and a one line plain English summary. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. The summary is the author's own comment when there is one, otherwise a sentence built from the function's name, its kind and who uses it. Fully deterministic, no model calls, computed in one pass over the code map.
 owns: `electron/functions/**`
 
 ### daemon
@@ -64,7 +64,6 @@ owns: `lsp/**`
 - daemon -> draft
 - daemon -> functions
 - functions -> types
-- functions -> draft
 - daemon -> git
 - draft -> types
 - draft -> graph

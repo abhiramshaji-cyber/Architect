@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../../shared/types'
+import { docOf, kindOf, renderedTag } from './traits'
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -308,8 +309,9 @@ function callsIn(
   const visit = (child: ts.Node): void => {
     if (child !== node && nested.has(child)) return
 
-    if (ts.isCallExpression(child)) {
-      const name = calleeName(child.expression, self)
+    const callee = ts.isCallExpression(child) ? child.expression : renderedTag(child)
+    if (callee !== undefined) {
+      const name = calleeName(callee, self)
       const target = name === undefined ? undefined : resolve(name, child)
       if (target !== undefined) found.set(typeof target === 'number' ? `#${target}` : `@${target.name}`, target)
     }
@@ -376,6 +378,12 @@ function parseFile(source: string, file: string): Parsed {
     ts.forEachChild(sourceFile, (child) => visit(child, ''))
 
     const nested = new Set(found.map((f) => f.node))
+    for (const f of found) {
+      const doc = docOf(f.node, sourceFile)
+      const kind = kindOf(f.node, nested)
+      if (doc !== undefined) f.entry.doc = doc
+      if (kind !== undefined) f.entry.kind = kind
+    }
     const byScope = bindingsOf(found)
     const shadows = shadowsOf(sourceFile)
     const imported = importBindings(sourceFile)

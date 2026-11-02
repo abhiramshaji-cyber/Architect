@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CodeMap, FileEntry } from '../../shared/types'
-import { declaredEntries, factsOf } from './facts'
+import { declaredEntries, edgesOf, factsOf } from './facts'
 
 function mapOf(files: FileEntry[]): CodeMap {
   return {
@@ -80,6 +80,15 @@ describe('factsOf', () => {
     ])
   })
 
+  it('never treats a test file as a starting point', () => {
+    const map = mapOf([
+      { path: 'a.test.ts', functions: [fn('t', 1, 1)] },
+      { path: '__tests__/b.ts', functions: [fn('u', 1, 1)] },
+      { path: 'c.spec.tsx', functions: [fn('v', 1, 1)] },
+    ])
+    expect(factsOf(map, new Set()).map((f) => f.entry)).toEqual([false, false, false])
+  })
+
   it('never reports a line count below one for a malformed span', () => {
     expect(factsOf(mapOf([{ path: 'a.ts', functions: [fn('odd', 9, 3)] }]), new Set())[0]?.lines).toBe(1)
   })
@@ -100,5 +109,26 @@ describe('declaredEntries', () => {
     expect(declaredEntries(null)).toEqual(new Set())
     expect(declaredEntries('nope')).toEqual(new Set())
     expect(declaredEntries({ main: 3, bin: [null, ''] })).toEqual(new Set())
+  })
+})
+
+describe('edgesOf', () => {
+  it('links calls by position, dropping self calls, repeats and refs that point nowhere', () => {
+    const map = mapOf([
+      {
+        path: 'a.ts',
+        functions: [
+          fn('a', 1, 1, [
+            { file: 'a.ts', fn: 0 },
+            { file: 'b.ts', fn: 1 },
+            { file: 'b.ts', fn: 1 },
+            { file: 'b.ts', fn: 9 },
+            { file: 'gone.ts', fn: 0 },
+          ]),
+        ],
+      },
+      { path: 'b.ts', functions: [fn('b', 1, 1), fn('c', 2, 2, [{ file: 'a.ts', fn: 0 }])] },
+    ])
+    expect(edgesOf(map)).toEqual([[2], [], [0]])
   })
 })

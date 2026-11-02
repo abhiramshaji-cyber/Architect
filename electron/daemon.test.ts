@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Architecture,
   Decision,
-  FunctionsReport,
   ProjectSummary,
   Request,
   Response,
@@ -317,26 +316,18 @@ describe("drafting a first contract", () => {
     expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
   });
 
-  it("lists every function with its facts and ranks it through the agent on request", async () => {
+  it("lists every function with its facts, importance and summary without asking the agent", async () => {
     const root = repo();
-    const claude = vi.fn(async (prompt: string, _cwd: string, _timeout?: number, _model?: string) => {
-      const ids = [...prompt.matchAll(/id="(f\d+)"/g)].map((m) => m[1]);
-      const reply = ids.map((id) => ({ id, importance: 3, summary: "Shows a page." }));
-      return { code: 0 as const, stdout: JSON.stringify(reply), stderr: "" };
-    });
+    const claude = vi.fn();
     daemon = createDaemon({ socketPath, claude });
-    const reports: FunctionsReport[] = [];
-    daemon.onFunctions((report) => reports.push(report));
 
-    const first = await daemon.rankFunctions(root);
-    expect(first.rows.map((r) => [r.file, r.name, r.fanIn, r.entry])).toEqual([
+    const rows = await daemon.listFunctions(root);
+    expect(rows.map((r) => [r.file, r.name, r.fanIn, r.entry])).toEqual([
       ["api/handler.ts", "handler", 1, false],
       ["ui/page.ts", "page", 0, true],
     ]);
-
-    await vi.waitFor(() => expect(reports.at(-1)?.done).toBe(2));
-    expect(reports.at(-1)?.rows.every((r) => r.rank?.summary === "Shows a page.")).toBe(true);
-    expect(claude.mock.calls.every((call) => call[3] === "haiku")).toBe(true);
+    expect(rows.every((r) => r.summary !== "" && r.importance >= 1 && r.importance <= 5)).toBe(true);
+    expect(claude).not.toHaveBeenCalled();
   });
 
   it("reports the agent as not installed and writes nothing", async () => {
@@ -1029,7 +1020,7 @@ describe("code map migration", () => {
     fs.writeFileSync(
       path.join(tmpRoot, ".architect", "map.json"),
       JSON.stringify({
-        version: 4,
+        version: 5,
         map: {
           root: tmpRoot,
           scannedAt: 1,
