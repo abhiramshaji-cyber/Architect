@@ -38,6 +38,8 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     deleteEdit: vi.fn(),
     getCodeMap: vi.fn(),
     rescan: vi.fn(),
+    rankFunctions: vi.fn(),
+    onFunctions: vi.fn().mockReturnValue(() => {}),
     ownership: vi.fn().mockResolvedValue(null),
     readSource: vi.fn(),
     openSource: vi.fn(),
