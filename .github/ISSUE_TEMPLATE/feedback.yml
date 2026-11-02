@@ -1,0 +1,41 @@
+name: Feedback
+description: Tell us how Architect worked on your code
+labels: [feedback]
+body:
+  - type: textarea
+    id: project
+    attributes:
+      label: What did you use it on?
+      description: Rough size, language and kind of project.
+    validations:
+      required: true
+  - type: textarea
+    id: useful
+    attributes:
+      label: What was useful?
+    validations:
+      required: false
+  - type: textarea
+    id: confusing
+    attributes:
+      label: What was confusing or missing?
+    validations:
+      required: false
+  - type: dropdown
+    id: ranking
+    attributes:
+      label: Did the importance ranking match your sense of the code?
+      options:
+        - Mostly yes
+        - Partly
+        - Mostly no
+        - Did not look
+    validations:
+      required: false
+  - type: input
+    id: next
+    attributes:
+      label: Which OS and language would you want next?
+      placeholder: e.g. Linux, Python
+    validations:
+      required: false

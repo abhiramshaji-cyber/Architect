@@ -1,6 +1,6 @@
 {
   "name": "architect",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Draw your architecture. Make Claude follow it.",
   "license": "Apache-2.0",
   "author": "Abhiram Shaji",

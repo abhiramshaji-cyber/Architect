@@ -13,6 +13,30 @@ Coding agents generate structure faster than anyone reviews it. Architect puts t
 
 ---
 
+## What's new: the Functions tab
+
+Open a project and Architect now starts on **Functions**: every function in the repo, with its line count, an importance score from 1 to 5, and a one line description.
+
+- **Ranked without AI.** Importance comes from PageRank over the call graph plus plain facts such as whether a function is exported or is a starting point. Descriptions come from the author's comments, or from the function name when there are none. No API key, no model call, about 3 ms for 1,300 functions.
+- **List view.** Sort by importance, lines or name, and filter by name, file or description.
+- **Tree view.** An org chart of who calls whom, from the starting points down. Open and close branches, search, and zoom.
+
+Architect no longer drafts an `architect.md` on its own. The Draft button on the Contract tab still does it when you ask.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/functions-list-dark.png">
+  <img alt="The Functions list" src="docs/screenshots/functions-list.png">
+</picture>
+
+*Every function, ranked by importance, with its description and line count.*
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/functions-tree-dark.png">
+  <img alt="The Functions tree" src="docs/screenshots/functions-tree.png">
+</picture>
+
+*The Tree view, from the project down through the functions each one calls.*
+
 ## What it looks like
 
 ![The contract canvas](docs/screenshots/contract-canvas.png)
@@ -172,6 +196,10 @@ V1 is in active development. It is deliberately small:
 **In:** the canvas, the four structural operations, live change highlighting with a history, cycle detection, multi project, and the MCP tools the agent reads and writes the contract through.
 
 **Out, on purpose:** no import verification yet, no drift report, no decision log, no cloud, no accounts. Those are V2, and they are tracked as issues.
+
+## Feedback
+
+I would like to hear what worked and what did not. Reply in the [feedback discussion](https://github.com/abhiramshaji-cyber/Architect/discussions/209), or fill in the short [feedback form](https://github.com/abhiramshaji-cyber/Architect/issues/new?template=feedback.yml).
 
 ## Contributing
 
