@@ -13,17 +13,11 @@ const MAX_STDERR = 400
 
 export type ClaudeOutput = { code: number | 'missing' | 'timeout'; stdout: string; stderr: string }
 
-export type ClaudeRun = (
-  prompt: string,
-  cwd: string,
-  timeoutMs?: number,
-  model?: string,
-  signal?: AbortSignal,
-) => Promise<ClaudeOutput>
+export type ClaudeRun = (prompt: string, cwd: string, timeoutMs?: number, model?: string) => Promise<ClaudeOutput>
 
-export const runClaude: ClaudeRun = (prompt, cwd, timeoutMs = TIMEOUT_MS, model, signal) =>
+export const runClaude: ClaudeRun = (prompt, cwd, timeoutMs = TIMEOUT_MS, model) =>
   new Promise((resolve) => {
-    const options = { cwd, maxBuffer: MAX_OUTPUT, timeout: timeoutMs, windowsHide: true, signal }
+    const options = { cwd, maxBuffer: MAX_OUTPUT, timeout: timeoutMs, windowsHide: true }
     const args = model ? ['--model', model, '--print', prompt] : ['--print', prompt]
 
     execFile('claude', args, options, (error, stdout, stderr) => {

@@ -480,7 +480,7 @@ export function installMock() {
       fn(Object.entries(roots).map(([root, title]) => ({ root, title, contract: { status: 'ready' } })))
     },
     onCodeMap() {},
-    async rankFunctions(root) {
+    async listFunctions(root) {
       const files = (codeMaps[root]?.folders ?? []).flatMap((folder) => folder.files)
       const callers = new Map<string, number>()
       for (const file of files) {
@@ -488,10 +488,9 @@ export function installMock() {
           for (const call of entry.calls) callers.set(`${call.file}:${call.fn}`, (callers.get(`${call.file}:${call.fn}`) ?? 0) + 1)
         }
       }
-      const rows = files.flatMap((file) =>
+      return files.flatMap((file) =>
         file.functions.map((entry, at) => {
           const fanIn = callers.get(`${file.path}:${at}`) ?? 0
-          const importance = Math.min(5, 1 + fanIn + (entry.description.length % 3)) as Importance
           return {
             file: file.path,
             name: entry.name,
@@ -501,14 +500,11 @@ export function installMock() {
             fanOut: entry.calls.length,
             exported: true,
             entry: false,
-            rank: entry.description ? { importance, summary: entry.description } : null
+            importance: Math.min(5, 1 + fanIn + (entry.description.length % 3)) as Importance,
+            summary: entry.description
           }
         })
       )
-      return { root, rows, done: files.length, total: files.length, failed: 0, failure: null }
-    },
-    onFunctions() {
-      return () => {}
     },
     onTouch() {},
     async ptySpawn() {

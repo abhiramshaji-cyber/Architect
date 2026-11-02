@@ -1,204 +1,66 @@
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CodeMap, FileEntry, FunctionsReport } from '../../shared/types'
-import type { ClaudeOutput, ClaudeRun } from '../draft/draft'
-import { createRanking } from './index'
+import { describe, expect, it } from 'vitest'
+import type { CodeMap, FileEntry } from '../../shared/types'
+import { functionsOf } from './index'
 
-const dirs: string[] = []
+function mapOf(files: FileEntry[]): CodeMap {
+  return { root: '/r', scannedAt: 0, folders: [{ path: '', folders: [], files }] }
+}
 
-afterEach(() => {
-  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+const fn = (name: string, calls: { file: string; fn: number }[] = []) => ({
+  name,
+  line: 1,
+  endLine: 3,
+  description: '',
+  calls,
 })
 
-function project(files: Record<string, string>): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-rank-'))
-  dirs.push(root)
-  for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(root, file), text)
-  return root
-}
-
-function mapOf(root: string, files: FileEntry[]): CodeMap {
-  return { root, scannedAt: 0, folders: [{ path: '', folders: [], files }] }
-}
-
-const entry = (file: string, names: string[]): FileEntry => ({
-  path: file,
-  functions: names.map((name, i) => ({
-    name,
-    line: i + 1,
-    endLine: i + 1,
-    description: '',
-    calls: [],
-  })),
-})
-
-function answering(prompt: string): ClaudeOutput {
-  const ids = [...prompt.matchAll(/id="(f\d+)"/g)].map((m) => m[1])
-  return {
-    code: 0,
-    stdout: JSON.stringify(ids.map((id) => ({ id, importance: 4, summary: 'Keeps things tidy.' }))),
-    stderr: '',
-  }
-}
-
-function setup(run: ClaudeRun) {
-  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-rank-cache-'))
-  dirs.push(cacheDir)
-  const reports: FunctionsReport[] = []
-  const ranking = createRanking(
-    (root) => path.join(cacheDir, `${path.basename(root)}.json`),
-    run,
-    (r) => reports.push(r),
-  )
-  return { ranking, reports }
-}
-
-const settle = (reports: FunctionsReport[]) =>
-  vi.waitFor(() => {
-    const last = reports.at(-1)
-    if (!last || last.done < last.total) throw new Error('still ranking')
-    return last
-  })
-
-describe('createRanking', () => {
-  it('shows every function from facts at once, then ranks each file and caches it', async () => {
-    const root = project({ 'a.ts': 'a\nb', 'b.ts': 'c' })
-    const map = mapOf(root, [entry('a.ts', ['a', 'b']), entry('b.ts', ['c'])])
-    const run = vi.fn(async (prompt: string) => answering(prompt))
-    const { ranking, reports } = setup(run)
-
-    const first = await ranking.rank(root, map)
-    expect(first.rows.map((r) => [r.name, r.rank])).toEqual([
-      ['a', null],
-      ['b', null],
-      ['c', null],
+describe('functionsOf', () => {
+  it('returns nothing for an empty project and a full row for a single function', () => {
+    expect(functionsOf(mapOf([]), new Set())).toEqual([])
+    expect(functionsOf(mapOf([{ path: 'a.ts', functions: [fn('loadConfig')] }]), new Set())).toEqual([
+      {
+        file: 'a.ts',
+        name: 'loadConfig',
+        line: 1,
+        lines: 3,
+        fanIn: 0,
+        fanOut: 0,
+        exported: false,
+        entry: true,
+        importance: 3,
+        summary: 'Loads the config. Starting point of the app.',
+      },
     ])
-    expect(first.total).toBe(2)
-
-    const last = await settle(reports)
-    expect(run).toHaveBeenCalledTimes(2)
-    expect(last.rows.every((r) => r.rank?.importance === 4)).toBe(true)
-    expect(last).toMatchObject({ done: 2, total: 2, failed: 0, failure: null })
-
-    await vi.waitFor(() => expect(ranking.rank(root, map)).resolves.toMatchObject({ done: 2 }))
-    expect(run).toHaveBeenCalledTimes(2)
   })
 
-  it('asks again only for the file whose content changed', async () => {
-    const root = project({ 'a.ts': 'a', 'b.ts': 'b' })
-    const map = mapOf(root, [entry('a.ts', ['a']), entry('b.ts', ['b'])])
-    const run = vi.fn(async (prompt: string) => answering(prompt))
-    const { ranking, reports } = setup(run)
-
-    await ranking.rank(root, map)
-    await settle(reports)
-    await vi.waitFor(() => expect(ranking.rank(root, map)).resolves.toMatchObject({ done: 2 }))
-    run.mockClear()
-
-    fs.writeFileSync(path.join(root, 'b.ts'), 'b changed')
-    reports.length = 0
-    const again = await ranking.rank(root, map)
-    expect(again.rows.find((r) => r.name === 'a')?.rank).not.toBeNull()
-    await settle(reports)
-    expect(run).toHaveBeenCalledTimes(1)
-    expect(run.mock.calls[0]?.[0]).toContain('b.ts')
+  it('fills every row, keeps duplicate names apart and survives a cycle', () => {
+    const map = mapOf([
+      { path: 'a.ts', imports: ['b.ts'], functions: [fn('run', [{ file: 'b.ts', fn: 0 }]), fn('run')] },
+      { path: 'b.ts', imports: ['a.ts'], functions: [fn('ping', [{ file: 'b.ts', fn: 1 }]), fn('pong', [{ file: 'b.ts', fn: 0 }])] },
+    ])
+    const rows = functionsOf(map, new Set())
+    expect(rows).toHaveLength(4)
+    expect(rows.every((row) => row.summary !== '' && row.importance >= 1 && row.importance <= 5)).toBe(true)
+    expect(rows.map((row) => row.fanIn)).toEqual([0, 0, 2, 1])
+    expect(rows[2]?.importance).toBeGreaterThan(rows[1]?.importance ?? 0)
   })
 
-  it('reports a missing Claude Code once and finishes without asking for the remaining files', async () => {
-    const root = project({
-      'a.ts': 'a',
-      'b.ts': 'b',
-      'c.ts': 'c',
-      'd.ts': 'd',
-    })
-    const map = mapOf(root, [entry('a.ts', ['a']), entry('b.ts', ['b']), entry('c.ts', ['c']), entry('d.ts', ['d'])])
-    const run = vi.fn(async () => ({
-      code: 'missing' as const,
-      stdout: '',
-      stderr: '',
+  it('handles a large project well inside the time budget', () => {
+    const files: FileEntry[] = Array.from({ length: 500 }, (_, f) => ({
+      path: `src/f${f}.ts`,
+      imports: [`src/f${(f + 1) % 500}.ts`],
+      functions: Array.from({ length: 3 }, (_, i) =>
+        fn(`loadThing${f}x${i}`, [
+          { file: `src/f${(f * 7 + i) % 500}.ts`, fn: i },
+          { file: `src/f${(f + 1) % 500}.ts`, fn: (i + 1) % 3 },
+        ]),
+      ),
     }))
-    const { ranking, reports } = setup(run)
-
-    await ranking.rank(root, map)
-    const last = await settle(reports)
-    expect(last.failure).toEqual({ kind: 'not-installed' })
-    expect(last.failed).toBe(4)
-    expect(run.mock.calls.length).toBeLessThanOrEqual(3)
-  })
-
-  it('leaves a deleted file unranked without calling Claude and handles a project with no functions', async () => {
-    const root = project({ 'a.ts': 'a' })
-    const run = vi.fn(async (prompt: string) => answering(prompt))
-    const { ranking, reports } = setup(run)
-
-    const report = await ranking.rank(root, mapOf(root, [entry('a.ts', ['a']), entry('gone.ts', ['g'])]))
-    expect(report.rows.find((r) => r.name === 'g')?.rank).toBeNull()
-    const last = await settle(reports)
-    expect(run).toHaveBeenCalledTimes(1)
-    expect(last.rows.find((r) => r.name === 'g')?.rank).toBeNull()
-
-    const empty = project({})
-    await expect(ranking.rank(empty, mapOf(empty, []))).resolves.toMatchObject({
-      rows: [],
-      done: 0,
-      total: 0,
-    })
-  })
-
-  it('stops emitting and calling once the project is closed mid rank', async () => {
-    const root = project({
-      'a.ts': 'a',
-      'b.ts': 'b',
-      'c.ts': 'c',
-      'd.ts': 'd',
-      'e.ts': 'e',
-    })
-    const map = mapOf(
-      root,
-      ['a', 'b', 'c', 'd', 'e'].map((n) => entry(`${n}.ts`, [n])),
-    )
-    let release: () => void = () => {}
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const run = vi.fn(async (prompt: string, _cwd: string, _t?: number, _m?: string, signal?: AbortSignal) => {
-      await gate
-      return signal?.aborted ? { code: 'timeout' as const, stdout: '', stderr: '' } : answering(prompt)
-    })
-    const { ranking, reports } = setup(run)
-
-    await ranking.rank(root, map)
-    const seen = reports.length
-    ranking.stop(root)
-    release()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-
-    expect(reports.length).toBe(seen)
-    expect(run).toHaveBeenCalledTimes(3)
-  })
-
-  it('reruns with the newest map when one arrives during a rank', async () => {
-    const root = project({ 'a.ts': 'a', 'b.ts': 'b' })
-    let release: () => void = () => {}
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const run = vi.fn(async (prompt: string) => {
-      await gate
-      return answering(prompt)
-    })
-    const { ranking, reports } = setup(run)
-
-    await ranking.rank(root, mapOf(root, [entry('a.ts', ['a'])]))
-    await ranking.rank(root, mapOf(root, [entry('a.ts', ['a']), entry('b.ts', ['b'])]))
-    release()
-
-    await vi.waitFor(() => {
-      const last = reports.at(-1)
-      if (!last || last.total !== 2 || last.done < 2) throw new Error('waiting for the rerun')
-    })
-    expect(reports.at(-1)?.rows.map((r) => r.name)).toEqual(['a', 'b'])
+    const started = performance.now()
+    const rows = functionsOf(mapOf(files), new Set())
+    const spent = performance.now() - started
+    expect(rows).toHaveLength(1500)
+    expect(new Set(rows.map((row) => row.importance)).size).toBeGreaterThan(1)
+    expect(spent).toBeLessThan(250)
   })
 })

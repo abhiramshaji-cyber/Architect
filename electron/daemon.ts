@@ -14,7 +14,7 @@ import {
   type DraftResult,
   type Edit,
   type EditSummary,
-  type FunctionsReport,
+  type FunctionRow,
   type HistoryEntry,
   historyEntrySchema,
   type OpenedProject,
@@ -40,9 +40,9 @@ import { apply, check, ownership, parse, serialize } from './contract/graph'
 import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
-import { createRanking } from './functions'
+import { listFunctions } from './functions'
 
-const MAP_VERSION = 4
+const MAP_VERSION = 5
 
 const LEGACY_MAP = path.join('.architect', 'map.json')
 
@@ -80,6 +80,8 @@ function isFunctionEntry(value: unknown): boolean {
   const fn = value as Record<string, unknown>
   if (!Array.isArray(fn.calls) || !fn.calls.every(isCallRef)) return false
   if (typeof fn.endLine !== 'number') return false
+  if (fn.doc !== undefined && typeof fn.doc !== 'string') return false
+  if (fn.kind !== undefined && typeof fn.kind !== 'string') return false
   return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
 }
 
@@ -336,12 +338,6 @@ export function createDaemon(options: DaemonOptions = {}) {
   const sessionCwds = new Map<string, string>()
   const drafting = new Map<string, Promise<DraftResult<string>>>()
   const draftFailures = new Map<string, DraftFailure>()
-  let functionsListener: ((report: FunctionsReport) => void) | null = null
-  const ranking = createRanking(
-    (root) => path.join(cacheDir, 'functions', `${cacheKey(root)}.json`),
-    claude,
-    (report) => functionsListener?.(report),
-  )
   let server: net.Server | null = null
 
   async function locate(root: string, file: string): Promise<{ base: string; target: string } | 'unreadable' | 'outside'> {
@@ -682,7 +678,6 @@ export function createDaemon(options: DaemonOptions = {}) {
     if (!state) return
 
     teardown(state)
-    ranking.stop(root)
     projects.delete(root)
     remembered.delete(root)
     saveProjects()
@@ -1053,13 +1048,9 @@ export function createDaemon(options: DaemonOptions = {}) {
     writeSource,
     readTree,
     rescan: rescanProject,
-    rankFunctions: async (root: string): Promise<FunctionsReport> => {
+    listFunctions: async (root: string): Promise<FunctionRow[]> => {
       loadProject(root)
-      return ranking.rank(root, await mapOf(root))
-    },
-    stopRanking: (root: string) => ranking.stop(root),
-    onFunctions: (fn: (report: FunctionsReport) => void) => {
-      functionsListener = fn
+      return listFunctions(root, await mapOf(root))
     },
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn

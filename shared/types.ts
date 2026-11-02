@@ -134,7 +134,11 @@ export type FunctionEntry = {
   description: string
   calls: CallRef[]
   exported?: true
+  doc?: string
+  kind?: FunctionKind
 }
+
+export type FunctionKind = 'component' | 'constructor' | 'getter' | 'setter' | 'method'
 
 export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[] }
 
@@ -390,18 +394,7 @@ export type FunctionFacts = {
 
 export type Importance = 1 | 2 | 3 | 4 | 5
 
-export type FunctionRank = { importance: Importance; summary: string }
-
-export type FunctionRow = FunctionFacts & { rank: FunctionRank | null }
-
-export type FunctionsReport = {
-  root: string
-  rows: FunctionRow[]
-  done: number
-  total: number
-  failed: number
-  failure: DraftFailure | null
-}
+export type FunctionRow = FunctionFacts & { importance: Importance; summary: string }
 
 export type CommitDraft = { title: string; description: string }
 
@@ -473,8 +466,7 @@ export type ArchitectApi = {
   gitPull(root: string): Promise<GitResult<Pulled>>
   draftCommitMessage(root: string): Promise<DraftResult<CommitDraft>>
   draftPullRequest(root: string): Promise<DraftResult<PullDraft>>
-  rankFunctions(root: string): Promise<FunctionsReport>
-  onFunctions(fn: (report: FunctionsReport) => void): () => void
+  listFunctions(root: string): Promise<FunctionRow[]>
   githubAuth(): Promise<GithubResult<GithubAuth>>
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
   githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>

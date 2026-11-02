@@ -9,7 +9,6 @@ import {
   type CommitDraft,
   type DiffSection,
   type DraftResult,
-  type FunctionsReport,
   type GithubCompare,
   type GithubResult,
   type HistoryEntry,
@@ -66,16 +65,10 @@ function stopCompare(window: BrowserWindow): void {
   compares.delete(window.id)
 }
 
-function unclaim(window: number): void {
-  const held = claims.get(window)
-  claims.delete(window)
-  if (held !== undefined && owner(claims, held) === null) daemon.stopRanking(held)
-}
-
 function forget(window: BrowserWindow): void {
   hosts.get(window.id)?.killAll()
   hosts.delete(window.id)
-  unclaim(window.id)
+  claims.delete(window.id)
   stopCompare(window)
 
   const index = tabs.indexOf(window)
@@ -219,7 +212,7 @@ function wireIpc() {
   handle('architect:delete-edit', (root: string, id: string) => daemon.deleteEdit(root, id))
   handle('architect:code-map', (root: string) => daemon.codeMap(root))
   handle('architect:rescan', (root: string) => daemon.rescan(root))
-  handle('architect:rank-functions', (root: string) => daemon.rankFunctions(root))
+  handle('architect:list-functions', (root: string) => daemon.listFunctions(root))
   handle('architect:ownership', (root: string) => daemon.ownership(root))
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
@@ -230,17 +223,16 @@ function wireIpc() {
   )
   handle('architect:read-tree', (root: string, dir: string) => daemon.readTree(root, dir))
 
-  handleIn('architect:claim-root', (window, root: string) => {
-    if (claims.get(window.id) !== root) unclaim(window.id)
-    return claim(claims, (id) => tabs.some((tab) => tab.id === id), window.id, root)
-  })
+  handleIn('architect:claim-root', (window, root: string) =>
+    claim(claims, (id) => tabs.some((tab) => tab.id === id), window.id, root),
+  )
   handleIn('architect:search', (window, query: string) => {
     const root = claims.get(window.id)
     if (!root) throw new Error('no project open in this tab')
     return search(root, query)
   })
   handleIn('architect:release-root', (window) => {
-    unclaim(window.id)
+    claims.delete(window.id)
   })
   handle('architect:focus-root', (root: string) => {
     const held = owner(claims, root)
@@ -342,9 +334,6 @@ app.whenReady().then(async () => {
   })
   daemon.onCodeMap((root: string, map: CodeMap) => {
     broadcast('architect:code-map-update', root, map)
-  })
-  daemon.onFunctions((report: FunctionsReport) => {
-    broadcast('architect:functions', report)
   })
   daemon.onSession(onSession)
 
