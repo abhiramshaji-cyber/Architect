@@ -1048,9 +1048,9 @@ export function createDaemon(options: DaemonOptions = {}) {
     writeSource,
     readTree,
     rescan: rescanProject,
-    listFunctions: async (root: string): Promise<FunctionList> => {
+    listFunctions: async (root: string, scope?: unknown): Promise<FunctionList> => {
       loadProject(root)
-      return listFunctions(root, await mapOf(root))
+      return listFunctions(root, await mapOf(root), scope)
     },
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn

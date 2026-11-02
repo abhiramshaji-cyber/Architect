@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { FunctionEntry, FunctionFacts } from '../../shared/types'
+import type { FunctionEntry, FunctionFacts } from '../../../shared/types'
 import { sentenceOf } from './sentence'
 import { wordsOf } from './verbs'
 

@@ -3,7 +3,8 @@ import path from 'node:path'
 import type { CodeMap, FunctionList } from '../../shared/types'
 import { declaredEntries, edgesOf, factsOf } from './facts'
 import { importanceOf } from './importance'
-import { sentenceOf } from './sentence'
+import { foldersOf, scopeOf, subgraphOf, within } from './scope'
+import { sentenceOf } from './summary/sentence'
 import { treeOf } from './tree'
 
 function manifestOf(root: string): unknown {
@@ -14,18 +15,41 @@ function manifestOf(root: string): unknown {
   }
 }
 
-export function functionsOf(map: CodeMap, declared: Set<string>): FunctionList {
+export function functionsOf(map: CodeMap, declared: Set<string>, asked?: unknown): FunctionList {
   const edges = edgesOf(map)
   const facts = factsOf(map, declared, edges)
-  const importance = importanceOf(edges, facts)
   const entries = map.folders.flatMap((folder) => folder.files).flatMap((file) => file.functions)
-  const rows = facts.flatMap((fact, at) => {
-    const entry = entries[at]
-    return entry ? [{ ...fact, importance: importance[at] ?? 1, summary: sentenceOf(entry, fact) }] : []
+  const scope = scopeOf(map, asked)
+
+  const keep = facts.flatMap((fact, at) => (within(fact.file, scope) ? [at] : []))
+  const sub = scope === '' ? edges : subgraphOf(edges, keep)
+  const callers = new Array<number>(sub.length).fill(0)
+  for (const out of sub) for (const to of out) callers[to] = (callers[to] ?? 0) + 1
+  const local = keep.flatMap((at, i) => {
+    const fact = facts[at]
+    return fact ? [{ ...fact, fanIn: callers[i] ?? 0, fanOut: sub[i]?.length ?? 0 }] : []
   })
-  return { rows, tree: treeOf(rows, edges) }
+
+  const importance = importanceOf(sub, local)
+  const rows = local.flatMap((fact, i) => {
+    const entry = entries[keep[i] ?? -1]
+    const outside = (facts[keep[i] ?? -1]?.fanIn ?? 0) - fact.fanIn
+    if (!entry) return []
+    const row = {
+      ...fact,
+      importance: importance[i] ?? 1,
+      summary: sentenceOf(entry, fact, outside),
+    }
+    return [outside > 0 ? { ...row, outside } : row]
+  })
+  return {
+    rows,
+    tree: treeOf(rows, sub, scope !== ''),
+    scope,
+    folders: foldersOf(map, scope),
+  }
 }
 
-export function listFunctions(root: string, map: CodeMap): FunctionList {
-  return functionsOf(map, declaredEntries(manifestOf(root)))
+export function listFunctions(root: string, map: CodeMap, scope?: unknown): FunctionList {
+  return functionsOf(map, declaredEntries(manifestOf(root)), scope)
 }

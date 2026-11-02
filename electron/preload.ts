@@ -35,7 +35,7 @@ const architect: ArchitectApi = {
   deleteEdit: (root, id) => invoke('architect:delete-edit', root, id),
   getCodeMap: (root) => invoke('architect:code-map', root),
   rescan: (root) => invoke('architect:rescan', root),
-  listFunctions: (root) => invoke('architect:list-functions', root),
+  listFunctions: (root, scope) => invoke('architect:list-functions', root, scope),
   ownership: (root) => invoke('architect:ownership', root),
   readSource: (root, file, from, length) =>
     invoke('architect:read-source', root, file, from, length),
