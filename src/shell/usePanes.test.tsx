@@ -15,8 +15,8 @@ describe('usePanes without a project', () => {
     expect(renderToStaticMarkup(<Probe root={null} />)).toContain('repos')
   })
 
-  it('a tab with a project lands on the contract', () => {
-    expect(renderToStaticMarkup(<Probe root="/a" />)).toContain('contract')
+  it('a tab with a project lands on the function list', () => {
+    expect(renderToStaticMarkup(<Probe root="/a" />)).toContain('functions')
   })
 })
 
@@ -27,7 +27,7 @@ describe('shownView', () => {
   })
 
   it('never shows Repos once a project is bound', () => {
-    expect(shownView('repos', true)).toBe('contract')
+    expect(shownView('repos', true)).toBe('functions')
     expect(shownView('terminal', true)).toBe('terminal')
   })
 })

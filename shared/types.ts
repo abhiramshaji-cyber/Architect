@@ -127,9 +127,16 @@ export type Request = z.infer<typeof requestSchema>
 
 export type CallRef = { file: string; fn: number }
 
-export type FunctionEntry = { name: string; line: number; endLine: number; description: string; calls: CallRef[] }
+export type FunctionEntry = {
+  name: string
+  line: number
+  endLine: number
+  description: string
+  calls: CallRef[]
+  exported?: true
+}
 
-export type FileEntry = { path: string; functions: FunctionEntry[] }
+export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[] }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 
@@ -370,6 +377,32 @@ export type DraftFailure =
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
 
+export type FunctionFacts = {
+  file: string
+  name: string
+  line: number
+  lines: number
+  fanIn: number
+  fanOut: number
+  exported: boolean
+  entry: boolean
+}
+
+export type Importance = 1 | 2 | 3 | 4 | 5
+
+export type FunctionRank = { importance: Importance; summary: string }
+
+export type FunctionRow = FunctionFacts & { rank: FunctionRank | null }
+
+export type FunctionsReport = {
+  root: string
+  rows: FunctionRow[]
+  done: number
+  total: number
+  failed: number
+  failure: DraftFailure | null
+}
+
 export type CommitDraft = { title: string; description: string }
 
 export type PullDraft = { title: string; body: string }
@@ -440,6 +473,8 @@ export type ArchitectApi = {
   gitPull(root: string): Promise<GitResult<Pulled>>
   draftCommitMessage(root: string): Promise<DraftResult<CommitDraft>>
   draftPullRequest(root: string): Promise<DraftResult<PullDraft>>
+  rankFunctions(root: string): Promise<FunctionsReport>
+  onFunctions(fn: (report: FunctionsReport) => void): () => void
   githubAuth(): Promise<GithubResult<GithubAuth>>
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>
   githubBranches(owner: string, repo: string): Promise<GithubResult<GithubBranch[]>>

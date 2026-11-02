@@ -1,6 +1,6 @@
 const LANES = 8
 
-export async function pooled<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function pooled<T, R>(items: T[], fn: (item: T) => Promise<R>, lanes = LANES): Promise<R[]> {
   const out: R[] = []
   let next = 0
 
@@ -11,6 +11,6 @@ export async function pooled<T, R>(items: T[], fn: (item: T) => Promise<R>): Pro
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(LANES, items.length) }, lane))
+  await Promise.all(Array.from({ length: Math.min(lanes, items.length) }, lane))
   return out
 }

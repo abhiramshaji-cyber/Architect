@@ -330,10 +330,20 @@ type Parsed = {
   reexports: Map<string, { spec: string; name: string }>
   stars: string[]
   pending: Pending[]
+  specs: Set<string>
 }
 
 function empty(): Parsed {
-  return { functions: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [] }
+  return { functions: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], specs: new Set() }
+}
+
+function loadedSpec(node: ts.Node): string | undefined {
+  if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return moduleSpecifier(node.moduleSpecifier)
+  if (ts.isExternalModuleReference(node)) return moduleSpecifier(node.expression)
+  if (!ts.isCallExpression(node) || node.arguments.length !== 1) return undefined
+  const dynamic = node.expression.kind === ts.SyntaxKind.ImportKeyword
+  const required = ts.isIdentifier(node.expression) && node.expression.text === 'require'
+  return dynamic || required ? moduleSpecifier(node.arguments[0]) : undefined
 }
 
 function parseFile(source: string, file: string): Parsed {
@@ -346,8 +356,12 @@ function parseFile(source: string, file: string): Parsed {
   try {
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind)
     const found: Found[] = []
+    const specs = new Set<string>()
 
     const visit = (node: ts.Node, owner: string): void => {
+      const spec = loadedSpec(node)
+      if (spec !== undefined) specs.add(spec)
+
       const name = declaredName(node, owner)
       if (name !== undefined) {
         const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
@@ -409,7 +423,13 @@ function parseFile(source: string, file: string): Parsed {
       return { ...f.entry, calls: refs.sort((a, b) => a.fn - b.fn) }
     })
 
-    return { functions, topLevel, exports, reexports, stars, pending }
+    const exportedLocals = new Set(exports.values())
+    for (const [name, at] of topLevel) {
+      const fn = functions[at]
+      if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
+    }
+
+    return { functions, topLevel, exports, reexports, stars, pending, specs }
   } catch {
     return empty()
   }
@@ -441,7 +461,7 @@ function realRoot(root: string): string {
   }
 }
 
-function link(root: string, parsed: Map<string, Parsed>): void {
+function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> {
   const options = resolutionOptions(root)
   const cache = ts.createModuleResolutionCache(root, (name) => name, options)
   const bases = [...new Set([root, realRoot(root)])]
@@ -506,6 +526,13 @@ function link(root: string, parsed: Map<string, Parsed>): void {
       entry.calls.sort((a, b) => a.file.localeCompare(b.file) || a.fn - b.fn)
     }
   }
+
+  const imports = new Map<string, string[]>()
+  for (const [file, at] of parsed) {
+    const resolved = [...at.specs].map((spec) => target(file, spec)).filter((to) => to !== undefined && to !== file)
+    imports.set(file, [...new Set(resolved as string[])].sort())
+  }
+  return imports
 }
 
 function readText(file: string): string | undefined {
@@ -575,8 +602,15 @@ export async function scan(root: string): Promise<CodeMap> {
   const parsed = new Map<string, Parsed>()
 
   await walk(root, '', folders, parsed, { seen: 0 })
-  link(root, parsed)
+  const imports = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
+
+  for (const folder of folders) {
+    for (const file of folder.files) {
+      const found = imports.get(file.path)
+      if (found !== undefined && found.length > 0) file.imports = found
+    }
+  }
 
   return { root, scannedAt: Date.now(), folders }
 }

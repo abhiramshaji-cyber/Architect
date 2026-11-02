@@ -226,7 +226,7 @@ describe('scan', () => {
 
     const entry = folder(map, '').files[0]
     expect(entry?.functions).toEqual([
-      { name: 'third', line: 3, endLine: 3, description: '', calls: [] },
+      { name: 'third', line: 3, endLine: 3, description: '', calls: [], exported: true },
       { name: 'fifth', line: 5, endLine: 5, description: '', calls: [] },
     ])
   })
@@ -329,7 +329,7 @@ describe('function spans', () => {
     const map = await scan(fixture({ 'a.ts': 'export function a() { return 1 }\n' }))
 
     expect(entries(map, 'a.ts')).toEqual([
-      { name: 'a', line: 1, endLine: 1, description: '', calls: [] },
+      { name: 'a', line: 1, endLine: 1, description: '', calls: [], exported: true },
     ])
   })
 
@@ -759,5 +759,49 @@ describe('cross file calls', () => {
     )
 
     expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:later'])
+  })
+})
+
+describe('exports and imports', () => {
+  it('marks only the functions a file exports, including methods of an exported object', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': [
+          'export function a() {}',
+          'function b() {}',
+          'const c = () => 1',
+          'export { c }',
+          'export const api = { get() {} }',
+        ].join('\n'),
+      }),
+    )
+
+    const exported = entries(map, 'a.ts').filter((fn) => fn.exported).map((fn) => fn.name)
+    expect(exported).toEqual(['a', 'c', 'api.get'])
+  })
+
+  it('lists the scanned files a file loads by static, dynamic and require imports, never external ones', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': [
+          "import { b } from './b'",
+          "import type { T } from './t'",
+          "export * from './c'",
+          "const d = () => import('./d')",
+          "const e = require('./e')",
+          "import fs from 'node:fs'",
+          "import x from './missing'",
+        ].join('\n'),
+        'b.ts': 'export const b = 1',
+        't.ts': 'export type T = 1',
+        'c.ts': 'export const c = 1',
+        'd.ts': 'export const d = 1',
+        'e.js': 'module.exports = 1',
+      }),
+    )
+
+    const file = folder(map, '').files.find((f) => f.path === 'a.ts')
+    expect(file?.imports).toEqual(['b.ts', 'c.ts', 'd.ts', 'e.js', 't.ts'])
+    expect(folder(map, '').files.find((f) => f.path === 'b.ts')?.imports).toBeUndefined()
   })
 })

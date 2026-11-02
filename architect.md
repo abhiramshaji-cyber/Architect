@@ -24,6 +24,10 @@ owns: `electron/github/**`
 Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its generated function descriptions, and candidate edges aggregated from real call refs. Also asks it for a commit title and description from a staged diff, and for a pull request title and body from the account's own `pr` instructions read off disk. Every reply is a JSON object that is parsed, scrubbed of attribution and validated before it is offered, and nothing it writes is ever submitted on its own.
 owns: `electron/draft/**`
 
+### functions
+Lists every function in a project with facts measured from the scan (line count, how many functions call it, how many it calls, whether it is exported, whether its file is a starting point) and asks the Claude Code binary, one file at a time, for an importance from 1 to 5 and a one sentence plain English summary. Results are cached per file by a hash of its content, so an unchanged file is never asked about again, and progress streams to the renderer as each file finishes.
+owns: `electron/functions/**`
+
 ### daemon
 Socket server, project resolution by cwd, file watching, applying proposals straight to architect.md, the per project change history, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
@@ -58,6 +62,9 @@ owns: `lsp/**`
 - daemon -> types
 - daemon -> graph
 - daemon -> draft
+- daemon -> functions
+- functions -> types
+- functions -> draft
 - daemon -> git
 - draft -> types
 - draft -> graph
@@ -88,6 +95,7 @@ owns: `lsp/**`
 - canvas -> git : the renderer never shells out to git, results arrive over the preload bridge
 - canvas -> github : the renderer never shells out to gh and never holds a token, repos and branches arrive over the preload bridge
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
+- canvas -> functions : the renderer never ranks functions itself, the ranked list arrives over the preload bridge
 
 ## Packages
 

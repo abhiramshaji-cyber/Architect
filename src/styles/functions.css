@@ -1,0 +1,167 @@
+.functions {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.fn-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) var(--sp-6);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.fn-count {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.fn-provisional {
+  color: var(--text-faint);
+}
+
+.fn-sort {
+  display: flex;
+  gap: 2px;
+}
+
+.fn-sort .mode {
+  height: 28px;
+}
+
+.fn-search {
+  flex: 0 1 280px;
+  min-width: 160px;
+  margin: 0;
+  font-family: var(--font);
+}
+
+.fn-notice {
+  margin: var(--sp-3) var(--sp-6) 0;
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.fn-empty {
+  margin: var(--sp-5) var(--sp-6);
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+.fn-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-5) var(--sp-6);
+}
+
+.fn-list > li {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+.fn-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.fn-row:hover {
+  background: var(--hover);
+}
+
+.fn-row:focus-visible {
+  outline: 1px solid var(--active-border);
+  outline-offset: -1px;
+}
+
+.fn-mark {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.fn-step {
+  width: 4px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--border);
+}
+
+.fn-step.on {
+  background: var(--text-2);
+}
+
+.fn-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fn-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.fn-name,
+.fn-file,
+.fn-summary {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fn-name {
+  flex: 0 1 auto;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+
+.fn-file {
+  flex: 1 1 0;
+  direction: rtl;
+  text-align: left;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.fn-summary {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.fn-summary.quiet {
+  color: var(--text-faint);
+}
+
+.fn-lines {
+  min-width: 5ch;
+  text-align: right;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}

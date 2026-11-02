@@ -3,6 +3,7 @@ import type {
   Architecture,
   ArchitectApi,
   CodeMap,
+  FunctionsReport,
   GithubCompared,
   HistoryEntry,
   IpcResult,
@@ -35,6 +36,12 @@ const architect: ArchitectApi = {
   deleteEdit: (root, id) => invoke('architect:delete-edit', root, id),
   getCodeMap: (root) => invoke('architect:code-map', root),
   rescan: (root) => invoke('architect:rescan', root),
+  rankFunctions: (root) => invoke('architect:rank-functions', root),
+  onFunctions: (fn: (report: FunctionsReport) => void) => {
+    const listener = (_event: unknown, report: FunctionsReport) => fn(report)
+    ipcRenderer.on('architect:functions', listener)
+    return () => ipcRenderer.off('architect:functions', listener)
+  },
   ownership: (root) => invoke('architect:ownership', root),
   readSource: (root, file, from, length) =>
     invoke('architect:read-source', root, file, from, length),

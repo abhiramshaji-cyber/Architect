@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Architecture,
   Decision,
+  FunctionsReport,
   ProjectSummary,
   Request,
   Response,
@@ -293,6 +294,49 @@ describe("drafting a first contract", () => {
     expect(architecture.components.map((c) => c.id)).toEqual(["api", "ui"]);
     expect(architecture.edges).toEqual([{ from: "ui", to: "api" }]);
     expect(daemon.projects()[0]?.contract).toEqual({ status: "ready" });
+  });
+
+  it("never drafts on its own when a session touches a project that has no contract", async () => {
+    const root = repo();
+    const claude = vi.fn(async () => ({ code: 0 as const, stdout: drafted(root), stderr: "" }));
+    daemon = createDaemon({ socketPath, claude, rescanDebounceMs: 0 });
+    await daemon.listen();
+    const c = await client(socketPath);
+
+    const res = await c.request({
+      op: "session-event",
+      cwd: root,
+      event: "PostToolUse",
+      file: path.join(root, "api", "handler.ts"),
+    });
+    c.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(res.ok).toBe(true);
+    expect(claude).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
+  });
+
+  it("lists every function with its facts and ranks it through the agent on request", async () => {
+    const root = repo();
+    const claude = vi.fn(async (prompt: string, _cwd: string, _timeout?: number, _model?: string) => {
+      const ids = [...prompt.matchAll(/id="(f\d+)"/g)].map((m) => m[1]);
+      const reply = ids.map((id) => ({ id, importance: 3, summary: "Shows a page." }));
+      return { code: 0 as const, stdout: JSON.stringify(reply), stderr: "" };
+    });
+    daemon = createDaemon({ socketPath, claude });
+    const reports: FunctionsReport[] = [];
+    daemon.onFunctions((report) => reports.push(report));
+
+    const first = await daemon.rankFunctions(root);
+    expect(first.rows.map((r) => [r.file, r.name, r.fanIn, r.entry])).toEqual([
+      ["api/handler.ts", "handler", 1, false],
+      ["ui/page.ts", "page", 0, true],
+    ]);
+
+    await vi.waitFor(() => expect(reports.at(-1)?.done).toBe(2));
+    expect(reports.at(-1)?.rows.every((r) => r.rank?.summary === "Shows a page.")).toBe(true);
+    expect(claude.mock.calls.every((call) => call[3] === "haiku")).toBe(true);
   });
 
   it("reports the agent as not installed and writes nothing", async () => {
@@ -985,7 +1029,7 @@ describe("code map migration", () => {
     fs.writeFileSync(
       path.join(tmpRoot, ".architect", "map.json"),
       JSON.stringify({
-        version: 3,
+        version: 4,
         map: {
           root: tmpRoot,
           scannedAt: 1,

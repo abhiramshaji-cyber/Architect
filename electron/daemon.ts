@@ -14,6 +14,7 @@ import {
   type DraftResult,
   type Edit,
   type EditSummary,
+  type FunctionsReport,
   type HistoryEntry,
   historyEntrySchema,
   type OpenedProject,
@@ -39,9 +40,9 @@ import { apply, check, ownership, parse, serialize } from './contract/graph'
 import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
-import { AUTO_DRAFT_MODEL, placeOf, placeSkip, sizeSkip } from './autodraft/skip'
+import { createRanking } from './functions'
 
-const MAP_VERSION = 3
+const MAP_VERSION = 4
 
 const LEGACY_MAP = path.join('.architect', 'map.json')
 
@@ -335,7 +336,12 @@ export function createDaemon(options: DaemonOptions = {}) {
   const sessionCwds = new Map<string, string>()
   const drafting = new Map<string, Promise<DraftResult<string>>>()
   const draftFailures = new Map<string, DraftFailure>()
-  const autoTried = new Set<string>()
+  let functionsListener: ((report: FunctionsReport) => void) | null = null
+  const ranking = createRanking(
+    (root) => path.join(cacheDir, 'functions', `${cacheKey(root)}.json`),
+    claude,
+    (report) => functionsListener?.(report),
+  )
   let server: net.Server | null = null
 
   async function locate(root: string, file: string): Promise<{ base: string; target: string } | 'unreadable' | 'outside'> {
@@ -661,18 +667,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     void runRescan(state)
 
     sessionListener?.(located.root, relative)
-    autoDraft(located.root).catch((err) => {
-      if (projects.get(located.root)?.contract.status === 'missing') console.error('auto draft failed:', errorText(err))
-    })
     return located.root
-  }
-
-  async function autoDraft(root: string) {
-    if (autoTried.has(root) || drafting.has(root) || loadProject(root).contract.status !== 'missing') return
-    autoTried.add(root)
-    if (placeSkip(await placeOf(root)) || sizeSkip(await mapOf(root))) return
-    if (drafting.has(root) || projects.get(root)?.contract.status !== 'missing') return
-    await draftContract(root, AUTO_DRAFT_MODEL)
   }
 
   function teardown(state: ProjectState) {
@@ -687,6 +682,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     if (!state) return
 
     teardown(state)
+    ranking.stop(root)
     projects.delete(root)
     remembered.delete(root)
     saveProjects()
@@ -833,11 +829,11 @@ export function createDaemon(options: DaemonOptions = {}) {
     return readStoredMap(cacheDir, root)?.map ?? (await rescanProject(root))
   }
 
-  async function draftContract(root: string, model?: string): Promise<DraftResult<string>> {
+  async function draftContract(root: string): Promise<DraftResult<string>> {
     const running = drafting.get(root)
     if (running) return running
 
-    const job = runDraft(root, model)
+    const job = runDraft(root)
     drafting.set(root, job)
     draftFailures.delete(root)
     notifyProjects()
@@ -854,11 +850,11 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  async function runDraft(root: string, model?: string): Promise<DraftResult<string>> {
+  async function runDraft(root: string): Promise<DraftResult<string>> {
     const state = loadProject(root)
     if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
 
-    const drafted = await draft(root, await mapOf(root), claude, model, await scopeOf(root))
+    const drafted = await draft(root, await mapOf(root), claude, undefined, await scopeOf(root))
     if (!drafted.ok) return drafted
 
     const adopted = adopt(state, drafted.value)
@@ -1057,6 +1053,14 @@ export function createDaemon(options: DaemonOptions = {}) {
     writeSource,
     readTree,
     rescan: rescanProject,
+    rankFunctions: async (root: string): Promise<FunctionsReport> => {
+      loadProject(root)
+      return ranking.rank(root, await mapOf(root))
+    },
+    stopRanking: (root: string) => ranking.stop(root),
+    onFunctions: (fn: (report: FunctionsReport) => void) => {
+      functionsListener = fn
+    },
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },
