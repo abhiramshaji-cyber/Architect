@@ -543,6 +543,10 @@ function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> 
   return imports
 }
 
+export function functionsIn(source: string, file: string): FunctionEntry[] {
+  return parseFile(source, file).functions
+}
+
 function readText(file: string): string | undefined {
   try {
     const buffer = fs.readFileSync(file)

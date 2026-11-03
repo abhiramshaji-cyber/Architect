@@ -6,6 +6,7 @@ import { close, focusDir, type Dir, type Pane, type Path } from '../shell/pane-t
 import { PANE_BINDINGS, PANE_COMMAND_LABELS, viewAt, type usePanes } from '../shell/usePanes'
 import { useLeaderKeys } from '../shell/useLeaderKeys'
 import { PROJECT_VIEWS, shownView, views, type ViewId } from '../shell/views'
+import { toggleReview } from '../model/review'
 import { useProject } from '../model/store'
 import CommandPalette from './CommandPalette'
 import Icon, { type IconName } from './Icon'
@@ -53,6 +54,7 @@ export default function CanvasArea({ theme, panes }: { theme: string; panes: Pan
         enabled: reachable(id, tree, focus),
       })),
       { id: 'palette.open', label: 'Command palette', keys: PALETTE_KEYS, run: () => setPalette(true) },
+      { id: 'review.toggle', label: 'Toggle change review', run: toggleReview },
     ]
   }, [commands, tree, focus])
 

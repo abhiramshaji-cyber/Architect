@@ -4,6 +4,7 @@ import StatusLine from './view/StatusLine'
 import { at } from './shell/pane-tree'
 import { usePanes } from './shell/usePanes'
 import { shownView, views } from './shell/views'
+import { startReview } from './model/review'
 import { parseErrorOf, start, useProject } from './model/store'
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
   const panes = usePanes(project.currentRoot)
 
   useEffect(start, [])
+  useEffect(startReview, [])
 
   const flipTheme = useCallback(() => {
     const next = theme === 'light' ? 'dark' : 'light'

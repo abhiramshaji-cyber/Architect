@@ -624,6 +624,19 @@ export function installMock() {
     },
     async repoOpen(repo) {
       return { ok: false, error: { source: 'git', error: demoGit(repo).error } } as const
+    },
+    async review() {
+      return { enabled: false, items: [] }
+    },
+    async setReview(enabled) {
+      return { enabled, items: [] }
+    },
+    async reviewDetail() {
+      throw new Error('nothing is waiting for review in the demo')
+    },
+    async decide() {},
+    onReview() {
+      return () => {}
     }
   }
 }

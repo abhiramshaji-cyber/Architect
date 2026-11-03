@@ -1,0 +1,282 @@
+.review {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.review-list {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.review-list h2,
+.review-head h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.review-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.review-pick {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+}
+
+.review-pick:hover {
+  background: var(--hover);
+}
+
+.review-pick.active {
+  background: var(--active-bg);
+  border-color: var(--active-border);
+}
+
+.review-kind,
+.review-root {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.review-what {
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.review-detail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-6);
+  overflow-y: auto;
+}
+
+.review-detail h3 {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.review-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.review-rationale,
+.review-note,
+.review-error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.review-error {
+  color: var(--danger);
+}
+
+.review-file {
+  font-family: var(--mono);
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.review-actions,
+.review-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.review-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.review-feedback textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.review-feedback button {
+  align-self: flex-start;
+}
+
+.review-canvas {
+  height: 340px;
+  flex-shrink: 0;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.review-canvas .react-flow {
+  flex: 1;
+}
+
+.review-diff {
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: 520px;
+}
+
+.review-legend {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.review-chip {
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.review-chip.mark-added,
+.review-fn.mark-added .review-chip {
+  border-style: dashed;
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.review-chip.mark-removed,
+.review-fn.mark-removed .review-chip {
+  border-color: var(--danger);
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.review-chip.mark-changed,
+.review-chip.mark-touched,
+.review-fn.mark-changed .review-chip {
+  border-color: var(--live);
+  color: var(--live);
+}
+
+.review-functions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.review-fn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.review-fn.mark-removed .fn-name {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+.review-calls {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.react-flow__node.mark-added .node {
+  border-style: dashed;
+  border-color: var(--ok);
+}
+
+.react-flow__node.mark-removed .node {
+  border-color: var(--danger);
+  opacity: 0.6;
+}
+
+.react-flow__node.mark-removed .node-id {
+  text-decoration: line-through;
+}
+
+.react-flow__node.mark-changed .node,
+.react-flow__node.mark-touched .node {
+  border-color: var(--live);
+  box-shadow: 0 0 0 3px var(--live-glow);
+}
+
+.react-flow__edge.mark-added .react-flow__edge-path {
+  stroke: var(--ok) !important;
+  stroke-dasharray: 6 4;
+}
+
+.react-flow__edge.mark-removed .react-flow__edge-path {
+  stroke: var(--danger) !important;
+  stroke-dasharray: 2 4;
+  opacity: 0.7;
+}
+
+.review-banner {
+  align-self: flex-start;
+  margin-top: var(--sp-2);
+  padding: 2px var(--sp-3);
+  border: 1px solid var(--live);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--live);
+  font-size: var(--fs-xs);
+}
+
+.review-toggle {
+  margin-left: auto;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+}
+
+.review-toggle.on {
+  border-color: var(--live);
+  color: var(--live);
+}
+
+.review-toggle + .theme-toggle {
+  margin-left: 0;
+}
+
+.review-empty h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-lg);
+}
+
+.review-empty p {
+  max-width: 460px;
+}

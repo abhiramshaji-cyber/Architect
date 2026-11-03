@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -21,6 +20,7 @@ import {
   type Ownership,
   type ProjectSummary,
   type Proposal,
+  type ReviewState,
   requestSchema,
   type Request,
   type Response,
@@ -32,7 +32,8 @@ import {
   type WriteResult,
   type Verdict,
 } from '../shared/types'
-import { describe, type DescriptionCache } from './scan/describe'
+import { describe } from './scan/describe'
+import { cacheKey, readStoredMap, writeStoredMap } from './scan/cache'
 import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
 import { scopeOf } from './draft/scope'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
@@ -41,165 +42,13 @@ import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
-
-const MAP_VERSION = 5
-
-const LEGACY_MAP = path.join('.architect', 'map.json')
-
-function canonicalRoot(root: string): string {
-  const resolved = path.resolve(root)
-  try {
-    return fs.realpathSync.native(resolved)
-  } catch {
-    return resolved
-  }
-}
-
-function cacheKey(root: string): string {
-  return createHash('sha256').update(canonicalRoot(root)).digest('hex')
-}
-
-function mapPath(dir: string, root: string) {
-  return path.join(dir, 'maps', `${cacheKey(root)}.json`)
-}
+import { createReview } from './review'
 
 function historyPath(dir: string, root: string) {
   return path.join(dir, 'history', `${cacheKey(root)}.json`)
 }
 
 const HISTORY_LIMIT = 200
-
-function isCallRef(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return false
-  const ref = value as Record<string, unknown>
-  return typeof ref.file === 'string' && Number.isInteger(ref.fn)
-}
-
-function isFunctionEntry(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return false
-  const fn = value as Record<string, unknown>
-  if (!Array.isArray(fn.calls) || !fn.calls.every(isCallRef)) return false
-  if (typeof fn.endLine !== 'number') return false
-  if (fn.doc !== undefined && typeof fn.doc !== 'string') return false
-  if (fn.kind !== undefined && typeof fn.kind !== 'string') return false
-  return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
-}
-
-function isFileEntry(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return false
-  const file = value as Record<string, unknown>
-  return typeof file.path === 'string' && Array.isArray(file.functions) && file.functions.every(isFunctionEntry)
-}
-
-function isFolderEntry(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null) return false
-  const folder = value as Record<string, unknown>
-  if (typeof folder.path !== 'string') return false
-  if (!Array.isArray(folder.folders) || !folder.folders.every((f) => typeof f === 'string')) return false
-  return Array.isArray(folder.files) && folder.files.every(isFileEntry)
-}
-
-function isCodeMap(value: unknown): value is CodeMap {
-  if (typeof value !== 'object' || value === null) return false
-  const map = value as Partial<CodeMap>
-  if (typeof map.root !== 'string' || typeof map.scannedAt !== 'number') return false
-  return Array.isArray(map.folders) && map.folders.every(isFolderEntry)
-}
-
-type StoredMap = { map: CodeMap | null; cache: DescriptionCache }
-
-function decodeStoredMap(raw: string, key: string | null): StoredMap | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
-  }
-  if (typeof parsed !== 'object' || parsed === null) return null
-
-  const { version, root, map, cache } = parsed as {
-    version?: unknown
-    root?: unknown
-    map?: unknown
-    cache?: unknown
-  }
-  if (key !== null && root !== key) return null
-
-  const entries =
-    typeof cache === 'object' && cache !== null && !Array.isArray(cache)
-      ? Object.entries(cache).filter((e): e is [string, string] => typeof e[1] === 'string')
-      : []
-
-  const current = version === MAP_VERSION && isCodeMap(map) ? map : null
-
-  return { map: current, cache: Object.fromEntries(entries) }
-}
-
-function discardLegacyMap(root: string) {
-  const legacy = path.join(root, LEGACY_MAP)
-  const dir = path.join(root, '.architect')
-  try {
-    if (!fs.existsSync(legacy)) return
-    if (spawnSync('git', ['-C', root, 'ls-files', '--error-unmatch', '--', LEGACY_MAP], { stdio: 'ignore' }).status === 0) return
-    fs.rmSync(legacy, { force: true })
-    if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir)
-  } catch (err) {
-    console.error('could not remove the code map from the project:', errorText(err))
-  }
-}
-
-function migrateLegacyMap(dir: string, root: string): StoredMap | null {
-  const legacy = path.join(root, LEGACY_MAP)
-
-  let raw: string
-  try {
-    raw = fs.readFileSync(legacy, 'utf8')
-  } catch {
-    return null
-  }
-
-  const stored = decodeStoredMap(raw, null)
-  if (!stored) return null
-
-  try {
-    writeStoredMap(dir, root, stored)
-  } catch (err) {
-    console.error('could not move the code map out of the project:', errorText(err))
-    return stored
-  }
-
-  discardLegacyMap(root)
-
-  return stored
-}
-
-function readCachedMap(dir: string, root: string): StoredMap | null {
-  let raw: string
-  try {
-    raw = fs.readFileSync(mapPath(dir, root), 'utf8')
-  } catch {
-    return null
-  }
-
-  return decodeStoredMap(raw, cacheKey(root))
-}
-
-function readStoredMap(dir: string, root: string): StoredMap | null {
-  if (!fs.statSync(path.resolve(root), { throwIfNoEntry: false })?.isDirectory()) return null
-
-  const cached = readCachedMap(dir, root)
-  if (!cached) return migrateLegacyMap(dir, root)
-
-  discardLegacyMap(root)
-
-  return cached
-}
-
-function writeStoredMap(dir: string, root: string, stored: StoredMap) {
-  const file = mapPath(dir, root)
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify({ version: MAP_VERSION, root: cacheKey(root), ...stored }, null, 2))
-}
 
 const MAX_SOURCE_LINES = 400
 
@@ -294,6 +143,7 @@ type DaemonOptions = {
   socketPath?: string
   rescanDebounceMs?: number
   claude?: ClaudeRun
+  reviewTimeouts?: { proposal?: number; edit?: number }
 }
 
 function sameContract(a: ContractState, b: ContractState): boolean {
@@ -335,6 +185,8 @@ export function createDaemon(options: DaemonOptions = {}) {
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null
   let codeMapListener: ((root: string, map: CodeMap) => void) | null = null
   let sessionListener: ((root: string, file: string) => void) | null = null
+  let reviewListener: ((state: ReviewState) => void) | null = null
+  const review = createReview(cacheDir, (state) => reviewListener?.(state), options.reviewTimeouts)
   const sessionCwds = new Map<string, string>()
   const drafting = new Map<string, Promise<DraftResult<string>>>()
   const draftFailures = new Map<string, DraftFailure>()
@@ -784,11 +636,9 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  function proposeChange(root: string, proposal: Proposal): Decision {
-    const state = loadProject(root)
-    if (proposal.kind === 'contract') return adopt(state, proposal.markdown)
+  function planChange(state: ProjectState, proposal: Exclude<Proposal, { kind: 'contract' }>): Decision | string {
     if (state.contract.status === 'invalid') return { status: 'rejected', reason: state.contract.error }
-    if (!state.architecture) return { status: 'rejected', reason: `${root} has no architect.md` }
+    if (!state.architecture) return { status: 'rejected', reason: `${state.root} has no architect.md` }
 
     if (proposal.kind === 'edge') {
       const verdict = check(state.architecture, proposal.from, proposal.to)
@@ -799,8 +649,39 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     try {
       const content = serialize(apply(state.architecture, proposal))
-      if (content !== serialize(state.architecture)) writeContract(state, parse(content), content)
+      return content === serialize(state.architecture) ? { status: 'approved' } : content
+    } catch (err) {
+      return { status: 'rejected', reason: errorText(err) }
+    }
+  }
+
+  function proposeChange(root: string, proposal: Proposal): Decision {
+    const state = loadProject(root)
+    if (proposal.kind === 'contract') return adopt(state, proposal.markdown)
+
+    const plan = planChange(state, proposal)
+    if (typeof plan !== 'string') return plan
+    try {
+      writeContract(state, parse(plan), plan)
       return { status: 'approved' }
+    } catch (err) {
+      return { status: 'rejected', reason: errorText(err) }
+    }
+  }
+
+  function reviewChange(root: string, proposal: Proposal, rationale: string, signal: AbortSignal): Decision | Promise<Decision> {
+    const state = loadProject(root)
+    const taken = proposal.kind === 'contract' && state.contract.status !== 'missing'
+    if (taken) return { status: 'rejected', reason: `${root} already has an architect.md` }
+
+    const plan = proposal.kind === 'contract' ? adoptable(proposal.markdown) : planChange(state, proposal)
+    return typeof plan === 'string' ? review.propose(root, proposal, rationale, signal) : plan
+  }
+
+  function adoptable(markdown: string): Decision | string {
+    try {
+      parse(markdown)
+      return markdown
     } catch (err) {
       return { status: 'rejected', reason: errorText(err) }
     }
@@ -872,6 +753,8 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   function handleConnection(socket: net.Socket) {
     let buf = ''
+    const closed = new AbortController()
+    socket.on('close', () => closed.abort())
 
     async function handleRequest(req: Request): Promise<Response> {
       try {
@@ -896,7 +779,18 @@ export function createDaemon(options: DaemonOptions = {}) {
         if (req.op === 'propose_change') {
           const root = resolveRoot(req.cwd)
           if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
-          return { id: req.id, ok: true, result: proposeChange(root, req.proposal) }
+          const decided = review.enabled()
+            ? await reviewChange(root, req.proposal, req.rationale, closed.signal)
+            : proposeChange(root, req.proposal)
+          return { id: req.id, ok: true, result: decided }
+        }
+
+        if (req.op === 'await_proposal') {
+          return { id: req.id, ok: true, result: await review.resume(req.proposalId, closed.signal) }
+        }
+
+        if (req.op === 'review_edit') {
+          return { id: req.id, ok: true, result: await review.gate([...projects.keys()], req.change, closed.signal) }
         }
 
         if (req.op === 'session-event') {
@@ -972,7 +866,6 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   async function listen(): Promise<void> {
     restoreProjects()
-    fs.rm(path.join(cacheDir, 'pending.json'), { force: true }, () => {})
 
     if (process.platform !== 'win32') {
       fs.mkdirSync(path.dirname(socketPath), { recursive: true })
@@ -1066,6 +959,18 @@ export function createDaemon(options: DaemonOptions = {}) {
     },
     onSession: (fn: (root: string, file: string) => void) => {
       sessionListener = fn
+    },
+    review: review.state,
+    setReview: review.setEnabled,
+    decide: (id: string, approved: boolean, feedback?: string) => review.decide(id, approved, feedback, proposeChange),
+    reviewDetail: (id: string) =>
+      review.detail(
+        id,
+        (root) => loadProject(root).architecture,
+        async (root) => listFunctions(root, await mapOf(root)).rows,
+      ),
+    onReview: (fn: (state: ReviewState) => void) => {
+      reviewListener = fn
     },
   }
 }

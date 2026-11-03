@@ -20,6 +20,7 @@ import {
   type PtyEvent,
   type PtySpec,
   type PullDraft,
+  type ReviewState,
 } from '../shared/types'
 import { createDaemon } from './daemon'
 import { loginPath } from './env'
@@ -222,6 +223,12 @@ function wireIpc() {
     daemon.writeSource(root, file, text, baseline),
   )
   handle('architect:read-tree', (root: string, dir: string) => daemon.readTree(root, dir))
+  handle('architect:review', () => daemon.review())
+  handle('architect:set-review', (enabled: boolean) => daemon.setReview(enabled === true))
+  handle('architect:review-detail', (id: string) => daemon.reviewDetail(id))
+  handle('architect:decide', (id: string, approved: boolean, feedback?: string) =>
+    daemon.decide(id, approved === true, typeof feedback === 'string' ? feedback : undefined),
+  )
 
   handleIn('architect:claim-root', (window, root: string) =>
     claim(claims, (id) => tabs.some((tab) => tab.id === id), window.id, root),
@@ -336,6 +343,10 @@ app.whenReady().then(async () => {
     broadcast('architect:code-map-update', root, map)
   })
   daemon.onSession(onSession)
+  daemon.onReview((state: ReviewState) => {
+    tray?.setTitle(state.items.length > 0 ? String(state.items.length) : '')
+    broadcast('architect:review', state)
+  })
 
   try {
     await daemon.listen()

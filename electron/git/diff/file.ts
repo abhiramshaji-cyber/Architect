@@ -1,8 +1,12 @@
+import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import {
   MAX_DIFF_BYTES,
   type ChangedFile,
+  type DiffHunk,
   type DiffSection,
   type FileDiff,
   type GitResult,
@@ -12,6 +16,8 @@ import { localBase, mergeBase, PATCH, toplevel } from './changes'
 import { addedPatch, toHunks } from './hunks'
 
 const LITERAL = '--literal-pathspecs'
+
+const run = promisify(execFile)
 
 function badPath(value: string): boolean {
   return value === '' || value.includes('\0')
@@ -151,4 +157,30 @@ export async function unstageFile(root: string, file: ChangedFile): Promise<GitR
     : await git(top.value, [LITERAL, 'rm', '--cached', '-q', '--', ...paths.value])
 
   return out.ok ? { ok: true, value: { path: file.path } } : out
+}
+
+export async function textDiff(before: string, after: string): Promise<GitResult<DiffHunk[]>> {
+  if (before === after) return { ok: true, value: [] }
+  if (before === '') return { ok: true, value: addedPatch(after) }
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'architect-review-'))
+  const args = ['diff', '--no-index', '--no-color', '--no-ext-diff', '--no-textconv', '--', 'before', 'after']
+  try {
+    await Promise.all([fs.writeFile(path.join(dir, 'before'), before), fs.writeFile(path.join(dir, 'after'), after)])
+    const patch = await run('git', args, { cwd: dir, maxBuffer: MAX_DIFF_BYTES * 4, windowsHide: true }).then(
+      ({ stdout }) => stdout,
+      (error: { code?: unknown; stdout?: unknown }) => {
+        if (error.code === 1 && typeof error.stdout === 'string') return error.stdout
+        throw error
+      },
+    )
+    return { ok: true, value: toHunks(patch) }
+  } catch (error) {
+    const code = (error as { code?: unknown }).code
+    if (code === 'ENOENT') return { ok: false, error: { kind: 'not-installed' } }
+    const stderr = error instanceof Error ? error.message : String(error)
+    return { ok: false, error: { kind: 'failed', args, code: typeof code === 'number' ? code : null, stderr } }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true })
+  }
 }

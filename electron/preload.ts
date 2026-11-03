@@ -8,6 +8,7 @@ import type {
   IpcResult,
   ProjectSummary,
   PtyEvent,
+  ReviewState,
   SessionTouch,
 } from '../shared/types'
 
@@ -104,6 +105,15 @@ const architect: ArchitectApi = {
   },
   repoPlan: (repo, branch, pr) => invoke('architect:repo-plan', repo, branch, pr),
   repoOpen: (repo, branch, choice, pr) => invoke('architect:repo-open', repo, branch, choice, pr),
+  review: () => invoke('architect:review'),
+  setReview: (enabled) => invoke('architect:set-review', enabled),
+  reviewDetail: (id) => invoke('architect:review-detail', id),
+  decide: (id, approved, feedback) => invoke('architect:decide', id, approved, feedback),
+  onReview: (fn: (state: ReviewState) => void) => {
+    const listener = (_event: unknown, state: ReviewState) => fn(state)
+    ipcRenderer.on('architect:review', listener)
+    return () => ipcRenderer.off('architect:review', listener)
+  },
 }
 
 contextBridge.exposeInMainWorld('architect', architect)

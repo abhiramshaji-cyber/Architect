@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { GitResult, GitStatus } from '../../shared/types'
 import { isDirty } from '../model/buffer'
+import { reviewText, toggleReview, useReview } from '../model/review'
 import type { ProjectState } from '../model/store'
 import { gitText } from './git-segment'
 import Icon from './Icon'
@@ -75,8 +76,13 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
     return registerSegment({ id: 'core.parse-error', order: 20, text: `architect.md: ${parseError}` })
   }, [parseError])
 
+  const review = useReview()
+  const reviewing = reviewText(review)
+  useEffect(() => registerSegment({ id: 'core.review', order: 15, text: reviewing }), [reviewing])
+
   const segments = useSyncExternalStore(subscribeSegments, segmentList)
   const label = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'
+  const reviewLabel = review.enabled ? 'Turn off change review' : 'Turn on change review'
 
   return (
     <footer className="statusline" role="status">
@@ -89,6 +95,15 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
           {segment.text}
         </span>
       ))}
+
+      <button
+        className={review.enabled ? 'review-toggle on' : 'review-toggle'}
+        onClick={toggleReview}
+        aria-pressed={review.enabled}
+        title={`${reviewLabel}: approve or deny each change Claude proposes`}
+      >
+        Review
+      </button>
 
       <button className="icon-button theme-toggle" onClick={onFlipTheme} aria-label={label} title={label}>
         <Icon name={theme === 'light' ? 'moon' : 'sun'} size={14} />
