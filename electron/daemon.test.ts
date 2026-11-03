@@ -2218,3 +2218,111 @@ describe("readTree", () => {
     });
   });
 });
+
+describe("change review", () => {
+  beforeEach(() => {
+    writeArchitect(tmpRoot, fixture(component("api") + component("db")));
+  });
+
+  const contract = () => fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8");
+
+  async function reviewing() {
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    await daemon.open(tmpRoot);
+    daemon.setReview(true);
+    return client(socketPath);
+  }
+
+  async function waiting(count = 1) {
+    await vi.waitFor(() => expect(daemon.review().items).toHaveLength(count));
+    return daemon.review().items.at(-1)!;
+  }
+
+  it("holds a proposal until approved, then writes architect.md", async () => {
+    const c = await reviewing();
+    const reply = c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "calls it" });
+
+    const item = await waiting();
+    expect(item).toMatchObject({ kind: "proposal", root: tmpRoot, rationale: "calls it" });
+    expect(contract()).not.toMatch(/api -> db/);
+    await expect(daemon.reviewDetail(item.id)).resolves.toMatchObject({ file: "architect.md", error: null });
+
+    daemon.decide(item.id, true);
+    const res = await reply;
+    expect(res.ok && res.result).toEqual({ status: "approved" });
+    expect(contract()).toMatch(/api -> db/);
+    expect(daemon.review().items).toEqual([]);
+    c.close();
+  });
+
+  it("sends the user's feedback back when a proposal is denied", async () => {
+    const c = await reviewing();
+    const reply = c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "db", to: "api" }, rationale: "r" });
+
+    daemon.decide((await waiting()).id, false, "api should call db, not the other way");
+    const res = await reply;
+    expect(res.ok && res.result).toEqual({
+      status: "rejected",
+      reason: "The user rejected this change: api should call db, not the other way",
+    });
+    expect(contract()).not.toMatch(/db -> api/);
+    c.close();
+  });
+
+  it("still rejects an invalid proposal at once without queueing it", async () => {
+    const c = await reviewing();
+    const res = await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "package", name: "zod", component: "ghost" }, rationale: "r" });
+
+    expect(res.ok && res.result).toMatchObject({ status: "rejected" });
+    expect(daemon.review().items).toEqual([]);
+    c.close();
+  });
+
+  it("keeps a proposal across a restart so it can still be decided", async () => {
+    const c = await reviewing();
+    void c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+    const item = await waiting();
+    c.close();
+    await daemon.close();
+
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    expect(daemon.review().items.map((i) => i.id)).toEqual([item.id]);
+    daemon.decide(item.id, true);
+    expect(contract()).toMatch(/api -> db/);
+  });
+
+  it("gates a code edit inside an open project and passes one outside it", async () => {
+    const c = await reviewing();
+    const file = path.join(tmpRoot, "api", "a.ts");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "export const a = 1\n");
+
+    const outside = await c.request({ op: "review_edit", cwd: tmpHome, change: { tool: "Write", file: path.join(tmpHome, "x.ts"), content: "x" } });
+    expect(outside.ok && outside.result).toBeNull();
+
+    const reply = c.request({ op: "review_edit", cwd: tmpRoot, change: { tool: "Edit", file, edits: [{ old: "1", new: "2", all: false }] } });
+    const item = await waiting();
+    expect(item).toMatchObject({ kind: "code", file: "api/a.ts", tool: "Edit" });
+    await expect(daemon.reviewDetail(item.id)).resolves.toMatchObject({ owners: ["api"], file: "api/a.ts" });
+
+    daemon.decide(item.id, true);
+    const res = await reply;
+    expect(res.ok && res.result).toEqual({ status: "approved" });
+    c.close();
+  });
+
+  it("answers every call exactly as before while review is off", async () => {
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    const c = await client(socketPath);
+
+    const edit = await c.request({ op: "review_edit", cwd: tmpRoot, change: { tool: "Write", file: path.join(tmpRoot, "x.ts"), content: "x" } });
+    expect(edit.ok && edit.result).toBeNull();
+    const res = await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+    expect(res.ok && res.result).toEqual({ status: "approved" });
+    expect(daemon.review()).toEqual({ enabled: false, items: [] });
+    c.close();
+  });
+});

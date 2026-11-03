@@ -87,9 +87,20 @@ claude: propose_change({ kind: 'edge', from: 'ui', to: 'billing', ... })
         -> APPROVED           written to architect.md at once
 ```
 
-There is no approval step. The change lands in `architect.md` immediately and shows up on your canvas as it happens, with new components and edges highlighted as they arrive. Every change, to the contract or to the code, is kept in a history you can scroll back through. A change that would close a cycle, name an unknown component or cross a forbidden rule is rejected with the reason, and the file is left alone.
+By default there is no approval step (turn on [change review](#change-review) if you want one). The change lands in `architect.md` immediately and shows up on your canvas as it happens, with new components and edges highlighted as they arrive. Every change, to the contract or to the code, is kept in a history you can scroll back through. A change that would close a cycle, name an unknown component or cross a forbidden rule is rejected with the reason, and the file is left alone.
 
 **You never read a text diff. You watch a picture of your system change.**
+
+## Change review
+
+Change review is off by default. Turn it on with the **Review** switch in the status bar, or **Toggle change review** in the command palette (Space), and Claude has to wait for you:
+
+- Every `propose_change` waits in Architect instead of being written. Proposals that would close a cycle, name an unknown component or cross a forbidden rule are still rejected at once, without bothering you.
+- Every `Edit`, `Write` and `MultiEdit` Claude Code makes to a file inside a project open in Architect waits too, through a `PreToolUse` hook.
+
+The **Review** tab lists what is waiting. For each change it shows where it lands on the architecture (new components and edges dashed, removed ones struck through in red, and the component that owns an edited file highlighted), which functions in that file are added, removed or changed and how many other functions call them, and the before and after diff. You can **Approve**, **Deny**, or **Suggest a better way**: what you type goes back to Claude as the reason, so it can try again your way.
+
+A contract proposal nobody answers in 5 minutes comes back to Claude as pending with an id it can keep waiting on with `await_proposal`, and pending proposals survive a restart in `~/.architect/pending.json`. A code edit nobody answers in 9 minutes falls back to Claude Code's own permission prompt. The setting lives in `~/.architect/settings.json`. When review is off, or Architect is not running, or the file is outside every open project, the hook exits at once with no output and Claude Code behaves exactly as it does without Architect.
 
 ## What shows up on the canvas
 
@@ -142,7 +153,7 @@ npm run install:local
 
 That installs the app and writes the MCP bridge to `~/.architect/bin/architect-mcp.mjs`, outside the app bundle, because Node cannot execute a file inside `app.asar`. If that file is missing, `npm run install:local` has not run yet and no client can reach Architect.
 
-For Claude Code, the install also registers the bridge (`claude mcp add --scope user architect`) when the `claude` CLI is present, and merges two hooks into `~/.claude/settings.json`: `SessionStart`, and `PostToolUse` on `Edit|Write|MultiEdit|NotebookEdit`. Both run `node ~/.architect/bin/architect-mcp.mjs hook`. Existing hooks are kept and reinstalling never duplicates them. With these in place every Claude Code session opens an Architect tab bound to the folder it works in (or the matching folder of a worktree it edits), and that tab rescans and marks each edited file live. The hook exits at once and stays silent when Architect is not running.
+For Claude Code, the install also registers the bridge (`claude mcp add --scope user architect`) when the `claude` CLI is present, and merges three hooks into `~/.claude/settings.json`: `SessionStart`, `PostToolUse` on `Edit|Write|MultiEdit|NotebookEdit`, and `PreToolUse` on `Edit|Write|MultiEdit` with a 600 second timeout for [change review](#change-review). All three run `node ~/.architect/bin/architect-mcp.mjs hook`. Existing hooks are kept and reinstalling never duplicates them. With these in place every Claude Code session opens an Architect tab bound to the folder it works in (or the matching folder of a worktree it edits), and that tab rescans and marks each edited file live. The hook exits at once and stays silent when Architect is not running.
 
 Other clients register the bridge by hand.
 

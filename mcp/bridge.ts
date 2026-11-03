@@ -6,7 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { SOCKET_PATH } from '../shared/socket.js'
 import { runHook } from './hook.js'
-import { type Request, type Proposal } from '../shared/types.js'
+import { PROPOSAL_TIMEOUT_MS, type Request, type Proposal } from '../shared/types.js'
 
 type RequestInput = { [K in Request['op']]: Omit<Extract<Request, { op: K }>, 'id' | 'cwd'> }[Request['op']]
 
@@ -103,7 +103,8 @@ async function getSocket(path: string): Promise<Socket> {
 export async function send(req: RequestInput, socketPath = SOCKET_PATH, timeoutMs?: number): Promise<unknown> {
   const full = { ...req, id: randomUUID(), cwd: process.cwd() } as Request
   const s = await getSocket(socketPath)
-  const deadline = timeoutMs ?? 30_000
+  const waits = req.op === 'propose_change' || req.op === 'await_proposal'
+  const deadline = timeoutMs ?? (waits ? PROPOSAL_TIMEOUT_MS + 30_000 : 30_000)
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -144,6 +145,9 @@ export const checkChange = (from: string, to: string, socketPath = SOCKET_PATH) 
 export const proposeChange = (proposal: Proposal, rationale: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'propose_change', proposal, rationale }, socketPath)
 
+export const awaitProposal = (proposalId: string, socketPath = SOCKET_PATH) =>
+  callTool({ op: 'await_proposal', proposalId }, socketPath)
+
 export const listEdits = (socketPath = SOCKET_PATH) => callTool({ op: 'list_edits' }, socketPath)
 
 export const getEdit = (editId: string, socketPath = SOCKET_PATH) =>
@@ -168,7 +172,7 @@ function main() {
     'propose_change',
     {
       description:
-        'Apply an architecture change to architect.md immediately; there is no approval step. The result is approved once written, or rejected with a reason when the change would add a cycle, names an unknown component, contradicts a forbidden rule, or the contract is missing or broken. For a file proposal, component is the owning component. A remove_component proposal deletes a component along with every edge and forbidden rule touching it; any file it owned becomes unowned rather than being deleted.',
+        'Change architect.md. When the engineer has change review turned off in Architect the change is written at once; when it is on, the call waits until they approve or reject it in Architect. The result is approved once written, rejected with a reason (a cycle, an unknown component, a forbidden rule, a missing or broken contract, or the engineer said no, often with a better way to do it that you should follow), or pending with an id when nobody answered in time: call await_proposal with that id to keep waiting. For a file proposal, component is the owning component. A remove_component proposal deletes a component along with every edge and forbidden rule touching it; any file it owned becomes unowned rather than being deleted.',
       inputSchema: {
         proposal: z.union([
           z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
@@ -185,6 +189,16 @@ function main() {
       },
     },
     ({ proposal, rationale }) => proposeChange(proposal, rationale),
+  )
+
+  server.registerTool(
+    'await_proposal',
+    {
+      description:
+        'Keep waiting on a proposal that propose_change returned as pending. Returns approved, rejected with the engineer\'s reason, or pending again with the same id.',
+      inputSchema: { proposalId: z.string() },
+    },
+    ({ proposalId }) => awaitProposal(proposalId),
   )
 
   server.registerTool(

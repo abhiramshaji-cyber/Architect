@@ -3,15 +3,22 @@ import { mergeHooks } from './claude-hooks.mjs'
 
 const command = 'node "/Users/me/.architect/bin/architect-mcp.mjs" hook'
 const ours = { type: 'command', command, timeout: 5 }
+const gate = { type: 'command', command, timeout: 600 }
 
 describe('mergeHooks', () => {
-  it('adds both hooks to empty settings', () => {
+  it('adds the session hooks and the long review gate to empty settings', () => {
     expect(mergeHooks({}, command)).toEqual({
       hooks: {
         SessionStart: [{ hooks: [ours] }],
         PostToolUse: [{ matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [ours] }],
+        PreToolUse: [{ matcher: 'Edit|Write|MultiEdit', hooks: [gate] }],
       },
     })
+  })
+
+  it('upgrades a gate of ours whose timeout is too short to wait for a review', () => {
+    const short = { hooks: { PreToolUse: [{ matcher: 'Edit|Write|MultiEdit', hooks: [ours] }] } }
+    expect(mergeHooks(short, command).hooks.PreToolUse).toEqual([{ matcher: 'Edit|Write|MultiEdit', hooks: [gate] }])
   })
 
   it('keeps existing settings and hooks', () => {

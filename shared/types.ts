@@ -100,6 +100,63 @@ export type Verdict =
 export type Decision =
   | { status: 'approved' }
   | { status: 'rejected'; reason: string }
+  | { status: 'pending'; id: string }
+
+export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
+
+export const EDIT_TIMEOUT_MS = 9 * 60 * 1000
+
+export const codeChangeSchema = z.union([
+  z.object({ tool: z.literal('Write'), file: z.string(), content: z.string() }),
+  z.object({
+    tool: z.enum(['Edit', 'MultiEdit']),
+    file: z.string(),
+    edits: z.array(z.object({ old: z.string(), new: z.string(), all: z.boolean() })),
+  }),
+])
+
+export type CodeChange = z.infer<typeof codeChangeSchema>
+
+export const reviewItemSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('proposal'),
+    id: z.string(),
+    root: z.string(),
+    at: z.number(),
+    proposal: proposalSchema,
+    rationale: z.string(),
+  }),
+  z.object({
+    kind: z.literal('code'),
+    id: z.string(),
+    root: z.string(),
+    at: z.number(),
+    file: z.string(),
+    tool: z.enum(['Edit', 'Write', 'MultiEdit']),
+  }),
+])
+
+export type ReviewItem = z.infer<typeof reviewItemSchema>
+
+export type ReviewState = { enabled: boolean; items: ReviewItem[] }
+
+export type FunctionImpact = {
+  name: string
+  change: 'added' | 'removed' | 'changed'
+  line: number
+  fanIn: number | null
+  importance: Importance | null
+}
+
+export type ReviewDetail = {
+  before: Architecture | null
+  after: Architecture | null
+  owners: string[]
+  file: string
+  hunks: DiffHunk[]
+  functions: FunctionImpact[]
+  error: string | null
+}
 
 export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('get_architecture'), cwd: z.string() }),
@@ -111,6 +168,8 @@ export const requestSchema = z.discriminatedUnion('op', [
     proposal: proposalSchema,
     rationale: z.string(),
   }),
+  z.object({ id: z.string(), op: z.literal('await_proposal'), cwd: z.string(), proposalId: z.string() }),
+  z.object({ id: z.string(), op: z.literal('review_edit'), cwd: z.string(), change: codeChangeSchema }),
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
   z.object({
@@ -485,6 +544,11 @@ export type ArchitectApi = {
   repoPlan(repo: string, branch: string, pr?: number): Promise<GitResult<OpenPlan>>
   repoOpen(repo: string, branch: string, choice: OpenChoice, pr?: number): Promise<OpenResult<OpenedBranch>>
   githubRates(): Promise<GithubResult<GithubRates>>
+  review(): Promise<ReviewState>
+  setReview(enabled: boolean): Promise<ReviewState>
+  reviewDetail(id: string): Promise<ReviewDetail>
+  decide(id: string, approved: boolean, feedback?: string): Promise<void>
+  onReview(fn: (state: ReviewState) => void): () => void
 }
 
 export type Response =

@@ -29,8 +29,12 @@ Lists every function in a project with facts measured from the scan (line count,
 owns: `electron/functions/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals straight to architect.md, the per project change history, and the guarded read, write and directory listing of project files.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), the per project change history, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
+
+### review
+Opt in change review. Persists the on or off switch, holds contract proposals and Claude Code edits waiting on the engineer, keeps proposals across a restart, wakes the waiting caller with approve, deny or the engineer's feedback, and drops an edit whose hook went away. Rebuilds the file an edit would produce and works out its impact: the components that own it, the functions added, removed or changed in it, and the before and after diff, or for a proposal the architecture it would leave behind. A switch that is off answers every edit at once.
+owns: `electron/review/**`
 
 ### app
 Electron lifecycle, tray and the preload bridge to the renderer. Every window is a native macOS tab in one group, holding its own pty host and a claim on at most one project root, so a project is open in at most one tab and closing a tab tears down only its terminals.
@@ -63,6 +67,10 @@ owns: `lsp/**`
 - daemon -> graph
 - daemon -> draft
 - daemon -> functions
+- daemon -> review
+- review -> types
+- review -> graph
+- review -> git
 - functions -> types
 - daemon -> git
 - draft -> types
@@ -95,6 +103,8 @@ owns: `lsp/**`
 - canvas -> github : the renderer never shells out to gh and never holds a token, repos and branches arrive over the preload bridge
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
 - canvas -> functions : the renderer never ranks or arranges functions itself, the ranked list and its call tree arrive over the preload bridge
+- canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
+- bridge -> review : the hook only forwards an edit over the socket and prints the answer, the queue lives in the app
 
 ## Packages
 

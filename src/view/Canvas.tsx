@@ -20,6 +20,7 @@ import '@xyflow/react/dist/style.css'
 import type { Architecture, Ownership } from '../../shared/types'
 import { addEdge, removeComponent, removeEdge, type OpResult } from '../model/edit-ops'
 import { liveClass, type Recent } from '../model/live/recent'
+import type { Mark } from '../model/review'
 import Inspector from './Inspector'
 import { edgeTypes } from './live/DrawnEdge'
 import Follow, { motionMs } from './live/Follow'
@@ -44,6 +45,13 @@ type CanvasProps = {
   selectedId: string | null
   onSelect: (id: string | null) => void
   onEdit?: (op: (a: Architecture) => OpResult) => boolean
+  marks?: Record<string, Mark>
+}
+
+function classOf(recent: Recent, marks: Record<string, Mark> | undefined, id: string): string | undefined {
+  const mark = marks?.[id]
+  const live = liveClass(recent, id)
+  return [live, mark && `mark-${mark}`].filter(Boolean).join(' ') || undefined
 }
 
 const FIT = { padding: FIT_PADDING }
@@ -159,7 +167,7 @@ const nodeTypes = { component: ComponentNode }
 
 const DELETE_KEYS = ['Delete', 'Backspace']
 
-export default function Canvas({ architecture, ownership, recent, theme, selectedId, onSelect, onEdit }: CanvasProps) {
+export default function Canvas({ architecture, ownership, recent, theme, selectedId, onSelect, onEdit, marks }: CanvasProps) {
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
@@ -206,11 +214,11 @@ export default function Canvas({ architecture, ownership, recent, theme, selecte
   }, [architecture, ownership, colors, editing, stage])
 
   const marked = useMemo(
-    () => nodes.map((n) => ({ ...n, selected: n.id === selectedId, className: liveClass(recent, n.id) })),
-    [nodes, selectedId, recent]
+    () => nodes.map((n) => ({ ...n, selected: n.id === selectedId, className: classOf(recent, marks, n.id) })),
+    [nodes, selectedId, recent, marks]
   )
 
-  const drawn = useMemo(() => edges.map((e) => ({ ...e, className: liveClass(recent, e.id) })), [edges, recent])
+  const drawn = useMemo(() => edges.map((e) => ({ ...e, className: classOf(recent, marks, e.id) })), [edges, recent, marks])
 
   const selected = nodes.find((n) => n.id === selectedId)?.data ?? null
 

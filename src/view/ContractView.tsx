@@ -8,6 +8,7 @@ import HistoryPanel from './live/HistoryPanel'
 import { addComponent, type OpResult } from '../model/edit-ops'
 import type { Target } from '../model/live/history'
 import { draftMessage } from '../model/picker'
+import { useReview } from '../model/review'
 import {
   applyEdit,
   createContract,
@@ -49,6 +50,7 @@ export default function ContractView({ theme, show }: ViewProps) {
   const project = useProject()
   const { currentRoot, architecture, contract, draft, owners, recent, busy, drafting, draftError } = project
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const waiting = useReview().items.filter((item) => item.root === currentRoot && item.kind === 'proposal').length
   const [rail, setRail] = useState(() => ({ root: currentRoot, open: railOpen(currentRoot) }))
 
   if (rail.root !== currentRoot) setRail({ root: currentRoot, open: railOpen(currentRoot) })
@@ -111,6 +113,11 @@ export default function ContractView({ theme, show }: ViewProps) {
               <h2>{shown.title}</h2>
               {currentRoot && <p className="canvas-path">{currentRoot}</p>}
               <p>{shown.summary}</p>
+              {waiting > 0 && (
+                <button className="review-banner" onClick={() => show('review')}>
+                  {waiting === 1 ? '1 proposed change is waiting' : `${waiting} proposed changes are waiting`} · Review
+                </button>
+              )}
             </header>
 
             <EditBar onAddComponent={addAndSelect} />
