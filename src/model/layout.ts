@@ -7,8 +7,8 @@ export type NodeData = {
   label: string
   purpose: string
   owns: string[]
+  covers: string[]
   role: Role
-  files?: number
 }
 
 export const NODE_W = 220
@@ -17,6 +17,8 @@ export const NODE_H = 37
 const RANK_SEP = 44
 export const NODE_SEP = 30
 const NODE_TITLE_PX = 13.5
+const LABEL_CHAR_PX = 6.5
+const LABEL_H = 18
 const LEGIBLE_PX = 9
 export const MIN_ZOOM = LEGIBLE_PX / NODE_TITLE_PX
 export const FIT_PADDING = 0.14
@@ -55,15 +57,20 @@ export function roleOf(id: string, edges: Edge[]): Role {
 }
 
 export type Logical = { id: string; data: NodeData }
-export type Link = { id: string; from: string; to: string }
+export type Link = { id: string; from: string; to: string; label?: string }
 
 export function build(architecture: Architecture) {
   const nodes: Logical[] = architecture.components.map((c) => ({
     id: c.id,
-    data: { label: c.id, purpose: c.purpose, owns: c.owns, role: roleOf(c.id, architecture.edges) }
+    data: { label: c.id, purpose: c.purpose, owns: c.owns, covers: c.covers ?? [], role: roleOf(c.id, architecture.edges) }
   }))
 
-  const links: Link[] = architecture.edges.map((e) => ({ id: `${e.from}->${e.to}`, from: e.from, to: e.to }))
+  const links: Link[] = architecture.edges.map((e) => ({
+    id: `${e.from}->${e.to}`,
+    from: e.from,
+    to: e.to,
+    ...(e.label && { label: e.label })
+  }))
 
   return { nodes, links }
 }
@@ -123,7 +130,9 @@ export function positions(nodes: Logical[], links: Link[], hint?: Layout, stage?
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H })
-  for (const l of links) g.setEdge(l.from, l.to)
+  for (const l of links) {
+    g.setEdge(l.from, l.to, l.label ? { width: l.label.length * LABEL_CHAR_PX, height: LABEL_H, labelpos: 'c' } : {})
+  }
 
   dagre.layout(g)
 

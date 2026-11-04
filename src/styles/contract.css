@@ -245,6 +245,15 @@
   margin-top: var(--sp-2);
 }
 
+.redraw-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
 .blank-note {
   font-size: var(--fs-sm);
   color: var(--text-dim);

@@ -76,6 +76,7 @@ owns: `lsp/**`
 - draft -> types
 - draft -> graph
 - draft -> git
+- draft -> functions
 - app -> types
 - app -> daemon
 - app -> draft

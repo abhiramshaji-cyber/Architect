@@ -234,31 +234,30 @@ describe("open", () => {
 
 describe("drafting a first contract", () => {
   const drafted = (root: string) =>
-    [
-      "```markdown",
-      `# ${path.basename(root)}`,
-      "",
-      "A tiny web app.",
-      "",
-      "## Components",
-      "",
-      "### api",
-      "Answers http requests.",
-      "owns: `api/**`",
-      "",
-      "### ui",
-      "Draws the pages a visitor sees.",
-      "owns: `ui/**`",
-      "",
-      "## Dependencies",
-      "",
-      "- ui -> api",
-      "",
-      "## Forbidden",
-      "",
-      "## Packages",
-      "```",
-    ].join("\n");
+    JSON.stringify({
+      title: path.basename(root),
+      summary: "A tiny web app.",
+      components: [
+        { id: "pages", purpose: "Draws the pages a visitor sees.", functions: ["f2"] },
+        { id: "handler", purpose: "Answers http requests.", functions: ["f1"] },
+      ],
+      flows: [{ from: "pages", to: "handler", label: "http request" }],
+    });
+
+  function flowRepo(): string {
+    const root = fs.mkdtempSync(path.join(tmpRoot, "flow-"));
+    fs.mkdirSync(path.join(root, "src", "api"), { recursive: true });
+    fs.mkdirSync(path.join(root, "src", "ui"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "src", "api", "handler.ts"),
+      "export function handler() { return 1 }\n",
+    );
+    fs.writeFileSync(
+      path.join(root, "src", "ui", "page.ts"),
+      "import { handler } from '../api/handler'\nexport function page() { return handler() }\n",
+    );
+    return root;
+  }
 
   function repo(): string {
     const root = fs.mkdtempSync(path.join(tmpRoot, "draft-"));
@@ -276,7 +275,7 @@ describe("drafting a first contract", () => {
   }
 
   it("writes the draft straight to architect.md and the file parses back to what was drafted", async () => {
-    const root = repo();
+    const root = flowRepo();
     daemon = createDaemon({
       socketPath,
       claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
@@ -290,8 +289,11 @@ describe("drafting a first contract", () => {
     const written = fs.readFileSync(path.join(root, "architect.md"), "utf8");
     expect(written).toBe(result.value);
     const architecture = parse(written);
-    expect(architecture.components.map((c) => c.id)).toEqual(["api", "ui"]);
-    expect(architecture.edges).toEqual([{ from: "ui", to: "api" }]);
+    expect(architecture.components.map((c) => [c.id, c.owns])).toEqual([
+      ["pages", ["src/ui/**"]],
+      ["handler", ["src/api/**"]],
+    ]);
+    expect(architecture.edges).toEqual([{ from: "pages", to: "handler", label: "http request" }]);
     expect(daemon.projects()[0]?.contract).toEqual({ status: "ready" });
   });
 
@@ -396,8 +398,31 @@ describe("drafting a first contract", () => {
     );
   });
 
+  it("flags a contract that only lists the top level folders and redraws it as a flow chart", async () => {
+    const root = flowRepo();
+    fs.mkdirSync(path.join(root, "tests"));
+    fs.writeFileSync(path.join(root, "tests", "page.test.ts"), "export function check() { return 1 }\n");
+    writeArchitect(
+      root,
+      ["# old", "", "Folders.", "", "## Components", "", "### src", "The app.", "owns: `src/**`", "", "### tests", "Tests.", "owns: `tests/**`", ""].join("\n"),
+    );
+    daemon = createDaemon({
+      socketPath,
+      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
+    });
+    await daemon.open(root);
+    expect(daemon.projects()[0]?.folderShaped).toBe(true);
+
+    const result = await daemon.draftContract(root);
+
+    expect(result.ok).toBe(true);
+    const architecture = parse(fs.readFileSync(path.join(root, "architect.md"), "utf8"));
+    expect(architecture.components.map((c) => c.id)).toEqual(["pages", "handler"]);
+    expect(daemon.projects()[0]?.folderShaped).toBeUndefined();
+  });
+
   it("never overwrites a contract that appeared while the draft was running", async () => {
-    const root = repo();
+    const root = flowRepo();
     daemon = createDaemon({
       socketPath,
       claude: async () => {

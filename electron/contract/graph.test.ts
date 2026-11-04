@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { apply, check, ownership, parse, serialize } from './graph'
+import { apply, check, ownership, parse, scan, serialize } from './graph'
 import { findCycle } from '../../shared/cycle'
 import type { Architecture } from '../../shared/types'
 
@@ -736,5 +736,51 @@ describe('ownership', () => {
 
     const seen = [...result.owned.map((o) => o.path), ...result.unowned, ...result.multi.map((m) => m.path)]
     expect(seen.sort()).toEqual([...files].sort())
+  })
+})
+
+describe('flow labels and covered functions', () => {
+  const markdown = [
+    '# bot',
+    '',
+    'Answers questions.',
+    '',
+    '## Components',
+    '',
+    '### channel',
+    'Receives messages.',
+    'owns: `src/chat/**`',
+    'covers: `src/chat/handler.ts#handle`',
+    '',
+    '### agent',
+    'Decides what to do.',
+    '',
+    '## Dependencies',
+    '',
+    '- channel -> agent : user message',
+    '- agent -> channel',
+  ].join('\n')
+
+  it('reads a label after the arrow and the functions a component covers', () => {
+    const architecture = parse(markdown)
+    expect(architecture.edges).toEqual([
+      { from: 'channel', to: 'agent', label: 'user message' },
+      { from: 'agent', to: 'channel' },
+    ])
+    expect(architecture.components[0]?.covers).toEqual(['src/chat/handler.ts#handle'])
+    expect(architecture.components[1]?.covers).toBeUndefined()
+  })
+
+  it('round trips labels and covers through serialize', () => {
+    expect(parse(serialize(parse(markdown)))).toEqual(parse(markdown))
+  })
+
+  it('accepts a label written with no space before the colon', () => {
+    const edges = parse(markdown.replace('channel -> agent : user message', 'channel -> agent: user message')).edges
+    expect(edges[0]).toEqual({ from: 'channel', to: 'agent', label: 'user message' })
+  })
+
+  it('flags a malformed covers line', () => {
+    expect(scan(markdown.replace('covers: `src/chat/handler.ts#handle`', 'covers: handle')).problems).toHaveLength(1)
   })
 })

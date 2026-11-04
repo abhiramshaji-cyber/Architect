@@ -14,7 +14,8 @@ export type Scan = { architecture: Architecture; problems: Problem[]; refs: Ref[
 
 const HEADING = /^###(?:\s+(.*))?$/
 const OWNS = /^(owns:\s*)`([^`]+)`\s*$/
-const EDGE = /^(-\s*)(\S+)(\s*->\s*)(\S+)\s*$/
+const COVERS = /^covers:\s*`([^`]+)`\s*$/
+const EDGE = /^(-\s*)(\S+)(\s*->\s*)(\S+)(?:\s*:\s*(.*\S))?\s*$/
 const FORBIDDEN = /^(-\s*)(\S+)(\s*->\s*)(\S+)\s*:\s*(.+)$/
 const PACKAGE = /^-\s*(.+)$/
 const SCOPE = /^scope:\s*`([^`]+)`\s*$/m
@@ -138,6 +139,14 @@ export function scan(markdown: string): Scan {
       }
       current.owns.push(m[2] ?? '')
     }
+    else if (text.startsWith('covers:')) {
+      const m = text.match(COVERS)
+      if (!m) {
+        note(`malformed covers entry on line ${line}: ${text}`, line, col, col + text.length)
+        continue
+      }
+      current.covers = [...(current.covers ?? []), m[1] ?? '']
+    }
     else if (current.purpose.length === 0) current.purpose = text
   }
 
@@ -167,7 +176,8 @@ export function scan(markdown: string): Scan {
       continue
     }
     const pair = endpoints(line, col, m, 'dependency')
-    if (pair) edges.push(pair)
+    const label = m[5]?.trim()
+    if (pair) edges.push(label ? { ...pair, label } : pair)
   }
 
   // forbidden
@@ -212,11 +222,17 @@ export function serialize(architecture: Architecture): string {
   lines.push('## Components', '')
 
   for (const c of architecture.components) {
-    lines.push(`### ${c.id}`, c.purpose, ...c.owns.map((g) => `owns: \`${g}\``), '')
+    lines.push(
+      `### ${c.id}`,
+      c.purpose,
+      ...c.owns.map((g) => `owns: \`${g}\``),
+      ...(c.covers ?? []).map((f) => `covers: \`${f}\``),
+      '',
+    )
   }
 
   lines.push('## Dependencies', '')
-  for (const e of architecture.edges) lines.push(`- ${e.from} -> ${e.to}`)
+  for (const e of architecture.edges) lines.push(`- ${e.from} -> ${e.to}${e.label ? ` : ${e.label}` : ''}`)
   lines.push('', '## Forbidden', '')
   for (const f of architecture.forbidden) lines.push(`- ${f.from} -> ${f.to} : ${f.reason}`)
   lines.push('', '## Packages', '')

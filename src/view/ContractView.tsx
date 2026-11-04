@@ -40,7 +40,7 @@ function placeholderId(a: Architecture): string {
 
 function draftNote(failure: DraftFailure): string {
   if (failure.kind === 'not-installed') return 'Claude Code is not on PATH'
-  if (failure.kind === 'nothing-to-draft') return 'No source to draft from'
+  if (failure.kind === 'nothing-to-draft') return 'No functions to draft from'
   if (failure.kind === 'timed-out') return 'Claude timed out'
   if (failure.kind === 'unusable') return `Unusable draft: ${failure.detail}`
   return `Draft failed: ${draftMessage(failure)}`
@@ -48,7 +48,7 @@ function draftNote(failure: DraftFailure): string {
 
 export default function ContractView({ theme, show }: ViewProps) {
   const project = useProject()
-  const { currentRoot, architecture, contract, draft, owners, recent, busy, drafting, draftError } = project
+  const { currentRoot, architecture, contract, draft, owners, recent, busy, drafting, draftError, folderShaped } = project
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const waiting = useReview().items.filter((item) => item.root === currentRoot && item.kind === 'proposal').length
   const [rail, setRail] = useState(() => ({ root: currentRoot, open: railOpen(currentRoot) }))
@@ -113,6 +113,17 @@ export default function ContractView({ theme, show }: ViewProps) {
               <h2>{shown.title}</h2>
               {currentRoot && <p className="canvas-path">{currentRoot}</p>}
               <p>{shown.summary}</p>
+              {folderShaped && !draft && (
+                <div className="redraw-banner" role="status">
+                  <span>{drafting ? 'Redrawing as a flow chart' : 'This contract only lists folders.'}</span>
+                  {!drafting && (
+                    <button onClick={draftContract} disabled={busy}>
+                      Redraw as a flow chart
+                    </button>
+                  )}
+                  {draftError && !drafting && <span className="blank-note">{draftNote(draftError)}</span>}
+                </div>
+              )}
               {waiting > 0 && (
                 <button className="review-banner" onClick={() => show('review')}>
                   {waiting === 1 ? '1 proposed change is waiting' : `${waiting} proposed changes are waiting`} · Review

@@ -4,9 +4,10 @@ export type Component = {
   id: string
   purpose: string
   owns: string[]
+  covers?: string[]
 }
 
-export type Edge = { from: string; to: string }
+export type Edge = { from: string; to: string; label?: string }
 
 export type Forbidden = { from: string; to: string; reason: string }
 
@@ -220,6 +221,7 @@ export type ProjectSummary = {
   root: string
   title: string
   contract: ContractState
+  folderShaped?: true
   drafting?: true
   draftError?: DraftFailure
 }

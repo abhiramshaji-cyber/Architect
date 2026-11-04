@@ -61,6 +61,7 @@ export function setPurpose(a: Architecture, id: string, purpose: string): OpResu
   if (/^#{1,3} /.test(text)) return fail('purpose cannot start with a markdown heading')
   if (text.startsWith('<!--')) return fail('purpose cannot start with "<!--"')
   if (text.startsWith('owns:')) return fail('purpose cannot start with "owns:"')
+  if (text.startsWith('covers:')) return fail('purpose cannot start with "covers:"')
 
   return {
     ok: true,
