@@ -516,6 +516,7 @@ export type ArchitectApi = {
   onPtyEvent(fn: (event: PtyEvent) => void): () => void
   gitStatus(root: string): Promise<GitResult<GitStatus>>
   gitDefaultBranch(root: string): Promise<GitResult<DefaultBranch>>
+  tabTitle(root: string): Promise<string>
   gitLocalBranches(root: string): Promise<GitResult<LocalBranch[]>>
   gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
