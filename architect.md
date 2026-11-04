@@ -13,7 +13,7 @@ Parses, serializes and queries `architect.md`. Fully deterministic, no model cal
 owns: `electron/contract/graph.ts`
 
 ### git
-Shells out to the git binary and returns typed results for branch, dirty state, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. No git library, no domain logic.
+Shells out to the git binary and returns typed results for branch, dirty state, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. Also blames files line by line, batched and cached per HEAD. No git library, no domain logic.
 owns: `electron/git/**`
 
 ### github
@@ -27,6 +27,10 @@ owns: `electron/draft/**`
 ### functions
 Lists every function in a project with facts measured from the scan (line count, how many functions call it, how many it calls, whether it is exported, whether its file is a starting point), an importance from 1 to 5 and a one line plain English summary. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. The summary is the author's own comment when there is one, otherwise a sentence built from the function's name, its kind and who uses it. It also arranges the functions into a call tree for the org chart view: starting points that nothing calls sit at the top, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Given a folder inside the project it narrows all of this to the functions under that folder: importance and the tree are worked out again from only the calls between them, callers from outside the folder are counted apart, and the folders inside it come back with their function counts so the renderer can drill in. A folder that is missing or outside the project falls back to the whole project. Fully deterministic, no model calls, computed in one pass over the code map.
 owns: `electron/functions/**`
+
+### recency
+Works out when each function and each component last changed. Each function gets the newest commit across its own lines from git blame, each component the newest change across the files it owns and the functions it covers, and lines nobody has committed yet count as the newest of all. Fully deterministic, no model calls.
+owns: `electron/recency/**`
 
 ### daemon
 Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), the per project change history, and the guarded read, write and directory listing of project files.
@@ -68,6 +72,10 @@ owns: `lsp/**`
 - daemon -> draft
 - daemon -> functions
 - daemon -> review
+- daemon -> recency
+- recency -> types
+- recency -> graph
+- recency -> git
 - review -> types
 - review -> graph
 - review -> git
@@ -104,6 +112,7 @@ owns: `lsp/**`
 - canvas -> github : the renderer never shells out to gh and never holds a token, repos and branches arrive over the preload bridge
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
 - canvas -> functions : the renderer never ranks or arranges functions itself, the ranked list and its call tree arrive over the preload bridge
+- canvas -> recency : the renderer never reads git history, when each function and component last changed arrives over the preload bridge
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
 - bridge -> review : the hook only forwards an edit over the socket and prints the answer, the queue lives in the app
 

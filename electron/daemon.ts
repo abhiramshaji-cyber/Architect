@@ -15,6 +15,7 @@ import {
   type Edit,
   type EditSummary,
   type FunctionList,
+  type Recency,
   type HistoryEntry,
   historyEntrySchema,
   type OpenedProject,
@@ -43,6 +44,8 @@ import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
+import { blameFiles } from './git/blame'
+import { recencyOf } from './recency'
 import { createReview } from './review'
 
 function historyPath(dir: string, root: string) {
@@ -973,6 +976,12 @@ export function createDaemon(options: DaemonOptions = {}) {
     listFunctions: async (root: string, scope?: unknown): Promise<FunctionList> => {
       loadProject(root)
       return listFunctions(root, await mapOf(root), scope)
+    },
+    recency: async (root: string): Promise<Recency> => {
+      loadProject(root)
+      const map = await mapOf(root)
+      const blamed = await blameFiles(root, map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
+      return recencyOf(map, loadProject(root).architecture, blamed)
     },
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn

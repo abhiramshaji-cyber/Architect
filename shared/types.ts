@@ -320,6 +320,12 @@ export type Committed = { commit: string; branch: string | null }
 
 export type Commit = { sha: string; short: string; at: number; subject: string; files: string[] }
 
+export type Touch = { at: number; sha: string; subject: string }
+
+export type Change = Touch | 'uncommitted'
+
+export type Recency = { functions: Record<string, Change>; components: Record<string, Change> }
+
 export type Pushed = { remote: string; branch: string; setUpstream: boolean }
 
 export type Pulled = { remote: string; branch: string; changed: boolean }
@@ -500,6 +506,7 @@ export type ArchitectApi = {
   getCodeMap(root: string): Promise<CodeMap | null>
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
+  recency(root: string): Promise<Recency>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
   openSource(root: string, file: string): Promise<SourceFile>
   writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>

@@ -2,11 +2,14 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import type { FunctionRow } from '../../../shared/types'
 import { baseName } from '../../model/codemap'
 import { folderName } from '../../model/layout'
+import { ranker } from '../../model/recency'
 import { loadCodeMap, openFile, useProject } from '../../model/store'
+import Legend from '../recency/Legend'
+import { useRecency } from '../recency/useRecency'
 import type { ViewProps } from '../../shell/views'
 import { plural } from './Mark'
 import Row from './Row'
-import { arrange, type SortKey } from './order'
+import { arrange, changeOf, type SortKey } from './order'
 import ScopePicker from './scope/ScopePicker'
 import { storeScope, storedScope } from './scope/pick'
 import FunctionTree from './tree/FunctionTree'
@@ -39,6 +42,7 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: 'importance', label: 'Importance' },
   { key: 'lines', label: 'Lines' },
   { key: 'name', label: 'Name' },
+  { key: 'recent', label: 'Recent' },
 ]
 
 export default function FunctionsView({ show }: ViewProps) {
@@ -51,6 +55,8 @@ export default function FunctionsView({ show }: ViewProps) {
   const [sort, setSort] = useState<SortKey>('importance')
   const [query, setQuery] = useState('')
   const needle = useDeferredValue(query)
+  const changes = useRecency(currentRoot, codeMap)?.functions
+  const stepOf = useMemo(() => ranker(Object.values(changes ?? {})), [changes])
 
   useEffect(() => {
     loadCodeMap()
@@ -79,8 +85,8 @@ export default function FunctionsView({ show }: ViewProps) {
   }
 
   const placed = useMemo(
-    () => (rows && mode === 'list' ? arrange(rows, sort, needle) : []),
-    [rows, mode, sort, needle],
+    () => (rows && mode === 'list' ? arrange(rows, sort, needle, changes) : []),
+    [rows, mode, sort, needle, changes],
   )
 
   const showLatest = useRef(show)
@@ -139,6 +145,7 @@ export default function FunctionsView({ show }: ViewProps) {
             ))}
           </div>
         )}
+        {mode === 'list' && changes && Object.keys(changes).length > 0 && <Legend />}
         <input
           className="search-input fn-search"
           type="search"
@@ -171,9 +178,10 @@ export default function FunctionsView({ show }: ViewProps) {
         <p className="fn-empty">No functions match “{needle}”.</p>
       ) : (
         <ul className="fn-list">
-          {placed.map(({ row, key }) => (
-            <Row key={key} row={row} onOpen={onOpen} onScope={pickScope} />
-          ))}
+          {placed.map(({ row, key }) => {
+            const change = changes && changeOf(row, changes)
+            return <Row key={key} row={row} change={change} step={stepOf(change)} onOpen={onOpen} onScope={pickScope} />
+          })}
         </ul>
       )}
     </section>

@@ -1,17 +1,25 @@
 import { memo } from 'react'
-import type { FunctionRow } from '../../../shared/types'
+import type { Change, FunctionRow } from '../../../shared/types'
 import { baseName } from '../../model/codemap'
+import { describeChange } from '../../model/recency'
 import Mark, { plural } from './Mark'
 import { folderOf } from './scope/pick'
 
-type RowProps = { row: FunctionRow; onOpen: (row: FunctionRow) => void; onScope: (scope: string) => void }
+type RowProps = {
+  row: FunctionRow
+  change?: Change
+  step?: number
+  onOpen: (row: FunctionRow) => void
+  onScope: (scope: string) => void
+}
 
-export default memo(function Row({ row, onOpen, onScope }: RowProps) {
+export default memo(function Row({ row, change, step, onOpen, onScope }: RowProps) {
   const folder = folderOf(row.file)
+  const hint = describeChange(change, Date.now())
   return (
     <li>
       <div
-        className="fn-row"
+        className={step === undefined ? 'fn-row' : `fn-row age-${step}`}
         role="button"
         tabIndex={0}
         onClick={() => onOpen(row)}
@@ -20,7 +28,7 @@ export default memo(function Row({ row, onOpen, onScope }: RowProps) {
           event.preventDefault()
           onOpen(row)
         }}
-        title={`${row.file}:${row.line}`}
+        title={hint ? `${row.file}:${row.line}\n${hint}` : `${row.file}:${row.line}`}
       >
         <Mark importance={row.importance} />
         <span className="fn-main">
