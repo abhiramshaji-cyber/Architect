@@ -492,3 +492,47 @@ body.resizing {
   color: var(--text-faint);
   overflow-wrap: anywhere;
 }
+
+.age-0 {
+  --aged: var(--age);
+}
+
+.age-1 {
+  --aged: color-mix(in srgb, var(--age) 72%, transparent);
+}
+
+.age-2 {
+  --aged: color-mix(in srgb, var(--age) 48%, transparent);
+}
+
+.age-3 {
+  --aged: color-mix(in srgb, var(--age) 28%, transparent);
+}
+
+.age-4 {
+  --aged: color-mix(in srgb, var(--age) 12%, transparent);
+}
+
+.age-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.age-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--aged);
+}
+
+.age-swatch:first-of-type {
+  margin-left: var(--sp-1);
+}
+
+.age-swatch:last-of-type {
+  margin-right: var(--sp-1);
+}

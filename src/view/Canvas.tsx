@@ -17,13 +17,15 @@ import {
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { Architecture, Ownership } from '../../shared/types'
+import type { Architecture, Change, Ownership } from '../../shared/types'
 import { addEdge, removeComponent, removeEdge, type OpResult } from '../model/edit-ops'
 import { liveClass, type Recent } from '../model/live/recent'
+import { describeChange, ranker } from '../model/recency'
 import type { Mark } from '../model/review'
 import Inspector from './Inspector'
 import { edgeTypes } from './live/DrawnEdge'
 import Follow, { motionMs } from './live/Follow'
+import Legend from './recency/Legend'
 import {
   build,
   dependency,
@@ -40,6 +42,7 @@ import {
 type CanvasProps = {
   architecture: Architecture
   ownership: Ownership | null
+  changes?: Record<string, Change>
   recent: Recent
   theme: string
   selectedId: string | null
@@ -48,10 +51,12 @@ type CanvasProps = {
   marks?: Record<string, Mark>
 }
 
-function classOf(recent: Recent, marks: Record<string, Mark> | undefined, id: string): string | undefined {
+type Shown = NodeData & { hint?: string }
+
+function classOf(recent: Recent, marks: Record<string, Mark> | undefined, id: string, step?: number): string | undefined {
   const mark = marks?.[id]
   const live = liveClass(recent, id)
-  return [live, mark && `mark-${mark}`].filter(Boolean).join(' ') || undefined
+  return [live, mark && `mark-${mark}`, step !== undefined && `age-${step}`].filter(Boolean).join(' ') || undefined
 }
 
 const FIT = { padding: FIT_PADDING }
@@ -84,9 +89,9 @@ function marker(color: string) {
   return { type: MarkerType.ArrowClosed, width: 15, height: 15, color }
 }
 
-function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
+function ComponentNode({ data }: NodeProps<Node<Shown>>) {
   return (
-    <div className={`node node-${data.role}`}>
+    <div className={`node node-${data.role}`} title={data.hint}>
       <Handle type="target" position={Position.Top} id={HANDLE_IN} />
       <Handle type="source" position={Position.Bottom} id={HANDLE_OUT} />
       <div className="node-head">
@@ -167,7 +172,7 @@ const nodeTypes = { component: ComponentNode }
 
 const DELETE_KEYS = ['Delete', 'Backspace']
 
-export default function Canvas({ architecture, ownership, recent, theme, selectedId, onSelect, onEdit, marks }: CanvasProps) {
+export default function Canvas({ architecture, ownership, changes, recent, theme, selectedId, onSelect, onEdit, marks }: CanvasProps) {
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
@@ -210,9 +215,20 @@ export default function Canvas({ architecture, ownership, recent, theme, selecte
     return { nodes: rfNodes, edges: rfEdges }
   }, [architecture, colors, editing, stage])
 
+  const stepOf = useMemo(() => ranker(Object.values(changes ?? {})), [changes])
+
   const marked = useMemo(
-    () => nodes.map((n) => ({ ...n, selected: n.id === selectedId, className: classOf(recent, marks, n.id) })),
-    [nodes, selectedId, recent, marks]
+    () =>
+      nodes.map((n) => {
+        const change = changes?.[n.id]
+        return {
+          ...n,
+          selected: n.id === selectedId,
+          className: classOf(recent, marks, n.id, stepOf(change)),
+          data: { ...n.data, hint: describeChange(change, Date.now()) }
+        }
+      }),
+    [nodes, selectedId, recent, marks, changes, stepOf]
   )
 
   const drawn = useMemo(() => edges.map((e) => ({ ...e, className: classOf(recent, marks, e.id) })), [edges, recent, marks])
@@ -308,6 +324,7 @@ export default function Canvas({ architecture, ownership, recent, theme, selecte
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
       </ReactFlow>
+      {changes && Object.keys(changes).length > 0 && <Legend className="canvas-legend" />}
       {ownership && <OwnershipPanel ownership={ownership} />}
       {selected && <Inspector node={selected} onClose={close} onSelect={onSelect} onEdit={onEdit} onDrop={(id) => drop([id])} />}
     </div>

@@ -38,6 +38,7 @@ const architect: ArchitectApi = {
   rescan: (root) => invoke('architect:rescan', root),
   listFunctions: (root, scope) => invoke('architect:list-functions', root, scope),
   ownership: (root) => invoke('architect:ownership', root),
+  recency: (root) => invoke('architect:recency', root),
   readSource: (root, file, from, length) =>
     invoke('architect:read-source', root, file, from, length),
   openSource: (root, file) => invoke('architect:open-source', root, file),

@@ -464,6 +464,9 @@ export function installMock() {
     async ownership(root) {
       return ownerships[root] ?? null
     },
+    async recency() {
+      return { functions: {}, components: {} }
+    },
     async rescan(root) {
       const scanned = mockCodeMap(root)
       codeMaps[root] = scanned

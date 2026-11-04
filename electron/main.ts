@@ -216,6 +216,7 @@ function wireIpc() {
   handle('architect:rescan', (root: string) => daemon.rescan(root))
   handle('architect:list-functions', (root: string, scope?: unknown) => daemon.listFunctions(root, scope))
   handle('architect:ownership', (root: string) => daemon.ownership(root))
+  handle('architect:recency', (root: string) => daemon.recency(root))
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
   )
