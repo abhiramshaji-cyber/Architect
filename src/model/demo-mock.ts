@@ -548,6 +548,9 @@ export function installMock() {
     async gitDefaultBranch(root) {
       return demoGit(root)
     },
+    async tabTitle(root) {
+      return root.split(/[\\/]/).filter(Boolean).pop() ?? 'Architect'
+    },
     async gitCommits(root) {
       return demoGit(root)
     },

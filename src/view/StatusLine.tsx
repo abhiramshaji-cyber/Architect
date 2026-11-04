@@ -63,6 +63,25 @@ export default function StatusLine({ project, parseError, viewLabel, theme, onFl
 
   useEffect(() => registerSegment({ id: 'core.git', order: 5, text: gitText(git) }), [git])
 
+  const head = git?.ok ? JSON.stringify(git.value.head) : ''
+  useEffect(() => {
+    if (!root) {
+      document.title = 'Architect'
+      return
+    }
+
+    let live = true
+    window.architect
+      .tabTitle(root)
+      .then((title) => {
+        if (live) document.title = title
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [root, head])
+
   useEffect(() => registerSegment({ id: 'core.view', order: 10, text: viewLabel ?? '' }), [viewLabel])
 
   const unsaved = isDirty(project.file) ? project.file?.path ?? '' : ''

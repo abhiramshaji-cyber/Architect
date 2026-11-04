@@ -29,6 +29,7 @@ import * as diff from './git/diff'
 import * as git from './git/git'
 import { commitsSince } from './git/log'
 import * as open from './git/open'
+import { readTabTitle } from './git/title'
 import * as github from './github/github'
 import { createPtyHost } from './pty/pty'
 import { search } from './search/search'
@@ -256,6 +257,7 @@ function wireIpc() {
   handleIn('architect:pty-kill', (window, id: string) => hostOf(window).kill(id))
 
   handle('architect:git-status', (root: string) => git.status(root))
+  handle('architect:tab-title', (root: string) => readTabTitle(root))
   handle('architect:git-default-branch', (root: string) => git.defaultBranch(root))
   handle('architect:git-local-branches', (root: string) => git.localBranches(root))
   handle('architect:git-remote-branches', (root: string) => git.remoteBranches(root))

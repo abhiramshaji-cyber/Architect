@@ -73,6 +73,7 @@ const architect: ArchitectApi = {
   },
   gitStatus: (root) => invoke('architect:git-status', root),
   gitDefaultBranch: (root) => invoke('architect:git-default-branch', root),
+  tabTitle: (root) => invoke('architect:tab-title', root),
   gitLocalBranches: (root) => invoke('architect:git-local-branches', root),
   gitRemoteBranches: (root) => invoke('architect:git-remote-branches', root),
   gitFetch: (root) => invoke('architect:git-fetch', root),
