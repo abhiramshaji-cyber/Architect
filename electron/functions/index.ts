@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { CodeMap, FunctionList } from '../../shared/types'
+import type { CodeMap, FunctionList, FunctionRow } from '../../shared/types'
 import { declaredEntries, edgesOf, factsOf } from './facts'
 import { importanceOf } from './importance'
 import { foldersOf, scopeOf, subgraphOf, within } from './scope'
@@ -15,11 +15,10 @@ function manifestOf(root: string): unknown {
   }
 }
 
-export function functionsOf(map: CodeMap, declared: Set<string>, asked?: unknown): FunctionList {
+export function indexOf(map: CodeMap, declared: Set<string>, scope: string): { rows: FunctionRow[]; calls: number[][] } {
   const edges = edgesOf(map)
   const facts = factsOf(map, declared, edges)
   const entries = map.folders.flatMap((folder) => folder.files).flatMap((file) => file.functions)
-  const scope = scopeOf(map, asked)
 
   const keep = facts.flatMap((fact, at) => (within(fact.file, scope) ? [at] : []))
   const sub = scope === '' ? edges : subgraphOf(edges, keep)
@@ -42,14 +41,24 @@ export function functionsOf(map: CodeMap, declared: Set<string>, asked?: unknown
     }
     return [outside > 0 ? { ...row, outside } : row]
   })
+  return { rows, calls: sub }
+}
+
+export function functionsOf(map: CodeMap, declared: Set<string>, asked?: unknown): FunctionList {
+  const scope = scopeOf(map, asked)
+  const { rows, calls } = indexOf(map, declared, scope)
   return {
     rows,
-    tree: treeOf(rows, sub, scope !== ''),
+    tree: treeOf(rows, calls, scope !== ''),
     scope,
     folders: foldersOf(map, scope),
   }
 }
 
+export function manifestEntries(root: string): Set<string> {
+  return declaredEntries(manifestOf(root))
+}
+
 export function listFunctions(root: string, map: CodeMap, scope?: unknown): FunctionList {
-  return functionsOf(map, declaredEntries(manifestOf(root)), scope)
+  return functionsOf(map, manifestEntries(root), scope)
 }

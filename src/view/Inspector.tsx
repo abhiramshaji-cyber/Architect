@@ -309,6 +309,17 @@ export default function Inspector({ node, onClose, onSelect, onEdit: edit, onDro
                 </ul>
               </section>
             )}
+
+            {node.covers.length > 0 && (
+              <section className="inspector-section">
+                <h3>Functions</h3>
+                <ul className="inspector-owns">
+                  {node.covers.map((ref) => (
+                    <li key={ref}>{ref.replace('#', ' · ')}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </>
         )}
       </aside>

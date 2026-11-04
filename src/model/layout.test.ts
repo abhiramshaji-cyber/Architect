@@ -424,3 +424,32 @@ describe('positions with a stored layout', () => {
     for (const id of grown.map((n) => n.id)) expect(at.get(id)).toBeDefined()
   })
 })
+
+describe('labelled flows', () => {
+  const flow: Architecture = {
+    title: 't',
+    summary: 's',
+    components: [
+      { id: 'channel', purpose: '', owns: ['src/chat/**'], covers: ['src/chat/handler.ts#handle'] },
+      { id: 'agent', purpose: '', owns: [] },
+    ],
+    edges: [{ from: 'channel', to: 'agent', label: 'user message' }],
+    forbidden: [],
+    packages: [],
+  }
+
+  it('carries the flow label and the covered functions to the canvas', () => {
+    const { nodes, links } = build(flow)
+    expect(links).toEqual([{ id: 'channel->agent', from: 'channel', to: 'agent', label: 'user message' }])
+    expect(nodes.map((n) => n.data.covers)).toEqual([['src/chat/handler.ts#handle'], []])
+  })
+
+  it('places the target below its source with room for the label', () => {
+    const { nodes, links } = build(flow)
+    const at = positions(nodes, links)
+    const plain = positions(nodes, links.map(({ label: _, ...rest }) => rest))
+    expect((at.get('agent')?.y ?? 0) - (at.get('channel')?.y ?? 0)).toBeGreaterThan(
+      (plain.get('agent')?.y ?? 0) - (plain.get('channel')?.y ?? 0),
+    )
+  })
+})

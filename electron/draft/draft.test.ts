@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { CodeMap, FileEntry } from '../../shared/types'
 import { ownership, parse } from '../contract/graph'
-import { type ClaudeOutput, draft, evidence, promptFor, validate } from './draft'
+import { type ClaudeOutput, type ClaudeRun, draft, evidence, promptFor, skeleton, validate } from './draft'
 import { scopeFor, scopeOf } from './scope'
 
 function fn(name: string, line: number, description: string, calls: { file: string; fn: number }[] = []) {
@@ -20,300 +20,264 @@ function map(files: FileEntry[]): CodeMap {
   return { root: '/repo', scannedAt: 0, folders: [{ path: '', folders: [], files }] }
 }
 
-const sample = map([
-  file('ui/page.ts', [fn('page', 1, 'renders the page a visitor lands on', [{ file: 'api/handler.ts', fn: 0 }])]),
-  file('api/handler.ts', [fn('handler', 1, 'answers an http request with stored rows')]),
+const bot = map([
+  file('src/chat/handler.ts', [fn('handle', 1, 'takes a user message', [{ file: 'src/agent/loop.ts', fn: 0 }])]),
+  file('src/agent/loop.ts', [fn('think', 1, 'asks the model what to do', [{ file: 'src/tools/search.ts', fn: 0 }])]),
+  file('src/tools/search.ts', [fn('search', 1, 'searches the knowledge base')]),
+  file('src/data/topics.json', []),
+  file('tests/loop.test.ts', [fn('loopTest', 1, 'checks the loop', [{ file: 'src/agent/loop.ts', fn: 0 }])]),
 ])
 
-const reply = [
-  '```markdown',
-  '# repo',
-  '',
-  'A tiny web app.',
-  '',
-  '## Components',
-  '',
-  '### api',
-  'Answers http requests from the store.',
-  'owns: `api/**`',
-  '',
-  '### ui',
-  'Draws the pages a visitor sees.',
-  'owns: `ui/**`',
-  '',
-  '## Dependencies',
-  '',
-  '- ui -> api',
-  '',
-  '## Forbidden',
-  '',
-  '## Packages',
-  '```',
-].join('\n')
+const json = (body: unknown) => `Here it is:\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\``
+
+const flowReply = json({
+  title: 'bot',
+  summary: 'Answers questions from a knowledge base.',
+  components: [
+    { id: 'channel', purpose: 'Receives user messages.', functions: ['f1'] },
+    { id: 'agent', purpose: 'Decides what to do with a message.', functions: ['f2'] },
+    { id: 'retrieval', purpose: 'Finds passages in the knowledge base.', functions: ['f3'] },
+    { id: 'llm', purpose: 'The model provider.', functions: [] },
+  ],
+  flows: [
+    { from: 'channel', to: 'agent', label: 'user message' },
+    { from: 'agent', to: 'retrieval', label: 'search query' },
+    { from: 'agent', to: 'llm', label: 'prompt' },
+  ],
+})
+
+const folderReply = json({
+  title: 'bot',
+  summary: 'A bot.',
+  components: [
+    { id: 'src', purpose: 'The bot.', functions: ['f1', 'f2', 'f3'] },
+    { id: 'tests', purpose: 'Tests.', functions: ['f4'] },
+  ],
+  flows: [{ from: 'tests', to: 'src', label: 'calls' }],
+})
 
 const ok = (stdout: string): ClaudeOutput => ({ code: 0, stdout, stderr: '' })
 
+function replies(...outputs: string[]): { run: ClaudeRun; prompts: string[] } {
+  const prompts: string[] = []
+  const run: ClaudeRun = async (prompt) => {
+    prompts.push(prompt)
+    return ok(outputs[Math.min(prompts.length, outputs.length) - 1] ?? '')
+  }
+  return { run, prompts }
+}
+
 describe('evidence', () => {
-  it('groups files under their top level folder with file and function counts', () => {
-    const found = evidence(sample)
-
-    expect(found.components.map((c) => c.id)).toEqual(['api', 'ui'])
-    expect(found.components.map((c) => c.owns)).toEqual([['api/**'], ['ui/**']])
-    expect(found.components.map((c) => c.files)).toEqual([1, 1])
-    expect(found.components.map((c) => c.functions)).toEqual([1, 1])
-  })
-
-  it('carries the generated sentences rather than the folder name', () => {
-    expect(evidence(sample).components[1]?.sentences).toEqual(['renders the page a visitor lands on'])
-  })
-
-  it('aggregates call refs between folders into candidate edges with a call count', () => {
-    const busy = map([
-      file('ui/a.ts', [fn('a', 1, 'one', [{ file: 'api/h.ts', fn: 0 }, { file: 'api/h.ts', fn: 1 }])]),
-      file('ui/b.ts', [fn('b', 1, 'two', [{ file: 'api/h.ts', fn: 0 }])]),
-      file('api/h.ts', [fn('h', 1, 'three'), fn('i', 6, 'four')]),
+  it('takes every indexed function with a ref, its summary and its calls', () => {
+    const found = evidence(bot)
+    expect(found.functions.map((f) => [f.ref, f.row.file, f.row.name])).toEqual([
+      ['f1', 'src/chat/handler.ts', 'handle'],
+      ['f2', 'src/agent/loop.ts', 'think'],
+      ['f3', 'src/tools/search.ts', 'search'],
+      ['f4', 'tests/loop.test.ts', 'loopTest'],
     ])
-
-    expect(evidence(busy).candidates).toEqual([{ from: 'ui', to: 'api', calls: 3 }])
-  })
-
-  it('leaves out calls that stay inside one folder and calls into files it never scanned', () => {
-    const inside = map([
-      file('ui/a.ts', [fn('a', 1, 'one', [{ file: 'ui/b.ts', fn: 0 }, { file: 'vendor/x.ts', fn: 0 }])]),
-      file('ui/b.ts', [fn('b', 1, 'two')]),
+    expect(found.calls).toEqual([
+      [0, 1],
+      [1, 2],
+      [3, 1],
     ])
-
-    expect(evidence(inside).candidates).toEqual([])
+    expect(found.tops).toEqual(['src', 'tests'])
+    expect(found.indexed.has('src/data/topics.json')).toBe(false)
   })
 
-  it('finds nothing to draft from in a repo whose files all sit at the root', () => {
-    expect(evidence(map([file('index.ts', [fn('go', 1, 'starts up')])])).components).toEqual([])
-  })
-
-  it('finds nothing to draft from in a scan that found no files at all', () => {
-    expect(evidence(map([]))).toEqual({ components: [], candidates: [] })
+  it('keeps only the functions inside the scope', () => {
+    const found = evidence(bot, 'src/agent')
+    expect(found.functions.map((f) => f.row.name)).toEqual(['think'])
+    expect(found.calls).toEqual([])
   })
 })
 
 describe('promptFor', () => {
-  it('sends the ids, the globs, the sentences and the candidate edges', () => {
-    const text = promptFor(evidence(sample), 'repo')
-
-    expect(text).toContain('<component id="ui" files="1" functions="1" owns="ui/**">')
-    expect(text).toContain('- renders the page a visitor lands on')
-    expect(text).toContain('- ui -> api (1 calls)')
+  it('sends the function index and the call graph, never a folder listing', () => {
+    const prompt = promptFor(evidence(bot), 'bot')
+    expect(prompt).toContain('f2 | src/agent/loop.ts | think |')
+    expect(prompt).toContain('f1 -> f2')
+    expect(prompt).toContain('- src/data/topics.json')
+    expect(prompt).not.toContain('owns=')
   })
 
-  it('caps how many components and sentences a very large repo sends', () => {
-    const files: FileEntry[] = []
-    for (let folder = 0; folder < 120; folder++) {
-      for (let at = 0; at < 30; at++) {
-        files.push(file(`f${folder}/m${at}.ts`, [fn(`fn${at}`, 1, `sentence ${folder} ${at}`)]))
-      }
-    }
-
-    const found = evidence(map(files))
-    const text = promptFor(found, 'big')
-    const blocks = text.match(/<component /g) ?? []
-    const sentences = text.match(/^- sentence /gm) ?? []
-
-    expect(found.components.length).toBe(120)
-    expect(blocks.length).toBe(40)
-    expect(sentences.length).toBe(40 * 8)
-    expect(text.length).toBeLessThan(200_000)
-  })
-
-  it('says so rather than inventing a sentence when the scan produced no descriptions', () => {
-    const bare = map([file('ui/page.ts', [fn('page', 1, '')])])
-    const text = promptFor(evidence(bare), 'repo')
-
-    expect(text).toContain('<component id="ui" files="1" functions="1" owns="ui/**">')
-    expect(text).toContain('- no descriptions available')
-  })
-
-  it('says there are no candidate edges rather than leaving the section blank', () => {
-    const lone = map([file('ui/page.ts', [fn('page', 1, 'renders a page')])])
-    expect(promptFor(evidence(lone), 'repo')).toContain('\n- none\n')
+  it('leads with the feedback from a rejected reply', () => {
+    expect(promptFor(evidence(bot), 'bot', '', 'Try again.').startsWith('Try again.')).toBe(true)
   })
 })
 
 describe('validate', () => {
-  it('accepts a well formed reply and round trips it through the contract parser', () => {
-    const result = validate(reply, evidence(sample), 'repo')
+  it('turns grouped functions into components with labelled flows', () => {
+    const result = validate(flowReply, evidence(bot), 'bot')
+    if (!result.ok) throw new Error(JSON.stringify(result.error))
 
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    const architecture = parse(result.value)
-    expect(architecture.title).toBe('repo')
-    expect(architecture.components.map((c) => c.id)).toEqual(['api', 'ui'])
-    expect(architecture.components.map((c) => c.purpose)).toEqual([
-      'Answers http requests from the store.',
-      'Draws the pages a visitor sees.',
+    const contract = parse(result.value)
+    expect(contract.components.map((c) => [c.id, c.owns, c.covers ?? []])).toEqual([
+      ['channel', ['src/chat/**'], ['src/chat/handler.ts#handle']],
+      ['agent', ['src/agent/**'], ['src/agent/loop.ts#think']],
+      ['retrieval', ['src/tools/**'], ['src/tools/search.ts#search']],
+      ['llm', [], []],
     ])
-    expect(architecture.edges).toEqual([{ from: 'ui', to: 'api' }])
-  })
-
-  it('reads a reply that carries no fence', () => {
-    const result = validate(reply.replaceAll('```markdown\n', '').replaceAll('```', ''), evidence(sample), 'repo')
-    expect(result.ok).toBe(true)
-  })
-
-  it('takes the owns globs from the scan even when the reply changed them', () => {
-    const result = validate(reply.replace('owns: `ui/**`', 'owns: `everything/**`'), evidence(sample), 'repo')
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).components.find((c) => c.id === 'ui')?.owns).toEqual(['ui/**'])
-  })
-
-  it('drops a component the scan never found', () => {
-    const invented = reply.replace('### api', '### invented\nMade up.\nowns: `invented/**`\n\n### api')
-    const result = validate(invented, evidence(sample), 'repo')
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).components.map((c) => c.id)).toEqual(['api', 'ui'])
-  })
-
-  it('drops an edge that no call in the scanned code stands behind', () => {
-    const result = validate(reply.replace('- ui -> api', '- ui -> api\n- api -> ui'), evidence(sample), 'repo')
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).edges).toEqual([{ from: 'ui', to: 'api' }])
-  })
-
-  it('drops an edge that would close a cycle', () => {
-    const ring = map([
-      file('a/x.ts', [fn('x', 1, 'one', [{ file: 'b/y.ts', fn: 0 }])]),
-      file('b/y.ts', [fn('y', 1, 'two', [{ file: 'c/z.ts', fn: 0 }])]),
-      file('c/z.ts', [fn('z', 1, 'three', [{ file: 'a/x.ts', fn: 0 }])]),
-    ])
-    const text = [
-      '# ring',
-      '',
-      'A ring.',
-      '',
-      '## Components',
-      '',
-      '### a\nOne.\nowns: `a/**`',
-      '',
-      '### b\nTwo.\nowns: `b/**`',
-      '',
-      '### c\nThree.\nowns: `c/**`',
-      '',
-      '## Dependencies',
-      '',
-      '- a -> b',
-      '- b -> c',
-      '- c -> a',
-      '',
-      '## Forbidden',
-      '',
-      '## Packages',
-    ].join('\n')
-
-    const result = validate(text, evidence(ring), 'ring')
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).edges).toEqual([
-      { from: 'a', to: 'b' },
-      { from: 'b', to: 'c' },
+    expect(contract.edges).toEqual([
+      { from: 'channel', to: 'agent', label: 'user message' },
+      { from: 'agent', to: 'retrieval', label: 'search query' },
+      { from: 'agent', to: 'llm', label: 'prompt' },
     ])
   })
 
-  it('never carries forbidden rules or packages the agent invented', () => {
-    const extra = reply
-      .replace('## Forbidden\n', '## Forbidden\n\n- ui -> api : made up\n')
-      .replace('## Packages\n', '## Packages\n\n- react\n')
-    const result = validate(extra, evidence(sample), 'repo')
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).forbidden).toEqual([])
-    expect(parse(result.value).packages).toEqual([])
-  })
-
-  it('keeps one component when the reply names the same id twice', () => {
-    const twice = reply.replace('### ui', '### ui\nFirst take.\nowns: `ui/**`\n\n### ui')
-    const result = validate(twice, evidence(sample), 'repo')
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).components.map((c) => c.id)).toEqual(['api', 'ui'])
-    expect(parse(result.value).components.find((c) => c.id === 'ui')?.purpose).toBe('First take.')
-  })
-
-  it('rejects a reply that is prose rather than a contract', () => {
-    expect(validate('Sure, here is what I think about your repo.', evidence(sample), 'repo')).toEqual({
-      ok: false,
-      error: { kind: 'unusable', detail: 'no component in the reply matches a folder Architect scanned' },
+  it('draws the call graph between components the reply forgot to connect', () => {
+    const reply = json({
+      components: [
+        { id: 'channel', functions: ['f1'] },
+        { id: 'agent', functions: ['f2', 'f3'] },
+      ],
+      flows: [],
     })
+    const result = validate(reply, evidence(bot), 'bot')
+    if (!result.ok) throw new Error('expected a draft')
+    expect(parse(result.value).edges).toEqual([{ from: 'channel', to: 'agent' }])
   })
 
-  it('rejects an empty reply', () => {
-    expect(validate('   ', evidence(sample), 'repo')).toEqual({
-      ok: false,
-      error: { kind: 'unusable', detail: 'the reply was empty' },
+  it('drops flows to unknown components, duplicates and flows that close a loop', () => {
+    const reply = json({
+      components: [
+        { id: 'a', functions: ['f1'] },
+        { id: 'b', functions: ['f3'] },
+      ],
+      flows: [
+        { from: 'a', to: 'b', label: 'one' },
+        { from: 'a', to: 'b', label: 'again' },
+        { from: 'b', to: 'a', label: 'back' },
+        { from: 'a', to: 'ghost', label: 'nowhere' },
+      ],
     })
+    const result = validate(reply, evidence(bot), 'bot')
+    if (!result.ok) throw new Error('expected a draft')
+    expect(parse(result.value).edges).toEqual([{ from: 'a', to: 'b', label: 'one' }])
   })
 
-  it('rejects a reply whose components are all invented', () => {
-    const wrong = reply.replaceAll('### api', '### nope').replaceAll('### ui', '### neither')
-    expect(validate(wrong, evidence(sample), 'repo').ok).toBe(false)
+  it('lets the first component keep a function two components claim and ignores unknown refs', () => {
+    const reply = json({
+      components: [
+        { id: 'one', functions: ['f1', 'f99'] },
+        { id: 'two', functions: ['f1', 'f3'] },
+      ],
+    })
+    const result = validate(reply, evidence(bot), 'bot')
+    if (!result.ok) throw new Error('expected a draft')
+    expect(parse(result.value).components.map((c) => c.covers)).toEqual([
+      ['src/chat/handler.ts#handle'],
+      ['src/tools/search.ts#search'],
+    ])
+  })
+
+  it('uses the exact file when its folder is shared and every glob owns only its own files', () => {
+    const shared = map([
+      file('lib/a.ts', [fn('a', 1, 'reads')]),
+      file('lib/b.ts', [fn('b', 1, 'writes')]),
+      file('app/[id]/page.ts', [fn('page', 1, 'renders')]),
+      file('app/layout.ts', [fn('layout', 1, 'frames')]),
+    ])
+    const reply = json({
+      components: [
+        { id: 'reader', functions: ['f1', 'f4'] },
+        { id: 'writer', functions: ['f2'] },
+        { id: 'page', functions: ['f3'] },
+      ],
+    })
+    const result = validate(reply, evidence(shared), 'shared')
+    if (!result.ok) throw new Error('expected a draft')
+    const contract = parse(result.value)
+    expect(contract.components.map((c) => c.owns)).toEqual([['app/layout.ts', 'lib/a.ts'], ['lib/b.ts'], ['app/[id]/**']])
+    const files = shared.folders.flatMap((f) => f.files.map((x) => x.path))
+    const owned = ownership(files, contract.components)
+    expect(owned.dead).toEqual([])
+    expect(owned.multi).toEqual([])
+    expect(owned.owned).toContainEqual({ path: 'app/[id]/page.ts', owner: 'page' })
+  })
+
+  it('rejects prose, broken JSON and replies whose components cover nothing', () => {
+    expect(validate('I think this is a bot.', evidence(bot), 'bot').ok).toBe(false)
+    expect(validate('{"components": [', evidence(bot), 'bot').ok).toBe(false)
+    expect(validate(json({ components: [{ id: 'llm', functions: [] }] }), evidence(bot), 'bot').ok).toBe(false)
+    expect(validate(json({ components: [{ id: 'has space', functions: ['f1'] }] }), evidence(bot), 'bot').ok).toBe(
+      false,
+    )
   })
 
   it('falls back to the repo name and a plain summary when the reply gives neither', () => {
-    const headless = reply.replace('# repo\n\nA tiny web app.\n\n', '')
-    const result = validate(headless, evidence(sample), 'repo')
-
-    expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).title).toBe('repo')
-    expect(parse(result.value).summary).toBe('The architecture of repo.')
+    const result = validate(json({ components: [{ id: 'core', functions: ['f1'] }] }), evidence(bot), 'bot')
+    if (!result.ok) throw new Error('expected a draft')
+    expect(parse(result.value).title).toBe('bot')
+    expect(parse(result.value).summary).toBe('The architecture of bot.')
   })
 })
 
 describe('draft', () => {
-  it('returns the validated markdown when the agent answers', async () => {
-    const result = await draft('/repo', sample, async () => ok(reply))
-
+  it('returns the flow chart when the first reply is usable', async () => {
+    const { run, prompts } = replies(flowReply)
+    const result = await draft('/repo', bot, run)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(parse(result.value).components.map((c) => c.id)).toEqual(['api', 'ui'])
+    expect(prompts).toHaveLength(1)
   })
 
-  it('reports nothing to draft from and never asks the agent when the scan found no folders', async () => {
-    let asked = false
-    const result = await draft('/repo', map([file('index.ts', [fn('go', 1, 'starts up')])]), async () => {
-      asked = true
-      return ok(reply)
-    })
+  it('rejects a folder tree, tells the model why and keeps the second reply', async () => {
+    const { run, prompts } = replies(folderReply, flowReply)
+    const result = await draft('/repo', bot, run)
+    if (!result.ok) throw new Error('expected a draft')
+    expect(parse(result.value).components.map((c) => c.id)).toEqual(['channel', 'agent', 'retrieval', 'llm'])
+    expect(prompts[1]).toContain('top level folders (src, tests)')
+  })
 
+  it('fails rather than showing a folder tree when the model draws one twice', async () => {
+    const { run, prompts } = replies(folderReply)
+    const result = await draft('/repo', bot, run)
+    expect(prompts).toHaveLength(2)
+    expect(result.ok).toBe(false)
+    if (result.ok || result.error.kind !== 'unusable') throw new Error('expected an unusable draft')
+    expect(result.error.detail).toContain('top level folders')
+  })
+
+  it('retries once after an unusable reply', async () => {
+    const { run, prompts } = replies('no idea', flowReply)
+    expect((await draft('/repo', bot, run)).ok).toBe(true)
+    expect(prompts[1]).toContain('could not be used')
+  })
+
+  it('drafts a flat repo whose files all sit at the root', async () => {
+    const flat = map([file('index.ts', [fn('go', 1, 'starts up')])])
+    const result = await draft('/repo', flat, replies(json({ components: [{ id: 'app', functions: ['f1'] }] })).run)
+    if (!result.ok) throw new Error('expected a draft')
+    expect(parse(result.value).components[0]?.owns).toEqual(['index.ts'])
+  })
+
+  it('reports nothing to draft from and never asks the agent when no function was indexed', async () => {
+    const { run, prompts } = replies(flowReply)
+    const result = await draft('/repo', map([file('README.md', [])]), run)
     expect(result).toEqual({ ok: false, error: { kind: 'nothing-to-draft' } })
-    expect(asked).toBe(false)
+    expect(prompts).toHaveLength(0)
   })
 
   it('reports the agent as not installed', async () => {
-    const result = await draft('/repo', sample, async () => ({ code: 'missing', stdout: '', stderr: '' }))
+    const result = await draft('/repo', bot, async () => ({ code: 'missing', stdout: '', stderr: '' }))
     expect(result).toEqual({ ok: false, error: { kind: 'not-installed' } })
   })
 
   it('reports a timed out agent', async () => {
-    const result = await draft('/repo', sample, async () => ({ code: 'timeout', stdout: '', stderr: '' }))
+    const result = await draft('/repo', bot, async () => ({ code: 'timeout', stdout: '', stderr: '' }))
     expect(result).toEqual({ ok: false, error: { kind: 'timed-out' } })
   })
 
   it('reports a failing agent with its exit code and stderr', async () => {
-    const result = await draft('/repo', sample, async () => ({ code: 3, stdout: '', stderr: ' no credit left \n' }))
+    const result = await draft('/repo', bot, async () => ({ code: 3, stdout: '', stderr: ' no credit left \n' }))
     expect(result).toEqual({ ok: false, error: { kind: 'failed', code: 3, stderr: 'no credit left' } })
   })
 
   it('runs the agent in the repo it is drafting for', async () => {
     let where = ''
-    await draft('/repo', sample, async (_prompt, cwd) => {
+    await draft('/repo', bot, async (_prompt, cwd) => {
       where = cwd
-      return ok(reply)
+      return ok(flowReply)
     })
     expect(where).toBe('/repo')
   })
@@ -321,76 +285,63 @@ describe('draft', () => {
 
 const monorepo = map([
   file('spec/bot/src/agent.ts', [fn('agent', 1, 'answers a shopper', [{ file: 'spec/frontend/src/app.ts', fn: 0 }])]),
+  file('spec/bot/src/tools.ts', [fn('lookup', 1, 'looks up an order')]),
   file('spec/frontend/src/app.ts', [fn('app', 1, 'renders the portal')]),
   file('spec/README.md', []),
   file('zing/bot/src/main.ts', [fn('main', 1, 'runs another client')]),
   file('adssys/index.ts', [fn('index', 1, 'serves ads')]),
 ])
 
-const scopedReply = [
-  '```markdown',
-  '# spec',
-  '',
-  'A delivery bot and its portal.',
-  '',
-  '## Components',
-  '',
-  '### bot',
-  'Answers shoppers.',
-  'owns: `bot/**`',
-  '',
-  '### frontend',
-  'Renders the portal.',
-  'owns: `frontend/**`',
-  '',
-  '## Dependencies',
-  '',
-  '- bot -> frontend',
-  '```',
-].join('\n')
+const scopedReply = json({
+  title: 'spec',
+  summary: 'A delivery bot and its portal.',
+  components: [
+    { id: 'shopper-agent', purpose: 'Answers shoppers.', functions: ['f1'] },
+    { id: 'orders', purpose: 'Looks up orders.', functions: ['f2'] },
+    { id: 'portal', purpose: 'Renders the portal.', functions: ['f3'] },
+  ],
+  flows: [
+    { from: 'shopper-agent', to: 'portal', label: 'answer' },
+    { from: 'shopper-agent', to: 'orders', label: 'order id' },
+  ],
+})
 
 describe('scoped draft', () => {
-  it('drafts only the folders under the scope with globs relative to the repo root', async () => {
-    let prompt = ''
-    const run = async (sent: string) => {
-      prompt = sent
-      return ok(scopedReply)
-    }
+  it('drafts only the functions under the scope with globs relative to the repo root', async () => {
+    const { run, prompts } = replies(scopedReply)
     const result = await draft('/repo', monorepo, run, undefined, 'spec')
     if (!result.ok) throw new Error('expected a draft')
 
     const contract = parse(result.value)
     expect(contract.scope).toBe('spec')
-    expect(contract.title).toBe('spec')
     expect(contract.components.map((c) => [c.id, c.owns])).toEqual([
-      ['bot', ['spec/bot/**']],
-      ['frontend', ['spec/frontend/**']],
+      ['shopper-agent', ['spec/bot/src/agent.ts']],
+      ['orders', ['spec/bot/src/tools.ts']],
+      ['portal', ['spec/frontend/**']],
     ])
-    expect(contract.edges).toEqual([{ from: 'bot', to: 'frontend' }])
-    expect(prompt).toContain('at spec/')
-    expect(prompt).not.toContain('zing')
-    expect(prompt).not.toContain('adssys')
-
-    const files = monorepo.folders.flatMap((f) => f.files.map((x) => x.path)).filter((x) => x.startsWith('spec/'))
-    expect(ownership(files, contract.components).dead).toEqual([])
+    expect(contract.edges).toEqual([
+      { from: 'shopper-agent', to: 'portal', label: 'answer' },
+      { from: 'shopper-agent', to: 'orders', label: 'order id' },
+    ])
+    expect(prompts[0]).toContain('at spec/')
+    expect(prompts[0]).not.toContain('zing')
+    expect(prompts[0]).not.toContain('adssys')
   })
 
-  it('drafts the whole repo with no scope, exactly as before', async () => {
-    expect(evidence(monorepo).components.map((c) => c.owns)).toEqual([['adssys/**'], ['spec/**'], ['zing/**']])
-    const result = await draft('/repo', sample, async () => ok(reply))
-    if (!result.ok) throw new Error('expected a draft')
-    expect(result.value).not.toContain('scope:')
-    expect(parse(result.value).scope).toBeUndefined()
-  })
-
-  it('falls back to the whole repo when the scope holds no folder to draft', async () => {
-    let prompt = ''
-    const run = async (sent: string) => {
-      prompt = sent
-      return ok(reply)
-    }
+  it('falls back to the whole repo when the scope holds no function', async () => {
+    const { run, prompts } = replies(scopedReply)
     await draft('/repo', monorepo, run, undefined, 'spec/README.md')
-    expect(prompt).toContain('owns="zing/**"')
+    expect(prompts[0]).toContain('zing/bot/src/main.ts')
+  })
+})
+
+describe('skeleton', () => {
+  it('starts a hand written contract from the top level folders', () => {
+    expect(skeleton(monorepo).map((c) => [c.id, c.owns])).toEqual([
+      ['adssys', ['adssys/**']],
+      ['spec', ['spec/**']],
+      ['zing', ['zing/**']],
+    ])
   })
 })
 

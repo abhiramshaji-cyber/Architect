@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import chokidar, { type FSWatcher } from 'chokidar'
+import { folderShaped } from '../shared/folders'
 import { SOCKET_PATH } from '../shared/socket'
 import {
   type Architecture,
@@ -160,6 +161,27 @@ function starterArchitecture(root: string, map: CodeMap): Architecture {
     forbidden: [],
     packages: [],
   }
+}
+
+const shapes = new WeakMap<Architecture, boolean>()
+
+function foldersOnly(root: string, architecture: Architecture): boolean {
+  const known = shapes.get(architecture)
+  if (known !== undefined) return known
+
+  let tops: string[] = []
+  try {
+    const entries = fs.readdirSync(path.join(root, architecture.scope ?? ''), { withFileTypes: true })
+    tops = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+  } catch {}
+
+  const shaped = folderShaped(architecture, tops)
+  shapes.set(architecture, shaped)
+  return shaped
+}
+
+function redrawable(state: ProjectState): boolean {
+  return state.contract.status === 'ready' && state.architecture !== null && foldersOnly(state.root, state.architecture)
 }
 
 function errorText(err: unknown): string {
@@ -432,6 +454,7 @@ export function createDaemon(options: DaemonOptions = {}) {
         root: p.root,
         title: p.architecture?.title ?? path.basename(p.root),
         contract: p.contract,
+        ...(redrawable(p) ? { folderShaped: true as const } : {}),
         ...(drafting.has(p.root) ? { drafting: true as const } : {}),
         ...(failure ? { draftError: failure } : {}),
       }
@@ -728,10 +751,16 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   async function runDraft(root: string): Promise<DraftResult<string>> {
     const state = loadProject(root)
-    if (state.contract.status !== 'missing') throw new Error(`${root} already has an architect.md`)
+    const redraw = redrawable(state)
+    if (state.contract.status !== 'missing' && !redraw) throw new Error(`${root} already has an architect.md`)
 
     const drafted = await draft(root, await mapOf(root), claude, undefined, await scopeOf(root))
     if (!drafted.ok) return drafted
+
+    if (redraw && redrawable(state)) {
+      writeContract(state, parse(drafted.value), drafted.value)
+      return drafted
+    }
 
     const adopted = adopt(state, drafted.value)
     if (adopted.status === 'rejected') throw new Error(adopted.reason)

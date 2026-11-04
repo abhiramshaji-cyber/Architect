@@ -12,8 +12,8 @@ function diffNodes(before: Map<string, string>, after: Map<string, string>, touc
 
 function contractNodes(architecture: Architecture | null): Map<string, string> {
   const nodes = new Map<string, string>()
-  for (const c of architecture?.components ?? []) nodes.set(c.id, JSON.stringify([c.purpose, c.owns]))
-  for (const e of architecture?.edges ?? []) nodes.set(`${e.from}->${e.to}`, '')
+  for (const c of architecture?.components ?? []) nodes.set(c.id, JSON.stringify([c.purpose, c.owns, c.covers ?? []]))
+  for (const e of architecture?.edges ?? []) nodes.set(`${e.from}->${e.to}`, e.label ?? '')
   return nodes
 }
 

@@ -28,6 +28,7 @@ export type ProjectEntry = {
   codeBusy: boolean
   codeError: string | null
   owners: Ownership | null
+  folderShaped: boolean
   drafting: boolean
   draftError: DraftFailure | null
   file: Buffer | null
@@ -54,6 +55,7 @@ export type ProjectState = {
   codeBusy: boolean
   codeError: string | null
   owners: Ownership | null
+  folderShaped: boolean
   drafting: boolean
   draftError: DraftFailure | null
   file: Buffer | null
@@ -79,6 +81,7 @@ function emptyEntry(status: ProjectEntry['status'] = 'loading'): ProjectEntry {
     codeBusy: false,
     codeError: null,
     owners: null,
+    folderShaped: false,
     drafting: false,
     draftError: null,
     file: null,
@@ -104,6 +107,7 @@ function activeView(entries: Record<string, ProjectEntry>, root: string | null) 
     codeBusy: entry?.codeBusy ?? false,
     codeError: entry?.codeError ?? null,
     owners: entry?.owners ?? null,
+    folderShaped: entry?.folderShaped ?? false,
     drafting: entry?.drafting ?? false,
     draftError: entry?.draftError ?? null,
     file: entry?.file ?? null,
@@ -223,7 +227,13 @@ function loadedProjects(projects: ProjectSummary[]): void {
   for (const p of projects) {
     const entry = entries[p.root]
     if (entry?.status !== 'ready') continue
-    entries[p.root] = { ...entry, contract: p.contract, drafting: p.drafting ?? false, draftError: p.draftError ?? null }
+    entries[p.root] = {
+      ...entry,
+      contract: p.contract,
+      folderShaped: p.folderShaped ?? false,
+      drafting: p.drafting ?? false,
+      draftError: p.draftError ?? null,
+    }
   }
   set({ projects, entries })
   if (bound || Object.keys(state.entries).length > 0) return
@@ -286,7 +296,8 @@ function enterProject(root: string): void {
 
 export function createContract(): void {
   const root = state.currentRoot
-  if (!root || state.entries[root]?.contract?.status !== 'missing') return
+  const entry = root ? state.entries[root] : undefined
+  if (!root || !entry || (entry.contract?.status !== 'missing' && !entry.folderShaped)) return
 
   void run(root, async () => {
     const architecture = await window.architect.createContract(root)
@@ -298,7 +309,8 @@ export function createContract(): void {
 
 export function draftContract(): void {
   const root = state.currentRoot
-  if (!root || state.entries[root]?.contract?.status !== 'missing') return
+  const entry = root ? state.entries[root] : undefined
+  if (!root || !entry || (entry.contract?.status !== 'missing' && !entry.folderShaped)) return
   if (state.entries[root]?.drafting) return
 
   patchEntry(root, { drafting: true, draftError: null })

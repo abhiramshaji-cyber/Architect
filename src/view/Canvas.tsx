@@ -91,7 +91,7 @@ function ComponentNode({ data }: NodeProps<Node<NodeData>>) {
       <Handle type="source" position={Position.Bottom} id={HANDLE_OUT} />
       <div className="node-head">
         <span className="node-id">{data.label}</span>
-        <span className="node-role">{data.files === undefined ? data.role : `${data.files} files`}</span>
+        <span className="node-role">{data.owns.length === 0 ? 'external' : data.role}</span>
       </div>
     </div>
   )
@@ -183,10 +183,6 @@ export default function Canvas({ architecture, ownership, recent, theme, selecte
   }, [])
 
   const { nodes, edges } = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const o of ownership?.owned ?? []) counts.set(o.owner, (counts.get(o.owner) ?? 0) + 1)
-    for (const m of ownership?.multi ?? []) for (const id of m.owners) counts.set(id, (counts.get(id) ?? 0) + 1)
-
     const { nodes: logical, links } = build(architecture)
     const at = positions(logical, links, architecture.layout, stage)
 
@@ -197,7 +193,7 @@ export default function Canvas({ architecture, ownership, recent, theme, selecte
       deletable: editing ? true : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
       style: { width: NODE_W, height: NODE_H },
-      data: counts.has(n.id) ? { ...n.data, files: counts.get(n.id) } : n.data
+      data: n.data
     }))
 
     const rfEdges: RFEdge[] = links.map((l) => ({
@@ -205,13 +201,14 @@ export default function Canvas({ architecture, ownership, recent, theme, selecte
       type: 'drawn',
       source: l.from,
       target: l.to,
+      label: l.label,
       deletable: editing ? true : undefined,
       markerEnd: marker(colors.ink),
       style: { stroke: colors.ink, strokeWidth: 1.4 }
     }))
 
     return { nodes: rfNodes, edges: rfEdges }
-  }, [architecture, ownership, colors, editing, stage])
+  }, [architecture, colors, editing, stage])
 
   const marked = useMemo(
     () => nodes.map((n) => ({ ...n, selected: n.id === selectedId, className: classOf(recent, marks, n.id) })),
