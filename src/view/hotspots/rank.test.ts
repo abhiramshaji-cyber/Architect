@@ -19,15 +19,20 @@ const churn: Churn = { days: 90, files: { 'a.ts': { commits: 2, added: 10, remov
 
 describe('rank', () => {
   it('scores files by lines over the most lines times commits over the most commits, breaking ties by commits', () => {
-    expect(rank(map, churn, 'files').map(({ key, score, commits, added }) => ({ key, score, commits, added }))).toEqual([
+    expect(rank(map, churn, 'files').items.map(({ key, score, commits, added }) => ({ key, score, commits, added }))).toEqual([
       { key: 'src/b.ts', score: 0.5, commits: 4, added: 1 },
       { key: 'a.ts', score: 0.5, commits: 2, added: 10 },
       { key: 'src/c.md', score: 0, commits: 0, added: 0 },
     ])
   })
 
+  it('returns the most lines and most commits it divided by', () => {
+    expect(rank(map, churn, 'files').most).toEqual({ lines: 100, commits: 4 })
+    expect(rank(map, churn, 'functions').most).toEqual({ lines: 80, commits: 3 })
+  })
+
   it('scores functions by their own span and their own commits', () => {
-    expect(rank(map, churn, 'functions').map(({ name, lines, commits, score }) => ({ name, lines, commits, score }))).toEqual([
+    expect(rank(map, churn, 'functions').items.map(({ name, lines, commits, score }) => ({ name, lines, commits, score }))).toEqual([
       { name: 'big', lines: 80, commits: 1, score: 1 / 3 },
       { name: 'small', lines: 10, commits: 3, score: 0.125 },
     ])
@@ -35,12 +40,12 @@ describe('rank', () => {
 
   it('breaks full ties by lines and then by key', () => {
     const flat: CodeMap = { root: '/r', scannedAt: 0, folders: [{ path: '', folders: [], files: ['b', 'a', 'c'].map((path, at) => ({ path, lines: at === 2 ? 5 : 1, functions: [] })) }] }
-    expect(rank(flat, { days: 9, files: {}, functions: {} }, 'files').map((item) => item.key)).toEqual(['c', 'a', 'b'])
+    expect(rank(flat, { days: 9, files: {}, functions: {} }, 'files').items.map((item) => item.key)).toEqual(['c', 'a', 'b'])
   })
 
   it('scores everything zero when nothing changed or nothing has lines', () => {
-    expect(rank(map, { days: 30, files: {}, functions: {} }, 'files').every((item) => item.score === 0)).toBe(true)
-    expect(rank({ root: '/r', scannedAt: 0, folders: [] }, churn, 'functions')).toEqual([])
+    expect(rank(map, { days: 30, files: {}, functions: {} }, 'files').items.every((item) => item.score === 0)).toBe(true)
+    expect(rank({ root: '/r', scannedAt: 0, folders: [] }, churn, 'functions')).toEqual({ items: [], most: { lines: 0, commits: 0 } })
   })
 })
 

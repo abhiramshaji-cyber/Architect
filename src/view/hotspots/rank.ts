@@ -27,9 +27,11 @@ function order(a: Hotspot, b: Hotspot): number {
   return b.score - a.score || b.commits - a.commits || b.lines - a.lines || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
 }
 
-export function rank(map: CodeMap, churn: Churn, level: Level): Hotspot[] {
+export type Most = { lines: number; commits: number }
+
+export function rank(map: CodeMap, churn: Churn, level: Level): { items: Hotspot[]; most: Most } {
   const measured = measure(map, churn, level)
   const most = measured.reduce((top, item) => ({ lines: Math.max(top.lines, item.lines), commits: Math.max(top.commits, item.commits) }), { lines: 0, commits: 0 })
   const share = (value: number, max: number) => (max > 0 ? value / max : 0)
-  return measured.map((item) => ({ ...item, score: share(item.lines, most.lines) * share(item.commits, most.commits) })).sort(order)
+  return { items: measured.map((item) => ({ ...item, score: share(item.lines, most.lines) * share(item.commits, most.commits) })).sort(order), most }
 }

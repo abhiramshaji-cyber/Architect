@@ -34,3 +34,8 @@ export function walk(trail: Trail | null, step: Step): Trail | null {
   if (trail.now === step.to) return trail
   return { back: [...trail.back, trail.now], now: step.to, forward: [] }
 }
+
+export function settled(trail: Trail | null, rows: FunctionRow[], scope: string): Trail | null {
+  if (!trail || scope !== '' || trail.back.length > 0 || trail.forward.length > 0) return trail
+  return resolve(rows, trail.now) < 0 ? null : trail
+}

@@ -5,7 +5,7 @@ import { folderName } from '../../model/layout'
 import { ranker } from '../../model/recency'
 import { loadCodeMap, openFile, useProject } from '../../model/store'
 import FocusView from '../focus/FocusView'
-import { keyOf, walk, type Trail } from '../focus/history'
+import { keyOf, settled, walk, type Trail } from '../focus/history'
 import { useRecency } from '../recency/useRecency'
 import type { ViewProps } from '../../shell/views'
 import Bar from './bar/Bar'
@@ -55,6 +55,10 @@ export default function FunctionsView({ show }: ViewProps) {
     },
     [currentRoot],
   )
+
+  useEffect(() => {
+    if (list) setTrail((now) => settled(now, list.rows, list.scope))
+  }, [list])
 
   useEffect(() => {
     if (list && asked?.root === currentRoot && asked.scope === scope && list.scope !== scope) pickScope(list.scope)

@@ -1,18 +1,15 @@
 import { memo, useMemo } from 'react'
-import type { Hotspot } from './rank'
+import type { Hotspot, Most } from './rank'
 import { axis } from './scale'
 
 const W = 640
 const H = 320
 const PAD = { left: 48, right: 16, top: 12, bottom: 36 }
 
-type ScatterProps = { items: Hotspot[]; top: Set<string>; hovered: string | null; onHover: (key: string | null) => void; onPick: (item: Hotspot) => void }
+type ScatterProps = { items: Hotspot[]; most: Most; top: Set<string>; hovered: string | null; onHover: (key: string | null) => void; onPick: (item: Hotspot) => void }
 
-export default memo(function Scatter({ items, top, hovered, onHover, onPick }: ScatterProps) {
-  const { x, y } = useMemo(() => {
-    const most = items.reduce((m, item) => ({ lines: Math.max(m.lines, item.lines), commits: Math.max(m.commits, item.commits) }), { lines: 0, commits: 0 })
-    return { x: axis(most.lines), y: axis(most.commits) }
-  }, [items])
+export default memo(function Scatter({ items, most, top, hovered, onHover, onPick }: ScatterProps) {
+  const { x, y } = useMemo(() => ({ x: axis(most.lines), y: axis(most.commits) }), [most])
   const px = (lines: number) => PAD.left + x.at(lines) * (W - PAD.left - PAD.right)
   const py = (commits: number) => H - PAD.bottom - y.at(commits) * (H - PAD.top - PAD.bottom)
   const drawn = useMemo(() => [...items].reverse(), [items])

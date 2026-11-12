@@ -7,7 +7,7 @@ export function useChurn(root: string | null, days: number, codeMap: unknown): R
   const [read, setRead] = useState<Read | null>(null)
 
   useEffect(() => {
-    if (!root) return
+    if (!root || !codeMap) return
     let live = true
     window.architect.churn(root, days).then(
       (churn) => live && setRead({ root, days, churn, error: null }),

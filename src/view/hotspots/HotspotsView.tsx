@@ -6,7 +6,7 @@ import { keyOf } from '../focus/history'
 import { Choice } from '../functions/bar/Bar'
 import { storeFocus, storeMode } from '../functions/bar/mode'
 import { plural } from '../functions/Mark'
-import { storeScope, storedScope } from '../functions/scope/pick'
+import { scopeHolding, storeScope, storedScope } from '../functions/scope/pick'
 import { rank, type Hotspot, type Level } from './rank'
 import Scatter from './Scatter'
 import { useChurn } from './useChurn'
@@ -54,13 +54,11 @@ export default function HotspotsView({ show }: ViewProps) {
     else loadCodeMap()
   }, [currentRoot, codeMap, codeBusy, codeError])
 
-  const items = useMemo(() => (codeMap && read?.churn ? rank(codeMap, read.churn, level) : null), [codeMap, read, level])
+  const ranking = useMemo(() => (codeMap && read?.churn ? rank(codeMap, read.churn, level) : null), [codeMap, read, level])
+  const items = ranking?.items ?? null
+  const most = ranking?.most ?? { lines: 0, commits: 0 }
   const ranked = useMemo(() => (items ?? []).filter((item) => item.score > 0).slice(0, TOP), [items])
   const top = useMemo(() => new Set(ranked.map((item) => item.key)), [ranked])
-  const most = useMemo(
-    () => (items ?? []).reduce((m, item) => ({ lines: Math.max(m.lines, item.lines), commits: Math.max(m.commits, item.commits) }), { lines: 0, commits: 0 }),
-    [items],
-  )
   const shown = items?.find((item) => item.key === hovered) ?? null
 
   const showLatest = useRef(show)
@@ -72,8 +70,7 @@ export default function HotspotsView({ show }: ViewProps) {
         showLatest.current('files')
         return
       }
-      const scope = storedScope(currentRoot)
-      if (scope !== '' && !item.file.startsWith(`${scope}/`)) storeScope(currentRoot, '')
+      storeScope(currentRoot, scopeHolding(storedScope(currentRoot), item.file))
       storeFocus(currentRoot, keyOf({ file: item.file, line: item.line, name: item.name }))
       storeMode(currentRoot, 'focus')
       showLatest.current('functions')
@@ -93,7 +90,7 @@ export default function HotspotsView({ show }: ViewProps) {
 
       <div className="fn-bar">
         <p className="fn-count" aria-live="polite">
-          {read?.error ? 'Could not read git history' : codeMap === null || codeBusy ? 'Scanning…' : items === null ? 'Reading git history…' : plural(items.length, unit)}
+          {read?.error ? 'Could not read git history' : codeError ? 'Could not read the code map' : codeMap === null || codeBusy ? 'Scanning…' : items === null ? 'Reading git history…' : plural(items.length, unit)}
         </p>
         <Choice label="Measure" keys={LEVELS} value={level} onPick={setLevel} />
         <Choice label="Window" keys={WINDOWS} value={days} onPick={setDays} />
@@ -122,7 +119,7 @@ export default function HotspotsView({ show }: ViewProps) {
           <p className="hs-readout" aria-live="polite">
             {shown ? <Label item={shown} /> : 'Hover a point for its numbers, click it to open.'}
           </p>
-          <Scatter items={items} top={top} hovered={hovered} onHover={setHovered} onPick={onPick} />
+          <Scatter items={items} most={most} top={top} hovered={hovered} onHover={setHovered} onPick={onPick} />
           {ranked.length === 0 ? (
             <p className="fn-empty">Nothing changed in the last {shownDays} days.</p>
           ) : (
