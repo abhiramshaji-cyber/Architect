@@ -1,4 +1,6 @@
-import type { CodeMap, FunctionList, FunctionRow } from '../../shared/types'
+import type { Architecture, CodeMap, FunctionList, FunctionRow } from '../../shared/types'
+import { ownership } from '../contract/graph'
+import { splitsIn } from '../rules/split'
 import { entryFiles, type EntryFiles } from './entries'
 import { edgesOf, factsOf } from './facts'
 import { importanceOf } from './importance'
@@ -45,7 +47,23 @@ export function indexOf(map: CodeMap, declared: EntryFiles, scope: string): { ro
   return { rows, calls: sub }
 }
 
-export function functionsOf(map: CodeMap, declared: EntryFiles, asked?: unknown): FunctionList {
+function ownersOf(map: CodeMap, scope: string, architecture: Architecture | null): Record<string, string> {
+  if (!architecture) return {}
+  const files = map.folders.flatMap((folder) => folder.files.map((file) => file.path)).filter((file) => within(file, scope))
+  const scoped = architecture.scope ? files.filter((file) => file.startsWith(`${architecture.scope}/`)) : files
+  const { owned, multi } = ownership(scoped, architecture.components)
+  return Object.fromEntries([
+    ...owned.map(({ path, owner }) => [path, owner]),
+    ...multi.map(({ path, owners }) => [path, owners.join(' + ')]),
+  ])
+}
+
+export function functionsOf(
+  map: CodeMap,
+  declared: EntryFiles,
+  asked?: unknown,
+  architecture: Architecture | null = null,
+): FunctionList {
   const scope = scopeOf(map, asked)
   const { rows, calls } = indexOf(map, declared, scope)
   return {
@@ -54,11 +72,17 @@ export function functionsOf(map: CodeMap, declared: EntryFiles, asked?: unknown)
     tree: treeOf(rows, calls, scope !== ''),
     scope,
     folders: foldersOf(map, scope),
+    owners: ownersOf(map, scope, architecture),
   }
 }
 
 export { entryFiles, type EntryFiles } from './entries'
 
-export function listFunctions(root: string, map: CodeMap, scope?: unknown): FunctionList {
-  return functionsOf(map, entryFiles(root, map), scope)
+export function listFunctions(
+  root: string,
+  map: CodeMap,
+  scope?: unknown,
+  architecture: Architecture | null = null,
+): FunctionList {
+  return { ...functionsOf(map, entryFiles(root, map), scope, architecture), splits: splitsIn(root, map, architecture) }
 }

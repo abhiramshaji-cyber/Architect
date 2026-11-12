@@ -1,4 +1,4 @@
-import type { FunctionRow, Ownership } from '../../../../shared/types'
+import type { FunctionRow } from '../../../../shared/types'
 
 export type Kind = 'root' | 'component' | 'top' | 'folder' | 'file' | 'function' | 'rest'
 
@@ -21,12 +21,9 @@ export function folderOf(file: string): string {
   return cut < 0 ? '.' : file.slice(0, cut)
 }
 
-export function grouper(ownership: Ownership | null): Grouping {
-  if (!ownership) return { kind: 'top', of: (file) => (file.includes('/') ? file.slice(0, file.indexOf('/')) : '.') }
-  const owners = new Map<string, string>()
-  for (const { path, owner } of ownership.owned) owners.set(path, owner)
-  for (const { path, owners: many } of ownership.multi) owners.set(path, many.join(' + '))
-  return { kind: 'component', of: (file) => owners.get(file) ?? UNOWNED }
+export function grouper(owners: Record<string, string> | null): Grouping {
+  if (!owners) return { kind: 'top', of: (file) => (file.includes('/') ? file.slice(0, file.indexOf('/')) : '.') }
+  return { kind: 'component', of: (file) => owners[file] ?? UNOWNED }
 }
 
 export type SizedFile = { path: string; lines?: number }
@@ -74,8 +71,13 @@ function settle(node: MapNode): number {
   return node.weight
 }
 
-export function nest(rows: FunctionRow[], files: SizedFile[], ownership: Ownership | null, project: string): MapNode {
-  const grouping = grouper(ownership)
+export function nest(
+  rows: FunctionRow[],
+  files: SizedFile[],
+  owners: Record<string, string> | null,
+  project: string,
+): MapNode {
+  const grouping = grouper(owners)
   const root: MapNode = { id: '', label: project, kind: 'root', path: '', weight: 0, children: [] }
   const own = ownLines(rows)
   const index = new Map<string, MapNode>()

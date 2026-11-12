@@ -171,6 +171,29 @@ describe('report', () => {
   })
 })
 
+describe('report suggestions', () => {
+  const architecture = parse(contract())
+  const file = {
+    kind: 'file' as const,
+    path: 'a.ts',
+    lines: 260,
+    over: { lines: { count: 260, limit: 200 } },
+    folder: 'a',
+    entry: 'a.ts',
+    groups: [{ unnamed: 'the leading words of the exported names tie: x x1, y x1', exported: ['xA', 'yB'], members: [{ name: 'xA', line: 2, endLine: 4 }], lines: 3 }],
+    stays: { lines: 257, functions: ['loose'] },
+    files: { count: 1, limit: 'off' as const },
+  }
+  const fn = { kind: 'function' as const, path: 'b.ts', name: 'big', line: 3, endLine: 90, lines: 88, callers: 4, threshold: { lines: 50, callers: 3 }, points: [] }
+
+  it('prints why a file or function has no split, and an unnamed group with its tie', () => {
+    const shown = report(architecture, [], [], [{ ...file, blocked: 'no exported function to group into a job' }, { ...fn, blocked: 'the body is one statement' }, file])
+    expect(shown).toContain('  a.ts  260 lines, limit 200\n    no split: no exported function to group into a job')
+    expect(shown).toContain('  b.ts:3  big  88 lines, 4 callers, over 50 lines with 3 or more callers\n    flagged only: the body is one statement')
+    expect(shown).toContain('    into a/ behind a.ts, 1 code file there\n    unnamed: the leading words of the exported names tie: x x1, y x1  3 lines\n      xA:2\n    stays in the entry: 257 lines, loose')
+  })
+})
+
 describe('run', () => {
   it('exits 0 when the architecture is satisfied', async () => {
     const root = fixture({ 'architect.md': contract({ edges: ['- api -> store'] }), 'api/handler.ts': API, 'store/db.ts': STORE })
@@ -289,6 +312,43 @@ describe('rules', () => {
 
     const shown = lines.join('\n')
     expect(shown).toMatch(/check\s+lines fail 1, files pass, names pass, jobs pass$/)
+  })
+
+  it('lists split suggestions with their evidence only when asked, without changing the exit code', async () => {
+    const big = `export function big() {\n  if (Math.random()) {\n    return 1\n  }\n${'  void 0\n'.repeat(50)}}\n`
+    const callers = "import { big } from './big'\nexport function a() {\n  big()\n}\nexport function b() {\n  big()\n}\nexport function c() {\n  big()\n}\n"
+    const rules = '\n## Rules\n\n- jobs: 3 `api/callers.ts`\n'
+    const root = fixture({ 'architect.md': contract() + rules, 'api/big.ts': big, 'api/callers.ts': callers, 'store/db.ts': STORE })
+
+    expect((await outcome(root)).out).not.toContain('split suggestion')
+    const shown = await outcome(root, ['--suggest'])
+    expect(shown.code).toBe(OK)
+    expect(shown.out).toContain(
+      [
+        '2 split suggestions',
+        '',
+        '  api/big.ts:1  big  55 lines, 3 callers, over 50 lines with 3 or more callers',
+        '    extract if  2-4, 3 lines',
+        '',
+        '  api/callers.ts  3 job groups, limit 3 here and 1 project wide',
+        '    into api/callers/ behind api/callers.ts, 3 of 5 code files there',
+        '    api/callers/a.ts  3 lines',
+        '      a:2',
+      ].join('\n'),
+    )
+    expect(shown.out).toContain('    stays in the entry: 1 line')
+
+    const parsed = JSON.parse((await outcome(root, ['--suggest', '--json'])).out)
+    expect(parsed.suggestions.map((split: { kind: string; path: string }) => `${split.kind} ${split.path}`)).toEqual(['function api/big.ts', 'file api/callers.ts'])
+    expect(JSON.parse((await outcome(root, ['--json'])).out).suggestions).toBeUndefined()
+  })
+
+  it('says so when there is nothing to split, and refuses --suggest on agents', async () => {
+    const root = fixture({ 'architect.md': contract(), 'store/db.ts': STORE })
+    expect((await outcome(root, ['--suggest'])).out).toBe('architect: Demo satisfied, no violations\n\nno split suggestions')
+    expect(parseArgs(['agents', '--suggest'])).toBe('unknown option: --suggest')
+    expect(parseArgs(['--suggest', '--history'])).toBe('--suggest checks and --history lists past runs, pass one')
+    expect(parseArgs(['--suggest'])).toMatchObject({ command: 'check', suggest: true })
   })
 
   it('says so when no run is recorded', async () => {

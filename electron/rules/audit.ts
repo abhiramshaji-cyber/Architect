@@ -9,6 +9,7 @@ export const DEFAULT_RULES: RuleEntry[] = [
   { rule: 'files', limit: 5, globs: [] },
   { rule: 'names', banned: ['Manager', 'Helper', 'Service', 'Factory', 'Base'], globs: [] },
   { rule: 'jobs', limit: 1, globs: [] },
+  { rule: 'split', threshold: { lines: 50, callers: 3 }, globs: [] },
 ]
 
 const compiled = new Map<string, (path: string) => boolean>()
@@ -32,7 +33,7 @@ export function effective(declared: RuleEntry[] | undefined): RuleEntry[] {
   return [...DEFAULT_RULES.filter((entry) => entry.rule !== 'skip'), ...skips, ...own]
 }
 
-function lastFor<R extends RuleEntry['rule']>(entries: RuleEntry[], rule: R, file: string) {
+export function lastFor<R extends RuleEntry['rule']>(entries: RuleEntry[], rule: R, file: string) {
   let found: RuleEntry | undefined
   for (const entry of entries) {
     if (entry.rule === rule && (entry.globs.length === 0 || entry.globs.some((glob) => matches(glob, file)))) found = entry
@@ -40,7 +41,7 @@ function lastFor<R extends RuleEntry['rule']>(entries: RuleEntry[], rule: R, fil
   return found as Extract<RuleEntry, { rule: R }> | undefined
 }
 
-function limitOf(entries: RuleEntry[], rule: LimitRule, file: string): number | 'off' {
+export function limitOf(entries: RuleEntry[], rule: LimitRule, file: string): number | 'off' {
   return lastFor(entries, rule, file)?.limit ?? 'off'
 }
 
@@ -52,7 +53,7 @@ function bannedWord(name: string, entries: RuleEntry[], file: string): string | 
   return banned.find((word) => lower.has(word.toLowerCase()))
 }
 
-function jobsOf(file: string, functions: FunctionEntry[]): FunctionEntry[][] {
+function componentsOf(file: string, functions: FunctionEntry[]): FunctionEntry[][] {
   const parent = functions.map((_, i) => i)
   const find = (i: number): number => {
     while (parent[i] !== i) i = parent[i] = parent[parent[i] as number] as number
@@ -70,11 +71,17 @@ function jobsOf(file: string, functions: FunctionEntry[]): FunctionEntry[][] {
   })
 
   const groups = new Map<number, FunctionEntry[]>()
-  functions.forEach((fn, i) => {
-    if (!fn.exported || fn.name.includes('.')) return
-    groups.set(find(i), [...(groups.get(find(i)) ?? []), fn])
-  })
-  return [...groups.values()].sort((a, b) => (a[0]?.line ?? 0) - (b[0]?.line ?? 0))
+  functions.forEach((fn, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), fn]))
+  return [...groups.values()]
+}
+
+export type Job = { exported: FunctionEntry[]; members: FunctionEntry[] }
+
+export function jobsOf(file: string, functions: FunctionEntry[]): Job[] {
+  return componentsOf(file, functions)
+    .map((members) => ({ exported: members.filter((fn) => fn.exported === true && !fn.name.includes('.')), members }))
+    .filter((job) => job.exported.length > 0)
+    .sort((a, b) => (a.exported[0]?.line ?? 0) - (b.exported[0]?.line ?? 0))
 }
 
 export function folderOf(file: string): string {
@@ -109,7 +116,7 @@ function jobs(entries: RuleEntry[], file: SourceFacts): RuleViolation[] {
   const limit = limitOf(entries, 'jobs', file.path)
   if (limit === 'off') return []
 
-  const groups = jobsOf(file.path, file.functions)
+  const groups = jobsOf(file.path, file.functions).map((job) => job.exported)
   const over = groups[limit]?.[0]
   if (!over) return []
 
@@ -131,10 +138,18 @@ function files(entries: RuleEntry[], considered: SourceFacts[]): RuleViolation[]
   })
 }
 
+export function isSkipped(entries: RuleEntry[], file: string): boolean {
+  return entries.some((entry) => entry.rule === 'skip' && entry.globs.some((glob) => matches(glob, file)))
+}
+
+export function consideredOf(entries: RuleEntry[], sources: SourceFacts[], scope?: string): SourceFacts[] {
+  const inScope = (file: string) => !scope || file === scope || file.startsWith(`${scope}/`)
+  return sources.filter((file) => inScope(file.path) && !isSkipped(entries, file.path))
+}
+
 export function auditRules(declared: RuleEntry[] | undefined, sources: SourceFacts[], scope?: string): RuleViolation[] {
   const entries = effective(declared)
-  const inScope = (file: string) => !scope || file === scope || file.startsWith(`${scope}/`)
-  const considered = sources.filter((file) => inScope(file.path) && !entries.some((entry) => entry.rule === 'skip' && entry.globs.some((glob) => matches(glob, file.path))))
+  const considered = consideredOf(entries, sources, scope)
   const found = [...considered.flatMap((file) => [...lines(entries, file), ...names(entries, file), ...jobs(entries, file)]), ...files(entries, considered)]
   return found.sort((a, b) => a.path.localeCompare(b.path) || a.rule.localeCompare(b.rule) || (a.line ?? 0) - (b.line ?? 0))
 }

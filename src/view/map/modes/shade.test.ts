@@ -114,7 +114,7 @@ describe('shade', () => {
 describe('gather', () => {
   it('collects the rows, the whole unreached bucket and the session files', () => {
     const tree: FunctionTree = { starts: [0], groups: [], unreached: [2], children: [[1], [], []], also: [] }
-    const found = gather({ rows, calls: [], tree, scope: '', folders: [] }, null, [
+    const found = gather({ rows, calls: [], tree, scope: '', folders: [], owners: {} }, null, [
       entry({ session: 's', changed: ['codefile:b/two.ts'] }),
     ])
     expect([...found.unreached]).toEqual([2])

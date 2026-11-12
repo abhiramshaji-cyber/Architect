@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { FunctionRow, Ownership } from '../../../../shared/types'
+import type { FunctionRow } from '../../../../shared/types'
 import { folderOf, grouper, nest, ownLines, UNOWNED } from './nest'
 import { trail } from './trail'
 
@@ -16,14 +16,10 @@ const row = (over: Partial<FunctionRow>): FunctionRow => ({
   ...over,
 })
 
-const ownership: Ownership = {
-  owned: [
-    { path: 'electron/git/log.ts', owner: 'git' },
-    { path: 'src/view/A.tsx', owner: 'canvas' },
-  ],
-  unowned: ['scripts/x.ts'],
-  multi: [{ path: 'shared/both.ts', owners: ['graph', 'types'] }],
-  dead: [],
+const ownership: Record<string, string> = {
+  'electron/git/log.ts': 'git',
+  'src/view/A.tsx': 'canvas',
+  'shared/both.ts': 'graph + types',
 }
 
 describe('ownLines', () => {
@@ -51,7 +47,7 @@ describe('ownLines', () => {
 })
 
 describe('grouper', () => {
-  it('groups by owner, joins shared owners and falls back to unowned', () => {
+  it('groups by owner and falls back to unowned', () => {
     const group = grouper(ownership)
     expect(group.kind).toBe('component')
     expect(group.of('electron/git/log.ts')).toBe('git')

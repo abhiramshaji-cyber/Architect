@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Churn } from '../../../shared/recency'
-import type { CodeMap, Ownership } from '../../../shared/types'
+import type { CodeMap, FunctionList } from '../../../shared/types'
 import { useProject } from '../../model/store'
-import { useFunctions } from '../functions/useFunctions'
 import { type MapNode, nest } from './layout/nest'
 import { gather } from './modes/gather'
 import type { Facts } from './modes/shade'
@@ -43,30 +42,29 @@ function useAsked<T>(
 }
 
 const askChurn = (root: string): Promise<Churn> => window.architect.churn(root)
-const askOwners = (root: string): Promise<Ownership | null> => window.architect.ownership(root)
+const askList = (root: string): Promise<FunctionList> => window.architect.listFunctions(root, '')
 const askMap = (root: string): Promise<CodeMap | null> => window.architect.getCodeMap(root)
 
 export function useMap(): MapData {
   const { currentRoot, codeMap, architecture, history } = useProject()
-  const { list, error } = useFunctions(currentRoot, codeMap, '')
+  const asked = useAsked(currentRoot, codeMap !== undefined, askList, codeMap, architecture)
+  const list = asked.value
   const churn = useAsked(currentRoot, codeMap !== undefined, askChurn, codeMap)
-  const owners = useAsked(currentRoot, list !== null, askOwners, list, architecture)
   const scanned = useAsked(currentRoot, list !== null, askMap, list)
-  const settled = scanned.answered && (architecture === null || owners.answered)
   const project = currentRoot?.split(/[\\/]/).filter(Boolean).pop() ?? ''
   const files = useMemo(() => scanned.value?.folders.flatMap((folder) => folder.files) ?? [], [scanned.value])
 
   const tree = useMemo(
-    () => (list && settled ? nest(list.rows, files, architecture ? owners.value : null, project) : null),
-    [list, files, settled, architecture, owners.value, project],
+    () => (list && scanned.answered ? nest(list.rows, files, architecture ? list.owners : null, project) : null),
+    [list, files, scanned.answered, architecture, project],
   )
   const facts = useMemo(() => (list ? gather(list, churn.value, history) : null), [list, churn.value, history])
 
   return {
     tree,
     facts,
-    error,
+    error: asked.error,
     churnError: churn.error,
-    grouped: architecture && owners.value ? 'components' : 'folders',
+    grouped: architecture ? 'components' : 'folders',
   }
 }

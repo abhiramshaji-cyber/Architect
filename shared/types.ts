@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import { ruleViolationSchema, type RuleEntry } from './rules/rules'
+import type { SplitSuggestion } from './rules/split'
+
+export * from './rules/rules'
+export * from './rules/split'
 
 export type Component = {
   id: string
@@ -33,47 +38,11 @@ export type Architecture = {
   rules?: RuleEntry[]
 }
 
-export type LimitRule = 'lines' | 'files' | 'jobs'
-
-export type RuleEntry =
-  | { rule: LimitRule; limit: number | 'off'; globs: string[] }
-  | { rule: 'names'; banned: string[] | 'off'; globs: string[] }
-  | { rule: 'skip'; globs: string[] }
-
-const checkedRuleSchema = z.enum(['lines', 'files', 'names', 'jobs'])
-
-export type CheckedRule = z.infer<typeof checkedRuleSchema>
-
-export const ruleViolationSchema = z.object({
-  rule: checkedRuleSchema,
-  path: z.string(),
-  line: z.number().optional(),
-  key: z.string(),
-  amount: z.number(),
-  message: z.string(),
-})
-
-export type RuleViolation = z.infer<typeof ruleViolationSchema>
-
-export const ruleRunSchema = z.object({
-  at: z.number(),
-  source: z.enum(['check', 'check_change']),
-  file: z.string().optional(),
-  results: z.array(z.object({ rule: checkedRuleSchema, pass: z.boolean(), violations: z.number().int().nonnegative() })),
-})
-
-export type RuleRun = z.infer<typeof ruleRunSchema>
-
 export type AgentsReport = { written: string[]; unchanged: string[]; removed: string[]; kept: string[]; unplaced: { component: string; reason: string }[] }
 
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
-export type SourceWindow = {
-  from: number
-  lines: string[]
-  total: number
-  error: SourceError | null
-}
+export type SourceWindow = { from: number; lines: string[]; total: number; error: SourceError | null }
 
 export type SourceFile = { text: string; hash: string; error: SourceError | null }
 
@@ -93,6 +62,12 @@ export type Ownership = {
   multi: { path: string; owners: string[] }[]
   dead: { component: string; pattern: string }[]
 }
+
+export type LayerStatus = 'allowed' | 'forbidden' | 'undrawn' | 'stale' | 'free'
+export type LayerCall = { file: string; line: number; fn: string; target: string; targetLine: number; targetFn: string }
+export type LayerCell = { from: string; to: string; status: LayerStatus; verdict?: Verdict; calls: LayerCall[] }
+export type LayerRow = { id: string; level: number; block: number }
+export type Layers = { contract: boolean; rows: LayerRow[]; cells: LayerCell[] }
 
 export const proposalSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
@@ -151,10 +126,7 @@ export const verdictRecordSchema = z.object({
 
 export type VerdictRecord = z.infer<typeof verdictRecordSchema>
 
-export type Decision =
-  | { status: 'approved' }
-  | { status: 'rejected'; reason: string }
-  | { status: 'pending'; id: string }
+export type Decision = { status: 'approved' } | { status: 'rejected'; reason: string } | { status: 'pending'; id: string }
 
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -545,7 +517,7 @@ export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unreached: 
 
 export type ScopeFolder = { path: string; functions: number }
 
-export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[] }
+export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; owners: Record<string, string>; splits?: SplitSuggestion[] }
 
 export type CommitDraft = { title: string; description: string }
 
@@ -584,6 +556,7 @@ export type ArchitectApi = {
   getCodeMap(root: string): Promise<CodeMap | null>
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
+  layers(root: string): Promise<Layers>
   recency(root: string): Promise<Recency>
   churn(root: string, days?: number): Promise<import('./recency').Churn>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>

@@ -1,10 +1,10 @@
 import path from 'node:path'
 import type { WhereInput } from '../electron/where'
 
-export type Args = { command: 'check' | 'agents' | 'where'; root: string; json: boolean; help: boolean; history: boolean; where?: WhereInput }
+export type Args = { command: 'check' | 'agents' | 'where'; root: string; json: boolean; help: boolean; history: boolean; where?: WhereInput; suggest?: true }
 
 export const USAGE_TEXT = [
-  'architect check [path] [--json] [--history]',
+  'architect check [path] [--json] [--history] [--suggest]',
   'architect agents [path] [--json]',
   'architect where [path] [--calls ref]... [--callers ref]... [--name name] [--file file] [--json]',
   '',
@@ -18,6 +18,7 @@ export const USAGE_TEXT = [
   '  --callers  a function or file that will call the new one (repeatable)',
   '  --name     the proposed function name',
   '  --file     the proposed file, checked against the Rules',
+  '  --suggest  also list split suggestions for long or many job files and for long functions with many callers',
   '',
   'exit 0 the architecture and its rules are satisfied',
   'exit 1 the code violates the drawing or a rule',
@@ -39,6 +40,7 @@ export function parseArgs(argv: string[]): Args | string {
   let root: string | undefined
   let json = false
   let history = false
+  let suggest = false
 
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i] as string
@@ -49,6 +51,10 @@ export function parseArgs(argv: string[]): Args | string {
     }
     if (arg === '--history' && command === 'check') {
       history = true
+      continue
+    }
+    if (arg === '--suggest' && command === 'check') {
+      suggest = true
       continue
     }
     const [flag = arg, inline] = arg.startsWith('--') && arg.includes('=') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg]
@@ -65,6 +71,7 @@ export function parseArgs(argv: string[]): Args | string {
     root = arg
   }
 
-  const parsed: Args = { command, root: path.resolve(root ?? process.cwd()), json, help: false, history }
+  if (suggest && history) return '--suggest checks and --history lists past runs, pass one'
+  const parsed: Args = { command, root: path.resolve(root ?? process.cwd()), json, help: false, history, ...(suggest ? { suggest: true as const } : {}) }
   return command === 'where' ? { ...parsed, where } : parsed
 }
