@@ -1800,7 +1800,10 @@ describe("history sessions", () => {
   const digestOf = (file: string) => createHash("sha256").update(fs.readFileSync(file, "utf8")).digest("hex");
 
   async function until(check: () => boolean) {
-    for (let waited = 0; !check() && waited < 5000; waited += 25) await pause(25);
+    for (let waited = 0; !check(); waited += 25) {
+      if (waited > 5000) throw new Error("the file watcher never saved the edit");
+      await pause(25);
+    }
   }
 
   async function hook(root: string, session: string, file: string) {
@@ -1819,6 +1822,7 @@ describe("history sessions", () => {
     await daemon.listen();
     await daemon.open(root);
     await daemon.rescan(root);
+    await pause(200);
 
     fs.writeFileSync(path.join(root, "api", "a.ts"), "export function a() {}\nexport function a2() {}\n");
     const c = await client(socketPath);
@@ -1850,6 +1854,7 @@ describe("history sessions", () => {
     await daemon.listen();
     await daemon.open(root);
     await daemon.rescan(root);
+    await pause(200);
 
     fs.writeFileSync(path.join(root, "api", "a.ts"), "export function a() {}\nexport function a2() {}\n");
     fs.writeFileSync(path.join(root, "api", "b.ts"), "export function b() {}\nexport function b2() {}\n");
@@ -1876,6 +1881,7 @@ describe("history sessions", () => {
     await daemon.listen();
     await daemon.open(root);
     await daemon.rescan(root);
+    await pause(200);
 
     fs.writeFileSync(file, "export function a() {}\nexport function a2() {}\n");
     await until(() => daemon.history(root).some((entry) => entry.source === "code"));
@@ -1901,6 +1907,7 @@ describe("history sessions", () => {
     await daemon.listen();
     await daemon.open(root);
     await daemon.rescan(root);
+    await pause(200);
 
     fs.writeFileSync(file, "export function a() {}\nexport function a2() {}\n");
     await until(() => daemon.history(root).some((entry) => entry.source === "code"));
