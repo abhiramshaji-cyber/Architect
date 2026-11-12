@@ -34,7 +34,7 @@ export function watchContract(file: string, changed: () => void): { close(): voi
 
   const poll = setInterval(() => {
     const { stamp, mtimeMs } = stampOf(file)
-    const recent = Date.now() - mtimeMs <= STAMP_GRANULARITY_MS
+    const recent = Math.abs(Date.now() - mtimeMs) <= STAMP_GRANULARITY_MS
     if (stamp === last.stamp && !recent && same(last, settled)) return
 
     const now = snapshot(file)
