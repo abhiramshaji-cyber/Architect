@@ -109,9 +109,9 @@ describe('starts in the scan', () => {
 
   it('finds cli commands from argv checks, switches, aliases and command libraries', async () => {
     const map = await mapOf({
-      'cmds.ts': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k'].map((name) => `export function ${name}() {}`).join('\n'),
+      'cmds.ts': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'].map((name) => `export function ${name}() {}`).join('\n'),
       'cli.ts': [
-        "import { a, b, c, d, e, f, g, h, i, j, k } from './cmds'",
+        "import { a, b, c, d, e, f, g, h, i, j, k, l } from './cmds'",
         "import { program, Command } from 'commander'",
         'function main() {}',
         "if (process.argv[2] === 'a') a()",
@@ -129,10 +129,13 @@ describe('starts in the scan', () => {
         'sub.action(j)',
         "new Command().action(k)",
         "promise.action(g)",
+        'const args = process.argv.slice(2)',
+        'const rest = args.slice(1)',
+        "if (rest[0] === 'l') l()",
       ].join('\n'),
     })
     expect(startsOf(map, 'cli.ts').cliCommand?.sort()).toEqual(
-      ['a', 'b', 'c', 'd', 'e', 'f', 'h', 'i', 'j', 'k'].map((name) => `cmds.ts:${name}`),
+      ['a', 'b', 'c', 'd', 'e', 'f', 'h', 'i', 'j', 'k', 'l'].map((name) => `cmds.ts:${name}`),
     )
   })
 
