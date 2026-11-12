@@ -81,6 +81,7 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
   handle('architect:coupling', async (root: string, ask?: unknown) =>
     couplingOf(root, daemon.codeMap(root) ?? (await daemon.rescan(root)), daemon.history(root), ask),
   )
+  handle('architect:style', (root: string) => daemon.style(root))
   handle('architect:conventions', (root: string) => conventionsOf(settingsDir, project(root)))
   handle('architect:set-conventions', (root: string, enabled: boolean) => switchConventions(settingsDir, enabled === true, project(root)))
   handle('architect:suggest-conventions', (root: string) => suggestedConventions(settingsDir, project(root)))

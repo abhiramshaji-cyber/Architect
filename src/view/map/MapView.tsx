@@ -6,13 +6,14 @@ import { factsFor } from './facts'
 import type { MapNode } from './layout/nest'
 import { trail } from './layout/trail'
 import Legend from './modes/Legend'
+import Breakdown from './style/Breakdown'
 import { MODES } from './modes/palette'
 import { churnTop, type ModeId, shade } from './modes/shade'
 import { useMap } from './useMap'
 
 export default function MapView({ theme, show }: ViewProps) {
   const { currentRoot, codeMap, codeError } = useProject()
-  const { tree, facts, error, churnError, grouped } = useMap()
+  const { tree, facts, error, churnError, styleError, grouped } = useMap()
   const [modeId, setModeId] = useState<ModeId>('importance')
   const [focusId, setFocusId] = useState('')
   const mode = MODES.find(({ id }) => id === modeId) ?? (MODES[0] as (typeof MODES)[number])
@@ -41,6 +42,14 @@ export default function MapView({ theme, show }: ViewProps) {
     [facts],
   )
   const busiest = useMemo(() => (tree && facts?.churn ? churnTop(tree, facts) : null), [tree, facts])
+
+  const open = useCallback(
+    (file: string, line?: number) => {
+      openFile(file, line)
+      show('code')
+    },
+    [show],
+  )
 
   const pick = useCallback(
     (node: MapNode) => {
@@ -99,7 +108,12 @@ export default function MapView({ theme, show }: ViewProps) {
             Grouped by {grouped === 'components' ? 'contract component' : 'top level folder'}, then folder, file and
             function. Click a tile to zoom in, or a function to open it.
           </p>
-          <Treemap focus={focus} values={values} token={mode.token} theme={theme} describe={describe} onPick={pick} />
+          <div className="map-body">
+            <Treemap focus={focus} values={values} token={mode.token} theme={theme} describe={describe} onPick={pick} />
+            {modeId === 'style' && (
+              <Breakdown path={path} style={facts?.style ?? null} error={styleError} onOpen={open} />
+            )}
+          </div>
         </>
       )}
     </section>
