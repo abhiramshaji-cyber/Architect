@@ -60,6 +60,10 @@ owns: `electron/agents/**`
 Answers where a new function belongs, from the functions it will call and the functions or files that will call it, each named by function, file or file:name. The component is the one owning the most of those neighbours among the components whose calls to and from the new function the drawing allows, the folder is where most of its neighbours live along with whether a new file there still fits the files rule, the naming word is the leading word most function names in that folder start with, and the closest function is the one sharing the most callees, then callers. A proposed file is checked against the Rules with a stub of the function. Every part carries its counts and file:line evidence, a tie or a reference that matches nothing or several files is reported rather than picked, and a project with no `architect.md` is answered by folder only. Fully deterministic, no model calls.
 owns: `electron/where/**`
 
+### verdict
+Answers check_change for a dependency or a proposed file: the drawn verdict for the edge, softened to unknown when architect.md no longer parses, and the Rules check of the proposed file, the edge answering first when both are given.
+owns: `electron/verdict/**`
+
 ### impact
 Works out what a change to check_change could break before it is made. For a file and its proposed content it diffs the proposed text against the parse of the file on disk, function span by function span, to find the functions added, changed or removed; for an edge it starts from every function the calling component owns. From there it walks the call graph backwards to every transitive caller, counted per depth, listing the nearest ones up to a fixed depth and count and saying how many it left out, then names the components those functions belong to and the test files that call them or import a file holding one. Every count carries file:line evidence. Fully deterministic, no model calls.
 owns: `electron/impact/**`
@@ -104,6 +108,10 @@ owns: `lsp/**`
 - daemon -> agents
 - daemon -> where
 - daemon -> impact
+- daemon -> verdict
+- verdict -> types
+- verdict -> graph
+- verdict -> rules
 - impact -> types
 - impact -> graph
 - impact -> functions
