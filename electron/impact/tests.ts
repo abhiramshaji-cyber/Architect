@@ -5,7 +5,7 @@ import type { FileEntry } from '../../shared/types'
 import { isTestFile } from '../scan/starts'
 import type { Fn } from '../where/refs'
 import { refIndex, type Reach } from './callers'
-import type { TestReach } from './schema'
+import type { Budget, TestReach } from './schema'
 import { sourceOf } from './touched'
 
 const LISTED = 10
@@ -47,7 +47,20 @@ function specOf(node: ts.Node): ts.Expression | undefined {
   return loads ? node.arguments[0] : undefined
 }
 
+const parsedImports = new Map<string, { stamp: string; loaded: Loaded[] | 'unreadable' }>()
+
 export function importsOf(root: string, test: string, types = false): Loaded[] | 'unreadable' {
+  const stat = fs.statSync(path.join(root, test), { throwIfNoEntry: false })
+  const key = `${types}\0${path.join(root, test)}`
+  const stamp = stat ? `${stat.ctimeMs}:${stat.size}` : ''
+  const held = parsedImports.get(key)
+  if (held && held.stamp === stamp) return held.loaded
+  const loaded = readImports(root, test, types)
+  parsedImports.set(key, { stamp, loaded })
+  return loaded
+}
+
+function readImports(root: string, test: string, types: boolean): Loaded[] | 'unreadable' {
   let text: string
   try {
     text = fs.readFileSync(path.join(root, test), 'utf8')
@@ -70,7 +83,7 @@ export function importsOf(root: string, test: string, types = false): Loaded[] |
 
 type Exported = { exported: string; original: string; local: boolean }
 
-function exportsOf(root: string, file: string): Exported[] {
+export function exportsOf(root: string, file: string): Exported[] {
   let text: string
   try {
     text = fs.readFileSync(path.join(root, file), 'utf8')
@@ -103,7 +116,9 @@ function exposedBy(fns: Fn[], files: FileEntry[]): Map<string, number[]> {
 
 type Hit = { via: 'touched' | 'call' | 'import'; at: string; reaches: string; unchecked?: string }
 
-export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[], edited?: { file: string; line: number }, whole?: { file: string; names: string[] | 'all' }): { total: number; listed: TestReach[]; notes: string[] } {
+export type Whole = { file: string; names: string[] | 'all' }
+
+export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[], edited?: { file: string; line: number }, wholes: Whole[] = [], budget: Budget = { until: Infinity, hit: false }): { total: number; listed: TestReach[]; notes: string[] } {
   const found = new Map<string, Hit>()
 
   for (const node of [...reach.depth.keys()].sort((a, b) => a - b)) {
@@ -132,9 +147,14 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
       return [one, ...forwarded.flatMap((file) => renamed(file).get(one) ?? [])]
     })
   }
-  const reachable = (target: string) => target === whole?.file || added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
+  const whole = (target: string) => wholes.find((one) => one.file === target)
+  const reachable = (target: string) => whole(target) !== undefined || added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
   for (const file of files) {
     if (!isTestFile(file.path) || found.has(file.path) || !(file.imports ?? []).some(reachable)) continue
+    if (Date.now() > budget.until) {
+      budget.hit = true
+      break
+    }
     const loaded = importsOf(root, file.path)
     for (const target of file.imports ?? []) {
       const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === bare(target))
@@ -144,7 +164,8 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
         const reached = index === undefined ? undefined : fns[index]
         const spot = added.find((one) => one.file === target && named(one, way.names))
         const fresh = spot ? `${spot.file}:${spot.line}` : undefined
-        const outside = whole && target === whole.file && (way.names === null || whole.names === 'all' || way.names.some((name) => whole.names.includes(name))) ? whole.file : undefined
+        const held = whole(target)
+        const outside = held && (way.names === null || held.names === 'all' || way.names.some((name) => held.names.includes(name))) ? held.file : undefined
         return reached || fresh || outside ? [{ way, reaches: reached ? at(reached) : (fresh ?? (outside as string)) }] : []
       })[0]
       if (hit === undefined) continue
@@ -161,29 +182,4 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
   const cut = found.size > LISTED ? [`${found.size - LISTED} of ${found.size} test files are counted but not listed`] : []
   const loose = listed.some((test) => test.via === 'import') ? ['a test listed via import imports a reached function by name, or a whole file holding one; the scan does not see calls inside test callbacks, so it may not call it'] : []
   return { total: found.size, listed, notes: [...cut, ...lineless, ...loose] }
-}
-
-type Loads = ReturnType<typeof importsOf>
-
-export function importersOf(root: string, file: string, names: string[] | 'all', files: FileEntry[]): Map<string, string[] | 'all' | 'unresolved'> {
-  const [found, seen, loads] = [new Map<string, string[] | 'all' | 'unresolved'>(), new Set<string>([file]), new Map<string, Loads>()]
-  const queue = [{ target: file, wanted: names }]
-  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-    const { target, wanted } = next
-    for (const entry of files) {
-      if (isTestFile(entry.path) || !(entry.imports ?? []).includes(target)) continue
-      const loaded = loads.get(entry.path) ?? (loads.set(entry.path, importsOf(root, entry.path, true)).get(entry.path) as Loads)
-      const ways = loaded === 'unreadable' ? [] : loaded.filter((way) => way.target === bare(target))
-      const hits = ways.length === 0 ? [{ forwards: false, locals: [] as [string, string][] }] : ways.filter((way) => wanted === 'all' || way.names === null || way.names.some((name) => wanted.includes(name)))
-      if (hits.length === 0) continue
-      const locals = hits.flatMap((hit) => hit.locals.filter(([original]) => original === '*' || wanted === 'all' || wanted.includes(original)).map(([, local]) => local))
-      const held = found.get(entry.path) ?? []
-      found.set(entry.path, ways.length === 0 || held === 'unresolved' ? 'unresolved' : wanted === 'all' || held === 'all' ? 'all' : [...new Set([...held, ...locals])])
-      const passed = exportsOf(root, entry.path).filter((one) => wanted === 'all' || wanted.includes(one.original))
-      if ((!hits.some((hit) => hit.forwards) && !passed.some((one) => one.local)) || seen.has(entry.path)) continue
-      seen.add(entry.path)
-      queue.push({ target: entry.path, wanted: wanted === 'all' ? 'all' : [...new Set([...wanted, ...passed.map((one) => one.exported)])] })
-    }
-  }
-  return found
 }

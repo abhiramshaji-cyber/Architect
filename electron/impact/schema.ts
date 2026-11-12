@@ -37,3 +37,5 @@ export type Caller = z.infer<typeof callerSchema>
 export type Entry = z.infer<typeof entrySchema>
 
 export type TestReach = z.infer<typeof testSchema>
+
+export type Budget = { until: number; hit: boolean }

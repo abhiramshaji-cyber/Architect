@@ -205,8 +205,8 @@ describe('impactFor', () => {
 
     fs.mkdirSync(path.join(root, 'pad'))
     for (let i = 0; i < 200; i += 1) fs.writeFileSync(path.join(root, 'pad', `p${i}.ts`), `export function p${i}() {}\n`)
-    expect(await impactFor(input, root, architecture, null, 0)).toMatchObject({ status: 'timeout' })
-    expect((await impactFor(input, root, architecture, null, 0)).notes[0]).toMatch(/^impact was not worked out: scanning .* took longer than 0 ms/)
+    expect(await impactFor(input, root, architecture, null, null, 0)).toMatchObject({ status: 'timeout' })
+    expect((await impactFor(input, root, architecture, null, null, 0)).notes[0]).toMatch(/^impact was not worked out: scanning .* took longer than 0 ms/)
 
     expect((await impactFor(input, root, architecture, 'bad line')).notes[0]).toBe('architect.md does not parse (bad line); components come from the last version that parsed')
 
@@ -442,6 +442,26 @@ describe('renamed re-exports and test callbacks', () => {
     expect(other.callers.listed.map((caller) => caller.name)).toEqual(['useOther'])
     const data = impactOf(edit(root, 'src/cfg.json', '1', '2'), root, architecture, map)
     expect(data.callers.listed.map((caller) => caller.name)).toEqual(['read'])
+  })
+
+  it('reaches tests through a barrel, follows a barrel whose import source changes, names files that use a value only at their top level, and stops at the time limit', async () => {
+    const { root, map, architecture } = await project({
+      'a/y.ts': 'export const LIMIT = 3\n',
+      'a/z.ts': 'export const LIMIT = 4\n',
+      'a/index.ts': "export { LIMIT } from './y'\n",
+      'b/x.test.ts': "import { LIMIT } from '../a'\n",
+      'c/index.ts': "import { LIMIT } from '../a/y'\nexport { LIMIT }\n",
+      'c/use.ts': "import { LIMIT } from './index'\n\nexport function use() {\n  return LIMIT\n}\n",
+      'd/u.ts': "import { LIMIT } from '../a/y'\n\nexport const DOUBLE = LIMIT * 2\n",
+    })
+    const limit = impactOf(edit(root, 'a/y.ts', 'LIMIT = 3', 'LIMIT = 5'), root, architecture, map)
+    expect(limit.tests.listed.map((test) => test.file)).toEqual(['b/x.test.ts'])
+    expect(limit.notes[0]).toContain('1 of those files name it in no function (d/u.ts)')
+    const moved = impactOf(edit(root, 'c/index.ts', "from '../a/y'", "from '../a/z'"), root, architecture, map)
+    expect(moved.callers.listed.map((caller) => caller.name)).toEqual(['use'])
+    const late = impactOf(edit(root, 'a/y.ts', 'LIMIT = 3', 'LIMIT = 5'), root, architecture, map, 0)
+    expect(late.status).toBe('timeout')
+    expect(late.notes[0]).toBe('the time limit was reached while reading importers and tests, so the counts are partial')
   })
 
   it('caps the notes and names a few functions per note', async () => {

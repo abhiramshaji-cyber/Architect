@@ -7,9 +7,10 @@ import { scan } from '../scan/scan'
 import { isTestFile } from '../scan/starts'
 import { projectPath, type Fn } from '../where/refs'
 import { callersOf, LIST_DEPTH, LISTED, type Reach } from './callers'
-import type { Impact, Touch } from './schema'
-import { importersOf, testsOf } from './tests'
-import { changesOf, keysOf, usersOf, type Outside } from './touched'
+import type { Budget, Impact, Touch } from './schema'
+import { CODE, listed, outsideSeeds } from './outside'
+import { testsOf, type Whole } from './tests'
+import { changesOf, keysOf } from './touched'
 
 export { impactSchema, type Impact } from './schema'
 
@@ -17,17 +18,15 @@ export type ImpactInput = { cwd: string; from?: string; to?: string; file?: stri
 
 type Spot = { file: string; line: number; name: string }
 
-type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; whole?: { file: string; names: string[] | 'all' }; users?: number[]; file: string | null; notes: string[] }
+type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; wholes?: Whole[]; users?: number[]; file: string | null; notes: string[] }
 
 const SETTLE_MS = 2000
-
-const CODE = /\.[cm]?[jt]sx?$/i
-
-const NAMED = 5
 
 const NOTES = 20
 
 const TIMEOUT_MS = 5000
+
+const WORK_MS = 2000
 
 function before(root: string, file: string): string | Error {
   try {
@@ -48,7 +47,7 @@ function firstDiff(before: string, after: string): number {
   return (at < 0 ? Math.min(a.length, b.length) : at) + 1
 }
 
-function fileSeeds(input: ImpactInput & { file: string; content: string }, root: string, files: FileEntry[], fns: Fn[]): Seeded {
+function fileSeeds(input: ImpactInput & { file: string; content: string }, root: string, files: FileEntry[], fns: Fn[], budget: Budget): Seeded {
   const file = projectPath(root, input.cwd, input.file)
   if (file === '' || file === '..' || file.startsWith('../') || path.isAbsolute(file)) return { seeds: [], touched: [], added: [], file: null, notes: [`${input.file} is outside ${root}, so no function is touched`] }
   const current = before(root, file)
@@ -62,7 +61,7 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
   const moved = loaded || outside === 'all' || outside.code || outside.names.length > 0 || outside.locals.length > 0
-  const wide = !same && (code || loaded) && moved && fs.existsSync(path.join(root, file)) ? outsideSeeds(root, file, loaded ? 'all' : outside, uses, scanned, offset, files, fns) : null
+  const wide = !same && (code || loaded) && moved && fs.existsSync(path.join(root, file)) ? outsideSeeds({ root, file, files, fns, scanned, offset, budget }, loaded ? 'all' : outside, uses) : null
   if (wide) notes.push(wide.note)
   if (!same && code && !moved && changes.length === 0) notes.push(`the change to ${file} only touches formatting, quotes or comments, so nothing is counted`)
 
@@ -81,33 +80,7 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const using = (wide?.seeds ?? []).filter((index) => !seeds.includes(index)).flatMap((index): Touch[] => (fns[index] ? [{ name: fns[index].name, change: 'uses', at: `${file}:${fns[index].line}`, in: 'disk' }] : []))
   const touched: Touch[] = [...changes.map((change): Touch => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? 'proposed' : 'disk' })), ...using]
   const added = changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name }))
-  return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide ? { whole: { file, names: wide.names }, users: wide.users } : {}) }
-}
-
-const listed = (names: string[]) => names.slice(0, NAMED).join(', ') + (names.length > NAMED ? ', ...' : '')
-
-function usingIn(root: string, file: string, locals: string[] | 'all' | 'unresolved', files: FileEntry[], fns: Fn[]): number[] {
-  const offset = fns.findIndex((fn) => fn.file === file)
-  const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
-  if (offset < 0 || locals === 'all' || locals === 'unresolved') return offset < 0 ? [] : scanned.map((_, index) => offset + index)
-  const text = before(root, file)
-  const keys = new Set(typeof text === 'string' && locals.length > 0 ? usersOf(file, text, locals) : [])
-  return scanned.flatMap((key, index) => (keys.has(key) ? [offset + index] : []))
-}
-
-function outsideSeeds(root: string, file: string, outside: Outside, uses: (names: string[]) => string[], scanned: string[], offset: number, files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; names: string[] | 'all'; note: string } {
-  const all = outside === 'all'
-  const changed = all ? [] : [...outside.names, ...outside.locals]
-  const keys = new Set(all ? scanned : uses(changed))
-  const own = offset < 0 ? [] : scanned.flatMap((key, index) => (keys.has(key) ? [offset + index] : []))
-  const loads = all || outside.code
-  const importers = loads || outside.names.length > 0 ? importersOf(root, file, loads ? 'all' : outside.names, files) : new Map<string, string[] | 'all'>()
-  const using = [...importers].flatMap(([path, locals]) => usingIn(root, path, locals, files, fns))
-  const what = [...(all ? [CODE.test(file) ? 'a module load or a star re-export' : 'its content, which code imports'] : []), ...(!all && outside.code ? ['code that runs when the file loads, such as a handler it registers'] : []), ...(changed.length > 0 ? [listed(changed)] : [])].join('; ')
-  const unresolved = [...importers].filter(([, locals]) => locals === 'unresolved').map(([path]) => path)
-  const loose = unresolved.length > 0 ? `; ${unresolved.length} of those files import it by a path that is not relative (${listed(unresolved)}), so all their functions count` : ''
-  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions ${loads ? 'in' : 'that use those names in'} the ${importers.size} files that ${loads ? 'load it' : 'import them'}, directly or through a re-export, count as its callers${loose}`
-  return { seeds: own, users: using, names: loads ? 'all' : outside.names, note }
+  return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide ? { wholes: wide.wholes, users: wide.users } : {}) }
 }
 
 function edgeSeeds(from: string, to: string, architecture: Architecture, fns: Fn[]): Seeded {
@@ -136,23 +109,24 @@ function componentsOf(architecture: Architecture, fns: Fn[], reach: Reach, added
   return [...byOwner].map(([id, held]) => ({ id, ...held })).sort((a, b) => weight(b) - weight(a) || Number(a.id === null) - Number(b.id === null) || (a.id ?? '').localeCompare(b.id ?? ''))
 }
 
-export function impactOf(input: ImpactInput, root: string, architecture: Architecture, map: CodeMap): Impact {
+export function impactOf(input: ImpactInput, root: string, architecture: Architecture, map: CodeMap, until = Infinity): Impact {
+  const budget: Budget = { until, hit: false }
   const files = map.folders.flatMap((folder) => folder.files)
   const fns: Fn[] = files.flatMap((file) => file.functions.map((fn) => ({ file: file.path, name: fn.name, line: fn.line, test: isTestFile(file.path) })))
   const { file, content, from, to } = input
-  const seeded = file !== undefined && content !== undefined ? fileSeeds({ ...input, file, content }, root, files, fns) : edgeSeeds(from ?? '', to ?? '', architecture, fns)
+  const seeded = file !== undefined && content !== undefined ? fileSeeds({ ...input, file, content }, root, files, fns, budget) : edgeSeeds(from ?? '', to ?? '', architecture, fns)
   const both = file !== undefined && content !== undefined && from !== undefined && to !== undefined ? [`impact is worked out from ${file}; the edge ${from} -> ${to} is answered by the verdict only`] : []
 
-  const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds, seeded.whole && seeded.users && seeded.users.length > 0 ? { file: seeded.whole.file, users: seeded.users } : undefined)
-  const tests = testsOf(root, fns, files, reach, seeded.added, seeded.edited, seeded.whole)
+  const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds, seeded.wholes && seeded.users && seeded.users.length > 0 ? { file: seeded.file ?? '', users: seeded.users } : undefined)
+  const tests = testsOf(root, fns, files, reach, seeded.added, seeded.edited, seeded.wholes, budget)
   return {
-    status: 'done',
+    status: budget.hit ? 'timeout' : 'done',
     touched: { total: seeded.touched.length, listed: seeded.touched.slice(0, LISTED) },
     callers,
     entries,
     components: componentsOf(architecture, fns, reach, seeded.added, reached),
     tests: { total: tests.total, listed: tests.listed },
-    notes: capped([...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes]),
+    notes: capped([...(budget.hit ? ['the time limit was reached while reading importers and tests, so the counts are partial'] : []), ...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes]),
   }
 }
 
@@ -165,7 +139,8 @@ function current(root: string, map: CodeMap): boolean {
 
 const scans = new Map<string, Promise<CodeMap>>()
 
-async function mapOf(root: string): Promise<CodeMap> {
+async function mapOf(root: string, stored: CodeMap | null): Promise<CodeMap> {
+  if (stored && current(root, stored)) return stored
   const held = scans.get(root)
   const last = held ? await held.catch(() => null) : null
   if (last && current(root, last)) return last
@@ -176,7 +151,7 @@ async function mapOf(root: string): Promise<CodeMap> {
   return scans.get(root) as Promise<CodeMap>
 }
 
-export async function impactFor(input: ImpactInput, root: string, architecture: Architecture, stale: string | null = null, timeoutMs = TIMEOUT_MS): Promise<Impact> {
+export async function impactFor(input: ImpactInput, root: string, architecture: Architecture, stale: string | null = null, stored: CodeMap | null = null, timeoutMs = TIMEOUT_MS): Promise<Impact> {
   const empty = { total: 0, listed: [] }
   const failed = (status: 'timeout' | 'failed', note: string): Impact => ({ status, touched: empty, callers: { ...empty, depths: [], listedThrough: LIST_DEPTH, unlisted: 0 }, entries: empty, components: [], tests: empty, notes: [note] })
   let timer: NodeJS.Timeout | undefined
@@ -184,9 +159,10 @@ export async function impactFor(input: ImpactInput, root: string, architecture: 
     timer = setTimeout(resolve, timeoutMs, null)
   })
   try {
-    const map = await Promise.race([mapOf(root), late])
+    const until = Date.now() + timeoutMs
+    const map = await Promise.race([mapOf(root, stored), late])
     if (map === null) return failed('timeout', `impact was not worked out: scanning ${root} took longer than ${timeoutMs} ms; the scan goes on and a later check uses it`)
-    const impact = impactOf(input, root, architecture, map)
+    const impact = impactOf(input, root, architecture, map, Math.min(until, Date.now() + WORK_MS))
     return stale === null ? impact : { ...impact, notes: capped([`architect.md does not parse (${stale}); components come from the last version that parsed`, ...impact.notes]) }
   } catch (err) {
     return failed('failed', `impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`)

@@ -800,7 +800,7 @@ export function createDaemon(options: DaemonOptions = {}) {
             logVerdict(root, req, { status: 'unknown', reason: error }, stale)
             return { id: req.id, ok: false, error }
           }
-          const impact = await impactFor(req, root, state.architecture, stale)
+          const impact = await impactFor(req, root, state.architecture, stale, readStoredMap(cacheDir, root)?.map ?? null)
           logVerdict(root, req, verdict, stale, impact)
           return { id: req.id, ok: true, result: { ...verdict, impact } }
         }
