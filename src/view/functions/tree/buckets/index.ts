@@ -14,11 +14,13 @@ const KINDS: BucketKind[] = ['component', 'folder', 'names']
 
 const NO_COMPONENT = 'No component'
 
-const byName = (a: Item, b: Item) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
+const order = (a: string, b: string) => a.localeCompare(b, 'en') || (a < b ? -1 : a > b ? 1 : 0)
+
+const byName = (a: Item, b: Item) => order(a.name, b.name) || order(a.id, b.id)
 
 const bySize = (a: Part, b: Part) =>
   b.members.reduce((sum, item) => sum + item.size, 0) - a.members.reduce((sum, item) => sum + item.size, 0) ||
-  a.label.localeCompare(b.label)
+  order(a.label, b.label)
 
 function sharedDir(files: string[]): string[] {
   const dirs = files.map((file) => file.split('/').slice(0, -1))
@@ -52,12 +54,16 @@ function namesOf(items: Item[]): Part[] {
   const sorted = [...items].sort(byName)
   const count = Math.min(WIDE, Math.ceil(sorted.length / WIDE))
   const size = Math.ceil(sorted.length / count)
-  return Array.from({ length: count }, (_, at) => {
+  const parts: Part[] = Array.from({ length: count }, (_, at) => {
     const members = sorted.slice(at * size, (at + 1) * size)
     const first = members[0]?.name ?? ''
     const last = members[members.length - 1]?.name ?? ''
     return { kind: 'names', key: String(at), label: first === last ? first : `${first} … ${last}`, members }
   })
+  const labels = parts.map((part) => part.label)
+  return new Set(labels).size === labels.length
+    ? parts
+    : parts.map((part, at) => ({ ...part, label: `${part.label} · part ${at + 1} of ${count}` }))
 }
 
 function partsOf(kind: BucketKind, items: Item[]): { parts: Part[]; loose: Item[] } {

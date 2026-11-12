@@ -72,5 +72,8 @@ describe('bucketsOf', () => {
     const split = bucketsOf('p', many(200, (at) => ({ id: `f${at}`, name: 'same', size: 1 })))
     expect(widest(split)).toBeLessThanOrEqual(WIDE)
     expect(leavesOf(split, 'p')).toHaveLength(200)
+    const labels = (split.kids.get('p') ?? []).map((id) => split.made.get(id)?.label)
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(labels[0]).toBe(`same · part 1 of ${labels.length}`)
   })
 })

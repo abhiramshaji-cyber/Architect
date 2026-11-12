@@ -129,7 +129,7 @@ export function toggledOf(
   const next = new Map(overrides).set(id, !isOpen(outline, id, overrides, forced))
   if (!next.get(id) || !outline.buckets.has(id)) return next
   for (const sibling of outline.kids.get(outline.up.get(id) ?? '') ?? []) {
-    if (sibling !== id && outline.buckets.has(sibling)) next.set(sibling, false)
+    if (sibling !== id && outline.buckets.has(sibling) && !forced.has(sibling)) next.set(sibling, false)
   }
   return next
 }

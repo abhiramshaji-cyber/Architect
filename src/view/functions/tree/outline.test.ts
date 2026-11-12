@@ -169,5 +169,10 @@ describe('outline', () => {
     expect(isOpen(outlined, ui, second, none)).toBe(false)
     expect(isOpen(outlined, core, toggledOf(outlined, second, core, none), none)).toBe(false)
     expect(toggledOf(outlined, new Map(), group, none).get(group)).toBe(true)
+
+    const forced = new Set([group, ui])
+    const searching = toggledOf(outlined, new Map(), core, forced)
+    expect(isOpen(outlined, core, searching, forced)).toBe(true)
+    expect(isOpen(outlined, ui, searching, forced)).toBe(true)
   })
 })
