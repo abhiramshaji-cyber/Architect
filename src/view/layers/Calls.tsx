@@ -21,8 +21,8 @@ function reasonOf(cell: LayerCell): string | null {
   if (verdict?.status === 'forbidden') return verdict.reason
   if (verdict?.status === 'cycle') return `drawing this edge would close a contract cycle: ${verdict.path.join(' → ')}`
   if (verdict?.status === 'unknown-component') return `not in architect.md: ${verdict.ids.join(', ')}`
-  if (cell.status === 'stale') return 'drawn in architect.md, no calls or imports between them'
-  if (cell.calls.length === 0) return 'drawn in architect.md, imports only, no calls between functions'
+  if (cell.status === 'stale') return 'drawn in architect.md, no calls or imports found by the scan'
+  if (cell.calls.length === 0) return 'drawn in architect.md, imports found, no calls found by the scan'
   return null
 }
 

@@ -30,10 +30,14 @@ export default function LayersView({ show }: ViewProps) {
   const onPick = useCallback(({ from, to }: LayerCell) => setPair({ from, to }), [])
 
   if (!currentRoot) return null
-  const source = !layers ? 'Reading calls…' : layers.contract
+  const problem = codeError ?? error ?? (contract?.status === 'invalid' ? `architect.md does not parse: ${contract.error}` : null)
+  const source = layers
+    ? layers.contract
       ? 'architect.md components'
       : `top level folders, ${contract?.status === 'invalid' ? 'architect.md does not parse' : 'no architect.md'}`
-  const problem = codeError ?? error ?? (contract?.status === 'invalid' ? `architect.md does not parse: ${contract.error}` : null)
+    : problem
+      ? ''
+      : 'Reading calls…'
   const statuses = layers?.contract ? (['allowed', 'forbidden', 'undrawn', 'stale'] as const) : (['free'] as const)
 
   return (

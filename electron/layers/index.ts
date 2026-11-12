@@ -15,8 +15,8 @@ function importPairs(architecture: Architecture, map: CodeMap): Set<string> {
 }
 
 function statusOf(verdict: Verdict, calls: number, drawn: boolean, imported: boolean): LayerStatus | null {
-  if (calls === 0 && drawn) return imported ? 'allowed' : 'stale'
-  if (calls === 0) return null
+  if (calls === 0 && !drawn) return null
+  if (calls === 0 && !imported) return 'stale'
   if (verdict.status === 'allowed' || verdict.status === 'forbidden') return verdict.status
   return 'undrawn'
 }

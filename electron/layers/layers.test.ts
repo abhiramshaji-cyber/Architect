@@ -106,6 +106,12 @@ describe('layersOf', () => {
     expect(status).toEqual({ 'log>core': 'allowed:0', 'ui>core': 'stale:0' })
   })
 
+  it('keeps a pair both drawn and forbidden red when its files only import each other', () => {
+    const map = codeMap({ ...file('log/l.ts'), imports: ['core/b.ts'] }, file('core/b.ts'))
+    const cells = layersOf(contract([['log', 'core']], [['log', 'core']]), map).cells
+    expect(cells.map((c) => `${c.from}>${c.to}:${c.status}`)).toEqual(['log>core:forbidden'])
+  })
+
   it('shows no cell for an undrawn import with no calls, matching architect check', () => {
     const map = codeMap({ ...file('log/l.ts'), imports: ['core/b.ts', 'log/m.ts'] }, file('core/b.ts'))
     expect(layersOf(contract([]), map).cells).toEqual([])
