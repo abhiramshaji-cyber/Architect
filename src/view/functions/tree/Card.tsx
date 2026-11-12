@@ -19,6 +19,7 @@ export type CardData = {
   onToggle: (id: string) => void
   onOpen: (row: FunctionRow) => void
   onRelated: (at: number, way: Way) => void
+  onFocus: (at: number) => void
 }
 
 export type CardNode = Node<CardData, 'card'>
@@ -66,7 +67,7 @@ function Body({ data }: { data: CardData }) {
           <span className="fn-card-lines">{plural(row.lines, 'line')}</span>
         </span>
       </button>
-      <Facts row={row} at={data.at} onRelated={data.onRelated} />
+      <Facts row={row} at={data.at} onRelated={data.onRelated} onFocus={data.onFocus} />
     </div>
   )
 }
