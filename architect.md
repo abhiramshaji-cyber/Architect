@@ -13,7 +13,7 @@ Parses, serializes and queries `architect.md`. Fully deterministic, no model cal
 owns: `electron/contract/graph.ts`
 
 ### git
-Shells out to the git binary and returns typed results for branch, dirty state, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. Also blames files line by line, batched and cached per HEAD. No git library, no domain logic.
+Shells out to the git binary and returns typed results for branch, dirty state, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. Also blames files line by line, batched and cached per HEAD, and reads the per commit line counts and changed line ranges of a window of history, streamed so a large history never sits in memory and cached per HEAD. No git library, no domain logic.
 owns: `electron/git/**`
 
 ### github
@@ -25,15 +25,19 @@ Asks the Claude Code binary for a first `architect.md`, from a bounded summary o
 owns: `electron/draft/**`
 
 ### functions
-Lists every function in a project with facts measured from the scan (its signature as written, line count, how many functions call it, how many it calls, whether it calls itself, whether it is exported, and why it is a starting point when it is one), the author's own doc comment copied verbatim when there is one, the calls between the listed functions, and an importance from 1 to 5. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. Nothing is worded from a function's name. A function is a starting point only for a reason it can name: the package.json main, bin or a script that runs its file, the Electron main, preload or renderer entry or a page script read from the vite or electron-vite build config, a preload bridge member, an MCP tool handler, an IPC handler or a CLI command, each found in the parse. Being unimported never makes a starting point, and test files never are. It also arranges the functions into a call tree for the org chart view: starting points sit at the top, grouped by their reason and the file that declares it, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Given a folder inside the project it narrows all of this to the functions under that folder: importance and the tree are worked out again from only the calls between them, callers from outside the folder are counted apart, and the folders inside it come back with their function counts so the renderer can drill in. A folder that is missing or outside the project falls back to the whole project. Fully deterministic, no model calls, computed in one pass over the code map.
+Lists every function in a project with facts measured from the scan (its signature as written, line count, how many functions call it, how many it calls, whether it calls itself, whether it is exported, and why it is a starting point when it is one), the author's own doc comment copied verbatim when there is one, the calls between the listed functions, and an importance from 1 to 5. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. Nothing is worded from a function's name. A function is a starting point only for a reason it can name: the package.json main, bin or a script that runs its file, the Electron main, preload or renderer entry or a page script read from the vite or electron-vite build config, a preload bridge member, an MCP tool handler, an IPC handler or a CLI command, each found in the parse. Being unimported never makes a starting point, and test files never are. It also arranges the functions into a call tree for the org chart view: starting points sit at the top, grouped by their reason and the file that declares it, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Given a folder inside the project it narrows all of this to the functions under that folder: importance and the tree are worked out again from only the calls between them, callers from outside the folder are counted apart, and the folders inside it come back with their function counts so the renderer can drill in. It also maps each file in scope to the component that owns it in `architect.md`, so the renderer can bucket a wide level of the tree by component. A folder that is missing or outside the project falls back to the whole project. Fully deterministic, no model calls, computed in one pass over the code map.
 owns: `electron/functions/**`
 
 ### recency
 Works out when each function and each component last changed. Each function gets the newest commit across its own lines from git blame, each component the newest change across the files it owns and the functions it covers, and lines nobody has committed yet count as the newest of all. Fully deterministic, no model calls.
 owns: `electron/recency/**`
 
+### churn
+Works out how often each file and each function changed over a window of days, 90 unless asked otherwise. A file gets the commits that touched it and the lines added and removed, read from git numstat along the first parent line of HEAD and followed across renames. A function gets the commits that changed its lines, found the way `git log -L` finds them: its current lines are traced back through any uncommitted edit and then one commit at a time, so each step costs only that commit's changes. Files deleted since, and older files that once had the same name, are left out, and a read that git could not finish is flagged rather than cached. Fully deterministic, no model calls.
+owns: `electron/churn/**`
+
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files, and answering where a new function belongs.
 owns: `electron/daemon.ts`
 
 ### journal
@@ -47,6 +51,10 @@ owns: `electron/rules/**`
 ### agents
 Writes an `AGENTS.md` into the folder each component's globs share, copied from `architect.md`: the component's purpose and owned globs, the components it may call with their labels, the ones it must never call with their reasons, and the rule lines that reach that folder. A component is placed only when one of its globs is exactly that folder followed by `/**` and no `!` glob carves anything out of it; one that owns only some files there, whose globs share no folder below the root, climb out with `..`, sit in a folder the scan ignores, or share a folder with another component, is reported and gets no file. It never writes through a link: not into a folder whose real path leads outside the project, and not through an `AGENTS.md` that is itself a link. Every file it writes starts with a marker line, so it only ever rewrites or deletes files carrying that marker, never one written by hand, and leaves a file untouched when its text is unchanged. Fully deterministic, no model calls.
 owns: `electron/agents/**`
+
+### where
+Answers where a new function belongs, from the functions it will call and the functions or files that will call it, each named by function, file or file:name. The component is the one owning the most of those neighbours among the components whose calls to and from the new function the drawing allows, the folder is where most of its neighbours live along with whether a new file there still fits the files rule, the naming word is the leading word most function names in that folder start with, and the closest function is the one sharing the most callees, then callers. A proposed file is checked against the Rules with a stub of the function. Every part carries its counts and file:line evidence, a tie or a reference that matches nothing or several files is reported rather than picked, and a project with no `architect.md` is answered by folder only. Fully deterministic, no model calls.
+owns: `electron/where/**`
 
 ### review
 Opt in change review. Persists the on or off switch, holds contract proposals and Claude Code edits waiting on the engineer, keeps proposals across a restart, wakes the waiting caller with approve, deny or the engineer's feedback, and drops an edit whose hook went away. Rebuilds the file an edit would produce and works out its impact: the components that own it, the functions added, removed or changed in it, and the before and after diff, or for a proposal the architecture it would leave behind. A switch that is off answers every edit at once.
@@ -66,7 +74,7 @@ React Flow diagram, the file tree and CodeMirror editor, the contract rail holdi
 owns: `src/**`
 
 ### cli
-Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. With `--suggest` it also prints the split suggestions with their evidence. Records every run in the rule history and lists it with `--history`. `architect agents` writes the AGENTS.md files.
+Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. With `--suggest` it also prints the split suggestions with their evidence. Records every run in the rule history and lists it with `--history`. `architect agents` writes the AGENTS.md files. `architect where` answers where a new function belongs.
 owns: `cli/**`
 
 ### bridge
@@ -86,6 +94,12 @@ owns: `lsp/**`
 - cli -> rules
 - cli -> agents
 - daemon -> agents
+- daemon -> where
+- cli -> where
+- where -> types
+- where -> graph
+- where -> rules
+- where -> functions
 - agents -> types
 - agents -> rules
 - rules -> journal
@@ -95,6 +109,9 @@ owns: `lsp/**`
 - daemon -> functions
 - daemon -> review
 - daemon -> recency
+- daemon -> churn
+- churn -> types
+- churn -> git
 - daemon -> journal
 - recency -> types
 - recency -> graph
@@ -103,6 +120,7 @@ owns: `lsp/**`
 - review -> graph
 - review -> git
 - functions -> types
+- functions -> graph
 - daemon -> git
 - draft -> types
 - draft -> graph
@@ -136,6 +154,7 @@ owns: `lsp/**`
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
 - canvas -> functions : the renderer never ranks or arranges functions itself, the ranked list and its call tree arrive over the preload bridge
 - canvas -> recency : the renderer never reads git history, when each function and component last changed arrives over the preload bridge
+- canvas -> churn : the renderer never reads git history, how often each file and function changed arrives over the preload bridge
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
 - bridge -> review : the hook only forwards an edit over the socket and prints the answer, the queue lives in the app
 - canvas -> journal : the renderer never reads the cache directory, history and verdicts arrive over the preload bridge
@@ -175,7 +194,6 @@ owns: `lsp/**`
 - split: 50 lines, 3 callers
 - lines: 206 `src/view/ContractView.tsx`
 - lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
-- lines: 252 `mcp/bridge.ts`
 - lines: 272 `electron/git/open.ts`
 - lines: 279 `src/model/codemap.ts`
 - lines: 328 `src/view/Inspector.tsx`

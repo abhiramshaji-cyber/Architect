@@ -1,7 +1,7 @@
 import type { FileSplit, FunctionSplit, SplitSuggestion } from '../../../../shared/types'
 import { plural } from '../Mark'
 
-type SplitsProps = { splits: SplitSuggestion[]; onGo: (file: string, line: number) => void }
+type SplitsProps = { splits: SplitSuggestion[]; scope: string; onGo: (file: string, line: number) => void }
 
 type Go = SplitsProps['onGo']
 
@@ -56,7 +56,7 @@ function FunctionItem({ split, onGo }: { split: FunctionSplit; onGo: Go }) {
       ) : (
         <ul>
           {split.points.map((point) => (
-            <li key={point.line}>
+            <li key={`${point.line}-${point.endLine}-${point.label}`}>
               <button className="fn-count-link" onClick={() => onGo(split.path, point.line)}>
                 Extract {point.label}
               </button>{' '}
@@ -71,7 +71,8 @@ function FunctionItem({ split, onGo }: { split: FunctionSplit; onGo: Go }) {
   )
 }
 
-export default function Splits({ splits, onGo }: SplitsProps) {
+export default function Splits({ splits: all, scope, onGo }: SplitsProps) {
+  const splits = scope === '' ? all : all.filter((split) => split.path.startsWith(`${scope}/`))
   if (splits.length === 0) return null
   return (
     <details className="fn-splits">

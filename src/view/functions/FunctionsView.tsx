@@ -119,7 +119,7 @@ export default function FunctionsView({ show }: ViewProps) {
         onQuery={setQuery}
       />
 
-      {list?.splits && mode === 'list' && <Splits splits={list.splits} onGo={onGo} />}
+      {list?.splits && mode === 'list' && <Splits splits={list.splits} scope={list.scope} onGo={onGo} />}
 
       {error && (
         <p className="fn-notice" role="status">

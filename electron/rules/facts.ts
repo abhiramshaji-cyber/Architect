@@ -1,6 +1,6 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
-import fs from 'node:fs'
 import type { CodeMap, FunctionEntry } from '../../shared/types'
 
 type Named = { name: string; line: number }

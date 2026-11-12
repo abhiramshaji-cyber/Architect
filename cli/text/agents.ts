@@ -1,4 +1,4 @@
-import type { AgentsReport } from '../shared/types'
+import type { AgentsReport } from '../../shared/types'
 
 export function agentsText(report: AgentsReport): string {
   const lines = [

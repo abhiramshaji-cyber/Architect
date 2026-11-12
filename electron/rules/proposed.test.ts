@@ -65,7 +65,7 @@ describe('checkFile', () => {
         ['jobs', ['src/rules/go.ts already exists', 'src/rules/stop.ts']],
         ['names', undefined],
       ])
-      expect(found[0]?.split?.files).toEqual({ count: 2, limit: 5 })
+      expect(found[0]?.split?.files).toEqual({ count: 3, limit: 5 })
       expect(checkFile(cache, root, architecture, 'src/fine.ts', 'export function go() {}\n')).toEqual([])
     } finally {
       fs.rmSync(root, { recursive: true, force: true })

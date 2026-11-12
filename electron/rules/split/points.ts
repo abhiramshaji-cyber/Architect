@@ -57,8 +57,8 @@ function calleeOf(statement: ts.Statement): string | undefined {
         ? statement.declarationList.declarations.map((declaration) => declaration.initializer)
         : []
   for (const value of values.map(unwrapped)) {
-    if (!value || !ts.isCallExpression(value)) continue
-    const callback = value.arguments.some((arg) => (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) && ts.isBlock(arg.body))
+    if (!value || !(ts.isCallExpression(value) || ts.isNewExpression(value))) continue
+    const callback = (value.arguments ?? []).some((arg) => (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) && ts.isBlock(arg.body))
     if (callback) return ts.isIdentifier(value.expression) || ts.isPropertyAccessExpression(value.expression) ? value.expression.getText().replace(/\s+/g, '') : 'call'
   }
   return undefined

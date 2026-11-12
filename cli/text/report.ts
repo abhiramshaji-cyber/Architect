@@ -1,4 +1,4 @@
-import type { Architecture, FileSplit, FunctionSplit, RuleViolation, SplitSuggestion, Verdict } from '../shared/types'
+import type { Architecture, FileSplit, FunctionSplit, RuleViolation, SplitSuggestion, Verdict } from '../../shared/types'
 
 export type Violation = { from: string; to: string; verdict: Verdict; evidence: { from: string; to: string }[] }
 
@@ -23,13 +23,13 @@ function fileLines(split: FileSplit): string[] {
   const head = [`  ${split.path}  ${over.filter(Boolean).join('; ')}`]
   if (split.blocked) return [...head, `    no split: ${split.blocked}`]
 
-  const limit = split.files.limit === 'off' ? '' : ` of ${split.files.limit}`
+  const files = split.files.limit === 'off' ? plural(split.files.count, 'code file') : `${split.files.count} of ${plural(split.files.limit, 'code file')}`
   const groups = split.groups.flatMap((group) => [
     `    ${group.file ?? `unnamed: ${group.unnamed}`}  ${plural(group.lines, 'line')}`,
     `      ${group.members.map((member) => `${member.name}:${member.line}`).join(', ')}`,
   ])
   const stays = split.stays.functions.length > 0 ? `, ${split.stays.functions.join(', ')}` : ''
-  return [...head, `    into ${split.folder}/ behind ${split.entry}, ${split.files.count}${limit} code files there`, ...groups, `    stays in the entry: ${plural(split.stays.lines, 'line')}${stays}`]
+  return [...head, `    into ${split.folder}/ behind ${split.entry}, ${files} there`, ...groups, `    stays in the entry: ${plural(split.stays.lines, 'line')}${stays}`]
 }
 
 function functionLines(split: FunctionSplit): string[] {

@@ -49,11 +49,13 @@ import { locateSession } from './git/session'
 import { listFunctions } from './functions'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
+import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
 import { splitsIn } from './rules/split'
 import { hasAgents, writeAgents } from './agents/write'
+import { answerWhere } from './where'
 
 const HISTORY_LIMIT = 200
 
@@ -843,9 +845,7 @@ export function createDaemon(options: DaemonOptions = {}) {
           return { id: req.id, ok: true, result: decided }
         }
 
-        if (req.op === 'await_proposal') {
-          return { id: req.id, ok: true, result: await review.resume(req.proposalId, closed.signal) }
-        }
+        if (req.op === 'await_proposal') return { id: req.id, ok: true, result: await review.resume(req.proposalId, closed.signal) }
 
         if (req.op === 'review_edit') {
           return { id: req.id, ok: true, result: await review.gate([...projects.keys()], req.change, closed.signal) }
@@ -855,6 +855,7 @@ export function createDaemon(options: DaemonOptions = {}) {
           return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file, req.digest) }
         }
 
+        if (req.op === 'where') return { id: req.id, ok: true, result: await answerWhere(req, [resolveRoot(req.cwd), ...projects.keys()], loadProject, mapOf) }
         const root = resolveRoot(req.cwd)
         if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
         loadProject(root)
@@ -1008,8 +1009,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     listFunctions: async (root: string, scope?: unknown): Promise<FunctionList> => {
       const { architecture } = loadProject(root)
       const map = await mapOf(root)
-      const list = listFunctions(root, map, scope)
-      return { ...list, splits: splitsIn(root, map, architecture, list.scope) }
+      return { ...listFunctions(root, map, scope, architecture), splits: splitsIn(root, map, architecture) }
     },
     recency: async (root: string): Promise<Recency> => {
       loadProject(root)
@@ -1017,6 +1017,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       const blamed = await blameFiles(root, map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
       return recencyOf(map, loadProject(root).architecture, blamed)
     },
+    churn: async (root: string, days?: unknown) => churnOf(root, await mapOf(loadProject(root).root), days),
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },

@@ -1,6 +1,6 @@
 import path from 'node:path'
 import type { FileSplit, FunctionEntry, LimitRule, RuleEntry, SplitGroup } from '../../../shared/types'
-import { folderOf, jobsOf, limitOf, type Job } from '../audit'
+import { folderOf, isSkipped, jobsOf, limitOf, type Job } from '../audit'
 import type { SourceFacts } from '../facts'
 import { jobName } from './name'
 
@@ -47,9 +47,12 @@ function named(jobs: Job[]): Named[] {
   return [...merged.values(), ...unnamed]
 }
 
-function groupOf(job: Named, folder: string, ext: string, taken: Set<string>): SplitGroup {
+const stem = (file: string) => file.replace(/\.[^./]*$/, '').toLowerCase()
+
+function groupOf(job: Named, folder: string, ext: string, taken: string[]): SplitGroup {
   const target = job.name === undefined ? undefined : folder ? `${folder}/${job.name}${ext}` : `${job.name}${ext}`
-  const place = target === undefined ? { unnamed: job.unnamed } : taken.has(target) ? { unnamed: `${target} already exists` } : { name: job.name, file: target }
+  const clash = target === undefined ? undefined : taken.find((other) => stem(other) === stem(target))
+  const place = target === undefined ? { unnamed: job.unnamed } : clash ? { unnamed: `${clash} already exists` } : { name: job.name, file: target }
   const members = [...job.members].sort((a, b) => a.line - b.line)
   return {
     ...place,
@@ -67,10 +70,9 @@ export function fileSplit(entries: RuleEntry[], file: SourceFacts, filesIn: (fol
 
   const folder = folderFor(file.path)
   const beside = filesIn(folder).filter((other) => other !== file.path && folderOf(other) === folder)
-  const taken = new Set([...beside, file.path])
-  const groups = named(jobs).map((job) => groupOf(job, folder, path.posix.extname(file.path), taken))
+  const groups = named(jobs).map((job) => groupOf(job, folder, path.posix.extname(file.path), [...beside, file.path]))
   const grouped = new Set(jobs.flatMap((job) => job.members))
-  const created = groups.filter((group) => group.file !== undefined).length
+  const counted = beside.filter((other) => !isSkipped(entries, other)).length
   const split: FileSplit = {
     kind: 'file',
     path: file.path,
@@ -83,7 +85,7 @@ export function fileSplit(entries: RuleEntry[], file: SourceFacts, filesIn: (fol
       lines: Math.max(0, file.lines - groups.reduce((sum, group) => sum + group.lines, 0)),
       functions: file.functions.filter((fn) => !grouped.has(fn)).map((fn) => fn.name),
     },
-    files: { count: beside.length + created + (folderOf(file.path) === folder ? 1 : 0), limit: limitOf(entries, 'files', folder || '.') },
+    files: { count: counted + groups.length + (folderOf(file.path) === folder ? 1 : 0), limit: limitOf(entries, 'files', folder || '.') },
   }
   if (jobs.length === 0) return { ...split, blocked: 'no exported function to group into a job' }
   if (jobs.length === 1) return { ...split, blocked: 'every exported function sits in one connected group, so no job splits off' }

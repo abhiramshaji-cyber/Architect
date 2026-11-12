@@ -209,12 +209,9 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('review_edit'), cwd: z.string(), change: codeChangeSchema }),
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('write_agents'), cwd: z.string() }),
+  z.object({ id: z.string(), op: z.literal('where'), cwd: z.string(), calls: z.array(z.string()), callers: z.array(z.string()), name: z.string().optional(), file: z.string().optional() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
-  z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string() }).extend({
-    session: z.string().optional(),
-    file: z.string().optional(),
-    digest: z.string().optional(),
-  }),
+  z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string(), session: z.string().optional(), file: z.string().optional(), digest: z.string().optional() }),
 ])
 
 export type Request = z.infer<typeof requestSchema>
@@ -522,7 +519,7 @@ export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unreached: 
 
 export type ScopeFolder = { path: string; functions: number }
 
-export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; splits?: SplitSuggestion[] }
+export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; owners: Record<string, string>; splits?: SplitSuggestion[] }
 
 export type CommitDraft = { title: string; description: string }
 
@@ -562,6 +559,7 @@ export type ArchitectApi = {
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
   recency(root: string): Promise<Recency>
+  churn(root: string, days?: number): Promise<import('./recency').Churn>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
   openSource(root: string, file: string): Promise<SourceFile>
   writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>

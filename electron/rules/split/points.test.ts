@@ -46,6 +46,8 @@ describe('pointsOf', () => {
   it('labels a callback passed to a computed callee as a call', () => {
     const curried = 'export function go() {\n  make(1)(() => {\n    run()\n  })\n  return 1\n}\n'
     expect(pointsIn(curried, 'go')).toEqual(['callback call callback 2-4 3'])
+    const promised = 'export function wait() {\n  const a = 1\n  return new Promise((resolve) => {\n    resolve(a)\n  })\n}\n'
+    expect(pointsIn(promised, 'wait')).toEqual(['callback Promise callback 3-5 3'])
   })
 
   it('says why when the parse shows no point', () => {

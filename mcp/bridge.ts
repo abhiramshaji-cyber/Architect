@@ -1,129 +1,12 @@
-import { createConnection, type Socket } from 'node:net'
-import { randomUUID } from 'node:crypto'
-import { StringDecoder } from 'node:string_decoder'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { SOCKET_PATH } from '../shared/socket.js'
 import { runHook } from './hook.js'
-import { PROPOSAL_TIMEOUT_MS, type Request, type Proposal } from '../shared/types.js'
+import { send, type RequestInput } from './socket.js'
+import type { Proposal } from '../shared/types.js'
 
-type RequestInput = { [K in Request['op']]: Omit<Extract<Request, { op: K }>, 'id' | 'cwd'> }[Request['op']]
-
-type Waiter = { resolve: (result: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
-
-const NOT_RUNNING = 'Architect app is not running. Open the Architect app and try again.'
-
-const pending = new Map<string, Waiter>()
-let socket: Socket | null = null
-let connecting: Promise<Socket> | null = null
-let buffer = ''
-let decoder = new StringDecoder('utf8')
-
-function onData(chunk: Buffer) {
-  buffer += decoder.write(chunk)
-
-  let index: number
-  while ((index = buffer.indexOf('\n')) !== -1) {
-    const line = buffer.slice(0, index)
-    buffer = buffer.slice(index + 1)
-    if (line) dispatch(line)
-  }
-}
-
-function drop(line: string, why: string) {
-  const preview = line.length > 200 ? `${line.slice(0, 200)}...` : line
-  process.stderr.write(`architect bridge discarded a line (${why}): ${preview}\n`)
-}
-
-function dispatch(line: string) {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(line)
-  } catch {
-    return drop(line, 'not JSON')
-  }
-
-  const res = parsed as { id?: unknown; ok?: unknown; result?: unknown; error?: unknown }
-  if (typeof parsed !== 'object' || parsed === null || typeof res.id !== 'string') {
-    return drop(line, 'not a response')
-  }
-
-  const waiter = pending.get(res.id)
-  if (!waiter) return
-  clearTimeout(waiter.timer)
-  pending.delete(res.id)
-
-  if (res.ok === true) waiter.resolve(res.result)
-  else if (res.ok === false) waiter.reject(new Error(typeof res.error === 'string' ? res.error : 'Architect reported an error with no message.'))
-  else waiter.reject(new Error('Architect sent a reply that was not a result or an error.'))
-}
-
-function failAll(error: Error) {
-  for (const waiter of pending.values()) {
-    clearTimeout(waiter.timer)
-    waiter.reject(error)
-  }
-  pending.clear()
-}
-
-function connect(path: string): Promise<Socket> {
-  return new Promise((resolve, reject) => {
-    const s = createConnection(path)
-
-    const onConnectError = () => reject(new Error(NOT_RUNNING))
-
-    const onClose = () => {
-      if (socket !== s) return
-      socket = null
-      failAll(new Error('Architect connection closed unexpectedly.'))
-    }
-
-    s.once('connect', () => {
-      s.off('error', onConnectError)
-      buffer = ''
-      decoder = new StringDecoder('utf8')
-      s.on('data', onData)
-      s.on('close', onClose)
-      s.on('error', onClose)
-      socket = s
-      resolve(s)
-    })
-
-    s.once('error', onConnectError)
-  })
-}
-
-async function getSocket(path: string): Promise<Socket> {
-  if (socket) return socket
-  if (!connecting) connecting = connect(path).finally(() => (connecting = null))
-  return connecting
-}
-
-export async function send(req: RequestInput, socketPath = SOCKET_PATH, timeoutMs?: number): Promise<unknown> {
-  const full = { ...req, id: randomUUID(), cwd: process.cwd() } as Request
-  const s = await getSocket(socketPath)
-  const waits = req.op === 'propose_change' || req.op === 'await_proposal'
-  const deadline = timeoutMs ?? (waits ? PROPOSAL_TIMEOUT_MS + 30_000 : 30_000)
-
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(full.id)
-      reject(new Error(`Architect did not respond in ${Math.round(deadline / 1000)}s; is the app still running?`))
-    }, deadline)
-    pending.set(full.id, { resolve, reject, timer })
-    s.write(JSON.stringify(full) + '\n')
-  })
-}
-
-export function disconnect() {
-  if (socket) socket.destroy()
-  socket = null
-  connecting = null
-  buffer = ''
-  decoder = new StringDecoder('utf8')
-  failAll(new Error('Architect connection closed.'))
-}
+export { send, disconnect } from './socket.js'
 
 type ToolResult = { content: [{ type: 'text'; text: string }]; isError?: true }
 
@@ -156,6 +39,11 @@ export const awaitProposal = (proposalId: string, socketPath = SOCKET_PATH) =>
 export const listEdits = (socketPath = SOCKET_PATH) => callTool({ op: 'list_edits' }, socketPath)
 
 export const writeAgents = (socketPath = SOCKET_PATH) => callTool({ op: 'write_agents' }, socketPath)
+
+type PlaceInput = { calls?: string[]; callers?: string[]; name?: string; file?: string }
+
+export const where = ({ calls = [], callers = [], name, file }: PlaceInput, socketPath = SOCKET_PATH) =>
+  callTool({ op: 'where', calls, callers, ...(name === undefined ? {} : { name }), ...(file === undefined ? {} : { file }) }, socketPath)
 
 export const getEdit = (editId: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'get_edit', editId }, socketPath)
@@ -239,6 +127,21 @@ function main() {
         'Write an AGENTS.md into the folder each component\'s globs share, copied from architect.md: what the component owns, what it may call, what it must never call and the rules that apply there. Files are rewritten only when their content changes, a hand written AGENTS.md is never overwritten, generated files for removed components are deleted, and once any exist Architect keeps them in step with architect.md. Returns the files written, unchanged, removed and kept, and each component that has no folder of its own with the reason.',
     },
     () => writeAgents(),
+  )
+
+  server.registerTool(
+    'where',
+    {
+      description:
+        'Ask where a new function belongs before writing it. Pass the functions it will call and the functions or files that will call it, each as a function name, a file path (relative to the working directory, else to the project root), or file:name when a name is in several files, plus optionally its proposed name and file. Every answer comes from the scan, architect.md and its Rules, with counts and file:line evidence, and no model call. component is the component owning the most matched neighbours among those whose calls to and from the new function architect.md allows; it is tied, blocked, unowned, no-match or no-contract instead of guessing. folder is where most of those neighbours live, and newFile says whether a new file there fits the files rule or the function should go in an existing file. verb is the leading word most function names in that folder start with. similar is the function sharing the most callees, then callers, to copy. file checks the proposed file against the Rules with a stub of the function. A reference that matches nothing or several files is listed in notes and never counted. Without architect.md the answer is by folder only.',
+      inputSchema: {
+        calls: z.array(z.string()).optional().describe('functions the new function will call: name, file path, or file:name'),
+        callers: z.array(z.string()).optional().describe('functions or files that will call the new function: name, file path, or file:name'),
+        name: z.string().optional().describe('proposed function name'),
+        file: z.string().optional().describe('proposed file, absolute or relative to the working directory'),
+      },
+    },
+    (input) => where(input),
   )
 
   const transport = new StdioServerTransport()

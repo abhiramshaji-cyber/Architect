@@ -22,6 +22,7 @@ describe('functionsOf', () => {
       tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
       scope: '',
       folders: [],
+      owners: {},
     })
     expect(functionsOf(mapOf([{ path: 'a.ts', functions: [fn('loadConfig')] }]), new Map()).rows).toEqual([
       {
@@ -230,6 +231,7 @@ describe('functionsOf in a folder', () => {
       tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
       scope: 'empty',
       folders: [],
+      owners: {},
     })
     for (const gone of ['deleted', '../r', '/elsewhere', 'app/main.ts']) {
       const list = functionsOf(map, new Map(), gone)
@@ -255,5 +257,25 @@ describe('functionsOf in a folder', () => {
     expect(rows.every((row) => row.file.startsWith('pkg3/'))).toBe(true)
     expect(tree.children.flat().length + tree.starts.length + tree.unreached.length).toBe(500)
     expect(spent).toBeLessThan(250)
+  })
+
+  it('maps each file in scope to the component that owns it, joining shared owners', () => {
+    const map = mapOf([
+      { path: 'core/a.ts', functions: [fn('alpha')] },
+      { path: 'both/b.ts', functions: [fn('beta')] },
+      { path: 'loose/c.ts', functions: [fn('gamma')] },
+    ])
+    const component = (id: string, owns: string[]) => ({ id, purpose: '', owns })
+    const architecture = {
+      title: '',
+      summary: '',
+      components: [component('core', ['core/**']), component('x', ['both/**']), component('y', ['both/*.ts'])],
+      edges: [],
+      forbidden: [],
+      packages: [],
+    }
+    expect(functionsOf(map, new Map(), undefined, architecture).owners).toEqual({ 'core/a.ts': 'core', 'both/b.ts': 'x + y' })
+    expect(functionsOf(map, new Map()).owners).toEqual({})
+    expect(functionsOf(map, new Map(), undefined, { ...architecture, scope: 'core' }).owners).toEqual({ 'core/a.ts': 'core' })
   })
 })

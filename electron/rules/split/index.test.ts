@@ -28,14 +28,19 @@ describe('splitSuggestions', () => {
     expect(splitSuggestions(undefined, sources, () => undefined, 'b').map((split) => split.path)).toEqual(['b/two.ts'])
   })
 
+  it('sees a skipped file in the job folder as taken without counting it', () => {
+    const found = splitSuggestions([{ rule: 'skip', globs: ['**/go.ts'] }], [source('a/two.ts', TWO), source('a/two/go.ts', 'export const x = 1\n')], () => undefined)
+    expect(found[0]).toMatchObject({ files: { count: 2, limit: 5 }, groups: [{ unnamed: 'a/two/go.ts already exists' }, { file: 'a/two/stop.ts' }] })
+  })
+
   it('counts files already in the job folder', () => {
     const found = splitSuggestions(undefined, [source('a/two.ts', TWO), source('a/two/go.ts', 'export const x = 1\n')], () => undefined)
-    expect(found[0]).toMatchObject({ kind: 'file', files: { count: 2, limit: 5 }, groups: [{ unnamed: 'a/two/go.ts already exists' }, { file: 'a/two/stop.ts' }] })
+    expect(found[0]).toMatchObject({ kind: 'file', files: { count: 3, limit: 5 }, groups: [{ unnamed: 'a/two/go.ts already exists' }, { file: 'a/two/stop.ts' }] })
   })
 })
 
 describe('splitsIn', () => {
-  it('reads the project from disk and keeps only the suggestions under a folder', async () => {
+  it('reads the project from disk and follows its rules', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-split-'))
     roots.push(root)
     for (const file of ['a/two.ts', 'b/two.ts']) {
@@ -44,7 +49,6 @@ describe('splitsIn', () => {
     }
     const map = await scan(root)
     expect(splitsIn(root, map, null).map((split) => split.path)).toEqual(['a/two.ts', 'b/two.ts'])
-    expect(splitsIn(root, map, undefined, 'a').map((split) => split.path)).toEqual(['a/two.ts'])
     expect(splitsIn(root, map, { title: '', summary: '', components: [], edges: [], forbidden: [], packages: [], rules: [{ rule: 'jobs', limit: 'off', globs: [] }] })).toEqual([])
   })
 })

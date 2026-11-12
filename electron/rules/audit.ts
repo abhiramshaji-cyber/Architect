@@ -138,9 +138,13 @@ function files(entries: RuleEntry[], considered: SourceFacts[]): RuleViolation[]
   })
 }
 
+export function isSkipped(entries: RuleEntry[], file: string): boolean {
+  return entries.some((entry) => entry.rule === 'skip' && entry.globs.some((glob) => matches(glob, file)))
+}
+
 export function consideredOf(entries: RuleEntry[], sources: SourceFacts[], scope?: string): SourceFacts[] {
   const inScope = (file: string) => !scope || file === scope || file.startsWith(`${scope}/`)
-  return sources.filter((file) => inScope(file.path) && !entries.some((entry) => entry.rule === 'skip' && entry.globs.some((glob) => matches(glob, file.path))))
+  return sources.filter((file) => inScope(file.path) && !isSkipped(entries, file.path))
 }
 
 export function auditRules(declared: RuleEntry[] | undefined, sources: SourceFacts[], scope?: string): RuleViolation[] {

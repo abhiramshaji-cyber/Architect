@@ -66,7 +66,10 @@ describe('fileSplit', () => {
     expect(tie?.groups[0]?.file).toBeUndefined()
     const taken = split([], source('a.ts', 'export function go() {}\nexport function stop() {}\n'), () => ['a/go.ts', 'a/x.ts', 'b/y.ts'])
     expect(taken?.groups[0]).toMatchObject({ unnamed: 'a/go.ts already exists' })
-    expect(taken?.files).toEqual({ count: 3, limit: 5 })
+    expect(taken?.files).toEqual({ count: 4, limit: 5 })
+    const other = split([], source('a.ts', 'export function go() {}\nexport function stop() {}\n'), () => ['a/Go.tsx', 'a/stop.test.ts'])
+    expect(other?.groups.map((group) => group.file ?? group.unnamed)).toEqual(['a/Go.tsx already exists', 'a/stop.ts'])
+    expect(other?.files).toEqual({ count: 3, limit: 5 })
   })
 
   it('splits an index file beside itself, counting itself and its siblings', () => {
@@ -78,9 +81,12 @@ describe('fileSplit', () => {
     expect(self?.groups[0]).toMatchObject({ unnamed: 'lib/index.ts already exists' })
   })
 
-  it('reports a folder the split would overfill against the files rule there', () => {
+  it('reports a folder the split would overfill against the files rule there, counting unnamed groups too', () => {
     const found = split([{ rule: 'files', limit: 1, globs: ['a'] }], source('a.ts', 'export function go() {}\nexport function stop() {}\n'))
     expect(found?.files).toEqual({ count: 2, limit: 1 })
+    const tied = split([{ rule: 'files', limit: 2, globs: ['a'] }], source('a.ts', 'export function alignX() {\n  toY()\n}\nexport function toY() {}\nexport function go() {}\nexport function stop() {}\n'))
+    expect(tied?.groups.filter((group) => group.file).length).toBe(2)
+    expect(tied?.files).toEqual({ count: 3, limit: 2 })
   })
 
   it('suggests for a file over the project wide limit even when a later line grandfathers it', () => {

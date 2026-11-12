@@ -30,7 +30,7 @@ const FN: FunctionSplit = {
   points: [{ kind: 'for of', label: 'for of', line: 10, endLine: 30, lines: 21 }],
 }
 
-const html = (splits: Parameters<typeof Splits>[0]['splits']) => renderToStaticMarkup(<Splits splits={splits} onGo={() => {}} />)
+const html = (splits: Parameters<typeof Splits>[0]['splits'], scope = '') => renderToStaticMarkup(<Splits splits={splits} scope={scope} onGo={() => {}} />)
 
 describe('Splits', () => {
   it('renders nothing without suggestions', () => {
@@ -49,6 +49,11 @@ describe('Splits', () => {
     expect(shown).toContain('big, 77 lines, 6 callers')
     expect(shown).toContain('Extract for of')
     expect(shown).toContain('10-30, 21 lines')
+  })
+
+  it('keeps only the suggestions under the shown folder', () => {
+    expect(html([FILE, FN], 'src/a')).toBe('')
+    expect(html([FILE, { ...FN, path: 'src/a/b.ts' }], 'src/a')).toContain('1 split suggestion')
   })
 
   it('says why a file or function has no split', () => {
