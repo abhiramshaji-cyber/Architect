@@ -22,6 +22,7 @@ export type Parsed = {
   raw: Map<number, Raw[]>
   specs: Set<string>
   typed: Set<string>
+  computed: boolean
 }
 
 const BASE: ts.CompilerOptions = { allowJs: true, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler }
@@ -42,7 +43,8 @@ function resolutionOptions(root: string, config: string): ts.CompilerOptions {
 
 function resolversOf(root: string, files: string[]): (from: string) => ts.CompilerOptions[] {
   const byDir = new Map<string, ts.CompilerOptions[]>()
-  for (const config of files.filter((file) => CONFIG.test(file)).sort()) {
+  const plain = (file: string) => (path.posix.basename(file) === 'tsconfig.json' ? 0 : 1)
+  for (const config of files.filter((file) => CONFIG.test(file)).sort((a, b) => plain(a) - plain(b) || a.localeCompare(b))) {
     const dir = path.posix.dirname(config)
     byDir.set(dir, [...(byDir.get(dir) ?? []), resolutionOptions(root, config)])
   }
@@ -116,12 +118,13 @@ export function link(root: string, parsed: Map<string, Parsed>): Map<string, Lin
   }
 
   const spread = spreadOf(parsed, target)
+  const keys = [...parsed.keys()]
   for (const [file, at] of parsed) {
     for (const { from, spec, key } of at.pending) {
       const entry = at.functions[from] ?? at.starts[from - at.functions.length]
       if (entry === undefined) continue
       const spreads = 'kind' in entry && (entry.kind === 'value' || entry.kind === 'exports')
-      const targets = spec.includes('*') ? globbed(file, spec, [...parsed.keys()]) : [target(file, spec)]
+      const targets = /[*?[{]/.test(spec) ? globbed(file, spec, keys) : [target(file, spec)]
       for (const to of targets) {
         if (to === undefined) continue
         const exact = find(to, key, new Set())

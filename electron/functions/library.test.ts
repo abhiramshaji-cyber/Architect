@@ -128,6 +128,16 @@ describe('a library published through package.json exports', () => {
     expect(unknown).toEqual(['Page', 'dead', 'helper'])
   })
 
+  it('puts every export of a package that imports by a computed path in reach unknown', async () => {
+    const { unreached, unknown } = await listOf({
+      'package.json': JSON.stringify({ exports: './src/main.ts' }),
+      'src/main.ts': "import { h } from './plug'\nexport async function boot(n: string) { h(); const m = await import(n); return m.run() }\n",
+      'src/plug.ts': 'export function h() {}\nexport function run() {}\nfunction hidden() {}\n',
+    })
+    expect(unreached).toEqual(['hidden'])
+    expect(unknown).toEqual(['run'])
+  })
+
   it('counts the members of an anonymous default class as library API', async () => {
     const { unreached, list } = await listOf({
       'package.json': JSON.stringify({ exports: { '.': './src/index.ts' } }),

@@ -91,10 +91,13 @@ function untracedOf(files: FileEntry[], entries: EntryFiles): Map<string, Untrac
   }
   const live = files.filter((one) => !isTestFile(one.path))
   const imported = new Set(live.flatMap((file) => (file.imports ?? []).filter((to) => !file.typeImports?.includes(to))))
+  const packages = entries.packages ?? ['']
+  const computed = new Set(live.filter((file) => file.computed).map((file) => packageOf(file.path, packages)))
   for (const file of live) {
     const orphan = !imported.has(file.path) && !entries.has(file.path)
+    const loadable = computed.has(packageOf(file.path, packages))
     file.functions.forEach((fn, at) => {
-      if (orphan && fn.exported) marks.set(`${file.path}\0${at}`, 'orphan')
+      if (fn.exported && (orphan || loadable)) marks.set(`${file.path}\0${at}`, loadable ? 'computed' : 'orphan')
     })
     if (entries.opaque?.includes(packageOf(file.path, entries.packages ?? ['']))) {
       file.functions.forEach((fn, at) => {

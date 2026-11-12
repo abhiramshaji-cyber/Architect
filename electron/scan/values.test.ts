@@ -82,6 +82,14 @@ describe('value references', () => {
     expect(valuesOf(map, 'src/main.ts')).toEqual(['src/locales/en.ts:greet', 'src/pages/home.tsx:Home'])
   })
 
+  it('records the members of a class rendered as a JSX tag and pages matched by a single character glob', async () => {
+    const map = await mapOf({
+      'src/pages/a.ts': 'export function page() {}\n',
+      'src/main.tsx': "class Boundary { render() { return null } }\nconst pages = import.meta.glob('./pages/?.ts')\nexport function App() { return <Boundary /> }\n",
+    })
+    expect(valuesOf(map, 'src/main.tsx')).toEqual(['src/main.tsx:Boundary.render', 'src/pages/a.ts:page'])
+  })
+
   it('records nothing for a test file', async () => {
     const map = await mapOf({ 'a.test.ts': 'function cb() {}\n[1].map(cb)\n' })
     expect(valuesOf(map, 'a.test.ts')).toEqual([])

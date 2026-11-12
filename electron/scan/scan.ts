@@ -366,7 +366,7 @@ function distinct(sites: Site[]): Call[] {
 }
 
 function empty(): Parsed {
-  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], raw: new Map(), specs: new Set(), typed: new Set() }
+  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], raw: new Map(), specs: new Set(), typed: new Set(), computed: false }
 }
 
 function isTypeOnly(node: ts.Node): boolean {
@@ -438,8 +438,8 @@ function parseFile(source: string, file: string): Parsed {
       members: (name: string, at: ts.Node) => membersOf(name, at, byScope, shadows, imported),
       local: (node: ts.Node) => index.get(node),
     }
-    const { used, linked } = isTestFile(file)
-      ? { used: [], linked: [] }
+    const { used, linked, computed } = isTestFile(file)
+      ? { used: [], linked: [], computed: false }
       : usedIn([...found.map((f) => ({ node: f.node, self: f.owner })), { node: sourceFile, self: '' }], nested, lookup, imported)
     if (used.length + linked.length > 0) opened.push({ kind: 'value', calls: used })
 
@@ -519,7 +519,7 @@ function parseFile(source: string, file: string): Parsed {
       if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
     }
 
-    return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs, typed }
+    return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs, typed, computed }
   } catch {
     return empty()
   }
@@ -579,7 +579,7 @@ async function walk(root: string, relative: string, { into, parsed, counter, dig
     const file = parseFile(source, child)
     parsed.set(child, file)
     digests.set(child, createHash('sha256').update(source).digest('hex'))
-    files.push({ path: child, lines: lineCount(source), ...(isCode(child) ? { code: true as const } : {}), functions: file.functions })
+    files.push({ path: child, lines: lineCount(source), ...(isCode(child) ? { code: true as const } : {}), ...(file.computed ? { computed: true as const } : {}), functions: file.functions })
   }
 
   folders.sort((a, b) => a.localeCompare(b))

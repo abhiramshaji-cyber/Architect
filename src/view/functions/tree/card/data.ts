@@ -7,7 +7,8 @@ const UNTRACED: Record<Untraced, string> = {
   value: 'used as a value',
   load: 'called when its file loads',
   export: 'exported by a package entry not mapped to source',
-  orphan: 'exported from a file nothing imports',
+  orphan: 'no file outside tests imports its file',
+  computed: 'its package loads modules by a computed path',
   test: 'in a test file',
 }
 

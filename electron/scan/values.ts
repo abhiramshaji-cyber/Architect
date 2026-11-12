@@ -60,8 +60,8 @@ function loaded(node: ts.Node): string[] {
   }
   const dynamic = node.expression.kind === ts.SyntaxKind.ImportKeyword
   const required = ts.isIdentifier(node.expression) && node.expression.text === 'require'
-  const spec = dynamic || required ? patternOf(first) : undefined
-  return spec === undefined ? [] : [spec]
+  if (!dynamic && !required) return []
+  return [patternOf(first) ?? '']
 }
 
 function chainOf(root: ts.Node, self: string): { names: string[]; top: ts.Node } {
@@ -78,6 +78,7 @@ function valuesAt(root: ts.Node, self: string, { resolve, members }: Lookup): Ca
   const { names, top } = chainOf(root, self)
   if (names[0] === '') return []
   const called = isCallee(top)
+  const rendered = renderedTag(top.parent) === top
   const last = names.length - 1
   const hits = names.map((name) => resolve(name, root))
   let deepest = last
@@ -88,7 +89,7 @@ function valuesAt(root: ts.Node, self: string, { resolve, members }: Lookup): Ca
   const found: Call[] = []
   if (deepest >= 0 && (!called || deepest < last)) found.push(hits[deepest] as Call)
   if (bound !== undefined) found.push(bound)
-  if (!called) found.push(...members(names[last] ?? '', root))
+  if (!called || rendered) found.push(...members(names[last] ?? '', root))
   return found
 }
 
@@ -126,15 +127,15 @@ export function usedIn(
   nested: Set<ts.Node>,
   lookup: Lookup,
   imported: Map<string, Binding>,
-): { used: number[]; linked: { spec: string; key: string }[] } {
+): { used: number[]; linked: { spec: string; key: string }[]; computed: boolean } {
   const values = bodies.flatMap(({ node, self }) => valuesIn(node, self, nested, lookup))
   const used = [...new Set(values.flatMap((value) => (typeof value === 'number' ? [value] : [])))]
   const linked = values.flatMap((value) => {
     if (typeof value === 'number') return []
-    if ('spec' in value) return [{ spec: value.spec, key: '' }]
+    if ('spec' in value) return value.spec === '' ? [] : [{ spec: value.spec, key: '' }]
     const binding = imported.get(value.root)
     const rest = value.name.slice(value.root.length)
     return binding ? [{ spec: binding.spec, key: binding.name === null ? rest.slice(1) : binding.name + rest }] : []
   })
-  return { used, linked }
+  return { used, linked, computed: values.some((value) => typeof value === 'object' && 'spec' in value && value.spec === '') }
 }

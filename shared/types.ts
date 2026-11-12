@@ -244,7 +244,7 @@ export type StartKind = 'load' | 'exports' | 'value' | StartReason
 
 export type FileStart = { kind: StartKind; calls: CallRef[]; channel?: string; member?: string; line?: number; sites?: CallSite[] }
 
-export type FileEntry = { path: string; lines?: number; code?: true; functions: FunctionEntry[]; imports?: string[]; typeImports?: string[]; reexports?: string[]; starts?: FileStart[] }
+export type FileEntry = { path: string; lines?: number; code?: true; functions: FunctionEntry[]; imports?: string[]; typeImports?: string[]; computed?: true; reexports?: string[]; starts?: FileStart[] }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 
@@ -492,7 +492,7 @@ export type DraftFailure =
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
 
-export type Untraced = 'value' | 'load' | 'export' | 'orphan' | 'test'
+export type Untraced = 'value' | 'load' | 'export' | 'orphan' | 'computed' | 'test'
 
 export type FunctionFacts = {
   file: string
