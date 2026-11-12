@@ -30,7 +30,39 @@ export type Architecture = {
   packages: string[]
   layout?: Layout
   scope?: string
+  rules?: RuleEntry[]
 }
+
+export type LimitRule = 'lines' | 'files' | 'jobs'
+
+export type RuleEntry =
+  | { rule: LimitRule; limit: number | 'off'; globs: string[] }
+  | { rule: 'names'; banned: string[] | 'off'; globs: string[] }
+  | { rule: 'skip'; globs: string[] }
+
+const checkedRuleSchema = z.enum(['lines', 'files', 'names', 'jobs'])
+
+export type CheckedRule = z.infer<typeof checkedRuleSchema>
+
+export const ruleViolationSchema = z.object({
+  rule: checkedRuleSchema,
+  path: z.string(),
+  line: z.number().optional(),
+  key: z.string(),
+  amount: z.number(),
+  message: z.string(),
+})
+
+export type RuleViolation = z.infer<typeof ruleViolationSchema>
+
+export const ruleRunSchema = z.object({
+  at: z.number(),
+  source: z.enum(['check', 'check_change']),
+  file: z.string().optional(),
+  results: z.array(z.object({ rule: checkedRuleSchema, pass: z.boolean(), violations: z.number().int().nonnegative() })),
+})
+
+export type RuleRun = z.infer<typeof ruleRunSchema>
 
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
@@ -97,6 +129,7 @@ export const verdictSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('cycle'), path: z.array(z.string()) }),
   z.object({ status: z.literal('undrawn-edge') }),
   z.object({ status: z.literal('unknown'), reason: z.string().optional() }),
+  z.object({ status: z.literal('rule-violation'), violations: z.array(ruleViolationSchema) }),
 ])
 
 export type Verdict = z.infer<typeof verdictSchema>
@@ -105,8 +138,9 @@ export const verdictRecordSchema = z.object({
   id: z.string(),
   root: z.string(),
   at: z.number(),
-  from: z.string(),
-  to: z.string(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  file: z.string().optional(),
   verdict: verdictSchema,
   stale: z.literal(true).optional(),
   session: z.string().optional(),
@@ -181,8 +215,10 @@ export const requestSchema = z.discriminatedUnion('op', [
     id: z.string(),
     op: z.literal('check_change'),
     cwd: z.string(),
-    from: z.string(),
-    to: z.string(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    file: z.string().optional(),
+    content: z.string().optional(),
     session: z.string().optional(),
   }),
   z.object({
