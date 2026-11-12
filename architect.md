@@ -43,6 +43,7 @@ owns: `electron/churn/**`
 ### daemon
 Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files, and answering where a new function belongs.
 owns: `electron/daemon.ts`
+owns: `electron/watch/**`
 
 ### journal
 A capped, newest first list of records per project kept as one JSON file each in the cache directory. Rows are validated against a schema on load and any that fail are dropped, and every write replaces the file whole so a crash never leaves half a list. Holds the change history, the check_change verdicts and the rule runs.

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
-import chokidar, { type FSWatcher } from 'chokidar'
+import chokidar from 'chokidar'
 import { folderShaped } from '../shared/folders'
 import { SOCKET_PATH } from '../shared/socket'
 import {
@@ -56,6 +56,7 @@ import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
+import { watchContract } from './watch/contract'
 
 const HISTORY_LIMIT = 200
 
@@ -139,7 +140,7 @@ type ProjectState = {
   root: string
   architecture: Architecture | null
   contract: ContractState
-  watcher: FSWatcher
+  watcher: Closable
   sources: Closable
   rescanTimer: ReturnType<typeof setTimeout> | null
   rescanning: boolean
@@ -550,7 +551,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       architecture: null,
       contract: { status: 'missing' },
       lastWrittenContent: null,
-      watcher: null as unknown as FSWatcher,
+      watcher: null as unknown as Closable,
       sources: null as unknown as Closable,
       rescanTimer: null,
       rescanning: false,
@@ -585,17 +586,8 @@ export function createDaemon(options: DaemonOptions = {}) {
       absorb(content)
     }
 
-    reread()
-
-    const watcher = chokidar.watch(filePath, {
-      ignoreInitial: true,
-      usePolling: true,
-      interval: 30,
-      awaitWriteFinish: { stabilityThreshold: 20, pollInterval: 10 },
-    })
-    watcher.on('all', (event) => {
-      if (event !== 'add' && event !== 'change' && event !== 'unlink') return
-
+    // watch before the first read, or a save landing in between is never seen
+    state.watcher = watchContract(filePath, () => {
       const contract = state.contract
       const architecture = state.architecture
       reread()
@@ -605,7 +597,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       record(state.root, 'contract', contractDiff(architecture, state.architecture))
       if (state.contract.status === 'ready' && state.architecture) contractChanged(state.root, state.architecture, architecture)
     })
-    state.watcher = watcher
+    reread()
 
     state.sources = watchSources(root, () => scheduleRescan(state))
 
