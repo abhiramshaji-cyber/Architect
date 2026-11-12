@@ -20,12 +20,12 @@ function specOf(node: ts.Node): ts.Expression | undefined {
   return loads ? node.arguments[0] : undefined
 }
 
-export function importLine(root: string, test: string, target: string): number | null {
+export function importLine(root: string, test: string, target: string): number | 'unreadable' | 'not-relative' {
   let text: string
   try {
     text = fs.readFileSync(path.join(root, test), 'utf8')
   } catch {
-    return null
+    return 'unreadable'
   }
   const source = ts.createSourceFile(test, text, ts.ScriptTarget.Latest, true)
   const wanted = bare(target)
@@ -40,7 +40,7 @@ export function importLine(root: string, test: string, target: string): number |
     ts.forEachChild(node, visit)
   }
   visit(source)
-  return line
+  return line ?? 'not-relative'
 }
 
 function reachedOf(fns: Fn[], reach: Reach, node: number): number {
@@ -89,9 +89,11 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
   const listed = [...found].sort(([a], [b]) => a.localeCompare(b)).slice(0, LISTED).map(([file, hit]): TestReach => {
     if (hit.via === 'call') return { file, ...hit }
     const line = importLine(root, file, hit.target)
-    if (line === null) lineless.push(`${file} imports ${hit.target} by a path that is not relative, so its import line is not given`)
-    return { file, via: 'import', at: line === null ? file : `${file}:${line}`, reaches: hit.reaches }
+    if (line === 'unreadable') lineless.push(`${file} could not be read, so its import line is not given`)
+    if (line === 'not-relative') lineless.push(`${file} imports ${hit.target} by a path that is not relative, so its import line is not given`)
+    return { file, via: 'import', at: typeof line === 'number' ? `${file}:${line}` : file, reaches: hit.reaches }
   })
   const cut = found.size > LISTED ? [`${found.size - LISTED} of ${found.size} test files are counted but not listed`] : []
-  return { total: found.size, listed, notes: [...cut, ...lineless] }
+  const loose = listed.some((test) => test.via === 'import') ? ['a test listed via import imports a file that holds or re-exports a reached function; the scan does not see calls inside test callbacks, so it may not call that function'] : []
+  return { total: found.size, listed, notes: [...cut, ...lineless, ...loose] }
 }

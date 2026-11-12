@@ -6,7 +6,7 @@ import type { Architecture, CodeMap } from '../../shared/types'
 import { parse } from '../contract/graph'
 import { scan } from '../scan/scan'
 import { impactFor, impactOf, type ImpactInput } from '.'
-import { reachOf } from './callers'
+import { callersOf } from './callers'
 import { importLine } from './tests'
 import { changesOf } from './touched'
 
@@ -69,11 +69,14 @@ describe('changesOf', () => {
   })
 })
 
-describe('reachOf', () => {
-  it('walks callers once each through a cycle, nearest depth first', () => {
-    const reach = reachOf([[1], [2], [0], [2]], [0])
-    expect([...reach.depth]).toEqual([[0, 0], [2, 1], [1, 2], [3, 2]])
-    expect(reach.parent.get(3)).toBe(2)
+describe('callersOf', () => {
+  it('walks callers once each through a cycle, nearest depth first, and counts entries that call in', () => {
+    const fns = ['a', 'b', 'c', 'd'].map((name, line) => ({ file: 'x.ts', name, line: line + 1, test: false }))
+    const files = [{ path: 'x.ts', functions: [], starts: [{ kind: 'load' as const, calls: [{ file: 'x.ts', fn: 3 }] }, { kind: 'exports' as const, calls: [{ file: 'x.ts', fn: 0 }] }] }]
+    const { reach, callers, entries } = callersOf(fns, files, [[1], [2], [0], [2]], [0])
+    expect([...reach.depth]).toEqual([[0, 0], [2, 1], [1, 2], [3, 2], [4, 3]])
+    expect(callers.listed.map((caller) => `${caller.depth} ${caller.name} -> ${caller.calls}`)).toEqual(['1 c -> x.ts:1 a', '2 b -> x.ts:3 c', '2 d -> x.ts:3 c'])
+    expect(entries).toEqual({ total: 1, listed: [{ kind: 'load', file: 'x.ts', depth: 3, calls: 'x.ts:4 d' }] })
   })
 })
 
@@ -82,7 +85,7 @@ describe('impactOf', () => {
     const { root, map, architecture } = await project()
     const impact = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, map)
 
-    expect(impact.touched).toEqual({ total: 1, listed: [{ name: 'load', change: 'changed', at: 'store/db.ts:1' }] })
+    expect(impact.touched).toEqual({ total: 1, listed: [{ name: 'load', change: 'changed', at: 'store/db.ts:1', in: 'disk' }] })
     expect(impact.callers.depths).toEqual([
       { depth: 1, count: 1, first: 'store/cache.ts:3 cached' },
       { depth: 2, count: 1, first: 'api/handler.ts:3 handle' },
@@ -95,12 +98,15 @@ describe('impactOf', () => {
       '3 api/route.ts:3 -> api/handler.ts:3 handle',
     ])
     expect(impact.callers).toMatchObject({ total: 4, listedThrough: 3, unlisted: 1 })
-    expect(impact.notes).toEqual(['1 of 4 callers are counted in depths but not listed; the list stops at depth 3 or 25 callers'])
+    expect(impact.notes).toEqual([
+      '1 of 4 callers are counted in depths but not listed; the list stops at depth 3 or 25 callers',
+      'a test listed via import imports a file that holds or re-exports a reached function; the scan does not see calls inside test callbacks, so it may not call that function',
+    ])
     expect(impact.components).toEqual([
-      { id: 'api', functions: 2, first: 'api/handler.ts:3' },
-      { id: 'store', functions: 2, first: 'store/cache.ts:3' },
-      { id: 'both', functions: 1, first: 'store/db.ts:1' },
-      { id: null, functions: 1, first: 'lib/top.ts:3' },
+      { id: 'api', functions: 2, entries: 0, first: 'api/handler.ts:3' },
+      { id: 'store', functions: 2, entries: 0, first: 'store/cache.ts:3' },
+      { id: 'both', functions: 1, entries: 0, first: 'store/db.ts:1' },
+      { id: null, functions: 1, entries: 0, first: 'lib/top.ts:3' },
     ])
   })
 
@@ -118,15 +124,23 @@ describe('impactOf', () => {
     expect(impact.callers.listed.some((caller) => caller.at.includes('.test.'))).toBe(false)
   })
 
+  it('counts code outside any function that calls in as an entry, with its component', async () => {
+    const { root, map, architecture } = await project({ ...FILES, 'api/start.ts': "import { top } from '../lib/top'\n\ntop()\n" })
+    const impact = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, map)
+    expect(impact.entries).toEqual({ total: 1, listed: [{ kind: 'load', file: 'api/start.ts', depth: 5, calls: 'lib/top.ts:3 top' }] })
+    expect(impact.components[0]).toEqual({ id: 'api', functions: 2, entries: 1, first: 'api/handler.ts:3' })
+    expect(impact.notes).toContain('an entry is code outside any function that calls in (a file loaded at start, an MCP tool, an IPC handler, a CLI command); the scan gives its file, not a line')
+  })
+
   it('ends on a call cycle and reports a new function with no callers', async () => {
     const { root, map, architecture } = await project()
     const looped = impactOf(edit(root, 'store/db.ts', 'return 2', 'return 8'), root, architecture, map)
     expect(looped.callers.depths).toEqual([{ depth: 1, count: 1, first: 'lib/loop.ts:3 ping' }, { depth: 2, count: 1, first: 'lib/loop.ts:8 pong' }])
 
     const added = impactOf(edit(root, 'api/route.ts', 'export function route', 'export function extra() {}\n\nexport function route'), root, architecture, map)
-    expect(added.touched.listed).toEqual([{ name: 'extra', change: 'added', at: 'api/route.ts:3' }])
+    expect(added.touched.listed).toEqual([{ name: 'extra', change: 'added', at: 'api/route.ts:3', in: 'proposed' }])
     expect(added.callers.total).toBe(0)
-    expect(added.components).toEqual([{ id: 'api', functions: 1, first: 'api/route.ts:3' }])
+    expect(added.components).toEqual([{ id: 'api', functions: 1, entries: 0, first: 'api/route.ts:3' }])
     expect(added.tests).toEqual({ total: 0, listed: [] })
 
     const tested = impactOf(edit(root, 'store/db.ts', 'export function load', 'export function extra() {}\n\nexport function load'), root, architecture, map)
@@ -208,7 +222,13 @@ describe('importLine', () => {
   it('finds the line importing the file and nothing for a missing file or an alias', async () => {
     const { root } = await project({ 'a/b.ts': 'export const b = 1\n', 'a/b.test.ts': "import x from 'vitest'\nexport * from './b.js'\n", 'a/c.test.ts': "import { b } from '@/a/b'\n" })
     expect(importLine(root, 'a/b.test.ts', 'a/b.ts')).toBe(2)
-    expect(importLine(root, 'a/c.test.ts', 'a/b.ts')).toBeNull()
-    expect(importLine(root, 'a/none.test.ts', 'a/b.ts')).toBeNull()
+    expect(importLine(root, 'a/c.test.ts', 'a/b.ts')).toBe('not-relative')
+    expect(importLine(root, 'a/none.test.ts', 'a/b.ts')).toBe('unreadable')
+  })
+})
+
+describe('line endings', () => {
+  it('treats a file with CRLF line endings on disk as unchanged by the same text with LF', () => {
+    expect(changesOf('x.ts', 'function f() {\r\n  return 1\r\n}\r\n', 'function f() {\n  return 1\n}\n').changes).toEqual([])
   })
 })

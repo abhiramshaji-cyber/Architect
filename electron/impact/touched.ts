@@ -21,7 +21,7 @@ export function keysOf(fns: Span[]): string[] {
 }
 
 function bodies(source: string, file: string): Map<string, { name: string; key: string; line: number; text: string }> {
-  const lines = source.split('\n')
+  const lines = source.split(/\r?\n/)
   const fns = functionsIn(source, file)
   const keys = keysOf(fns)
   return new Map(fns.map((fn, i) => [keys[i] ?? '', { name: fn.name, key: keys[i] ?? '', line: fn.line, text: lines.slice(fn.line - 1, fn.endLine).join('\n') }]))

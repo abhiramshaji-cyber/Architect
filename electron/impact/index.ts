@@ -6,8 +6,8 @@ import { edgesOf } from '../functions/facts'
 import { scan } from '../scan/scan'
 import { isTestFile } from '../scan/starts'
 import { projectPath, type Fn } from '../where/refs'
-import { reachOf, type Reach } from './callers'
-import type { Caller, Impact, Touch } from './schema'
+import { callersOf, type Reach } from './callers'
+import type { Impact, Touch } from './schema'
 import { testsOf } from './tests'
 import { changesOf, keysOf } from './touched'
 
@@ -19,15 +19,9 @@ type Spot = { file: string; line: number }
 
 type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; file: string | null; notes: string[] }
 
-const LIST_DEPTH = 3
-
 const LISTED = 25
 
-const DEPTHS = 25
-
-const at = (fn: Fn) => `${fn.file}:${fn.line}`
-
-const named = (fn: Fn) => `${at(fn)} ${fn.name}`
+const SETTLE_MS = 2000
 
 function before(root: string, file: string): string | Error {
   try {
@@ -57,7 +51,7 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
     notes.push(`${change.name} at ${file}:${change.line} is not in the last scan, so its callers are not counted`)
     return []
   })
-  const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}` }))
+  const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? ('proposed' as const) : ('disk' as const) }))
   return { seeds, touched, added: changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line })), file, notes }
 }
 
@@ -70,45 +64,21 @@ function edgeSeeds(from: string, to: string, architecture: Architecture, fns: Fn
   return { seeds, touched: [], added: [], file: null, notes: [note] }
 }
 
-function callersOf(fns: Fn[], reach: Reach): Impact['callers'] & { notes: string[] } {
-  const found = [...reach.depth].flatMap(([node, depth]) => {
-    const fn = fns[node]
-    return fn && !fn.test && depth > 0 ? [{ fn, depth, node }] : []
-  })
-  found.sort((a, b) => a.depth - b.depth || a.fn.file.localeCompare(b.fn.file) || a.fn.line - b.fn.line)
-
-  const depths: Impact['callers']['depths'] = []
-  for (const { fn, depth } of found) {
-    const last = depths.at(-1)
-    if (last?.depth === depth) last.count += 1
-    else depths.push({ depth, count: 1, first: named(fn) })
-  }
-
-  const listed = found.filter((hit) => hit.depth <= LIST_DEPTH).slice(0, LISTED).map(({ fn, depth, node }): Caller => {
-    const callee = fns[reach.parent.get(node) ?? -1]
-    return { name: fn.name, at: at(fn), depth, calls: callee ? named(callee) : '' }
-  })
-  const notes = [
-    ...(found.length > listed.length ? [`${found.length - listed.length} of ${found.length} callers are counted in depths but not listed; the list stops at depth ${LIST_DEPTH} or ${LISTED} callers`] : []),
-    ...(depths.length > DEPTHS ? [`callers reach depth ${depths.length}; depths past ${DEPTHS} are counted in total but not shown`] : []),
-  ]
-  return { total: found.length, depths: depths.slice(0, DEPTHS), listedThrough: LIST_DEPTH, listed, unlisted: found.length - listed.length, notes }
-}
-
-function componentsOf(architecture: Architecture, fns: Fn[], reach: Reach, added: Spot[]): Impact['components'] {
-  const hits = [...[...reach.depth.keys()].flatMap((node) => (fns[node] && !fns[node].test ? [fns[node]] : [])), ...added]
-  hits.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
+function componentsOf(architecture: Architecture, fns: Fn[], reach: Reach, added: Spot[], entries: Impact['entries']['listed']): Impact['components'] {
+  const hits = [...[...reach.depth.keys()].flatMap((node) => (fns[node] && !fns[node].test ? [{ ...fns[node], entry: false }] : [])), ...added.map((spot) => ({ ...spot, entry: false })), ...entries.map((entry) => ({ file: entry.file, line: 0, entry: true }))]
+  hits.sort((a, b) => Number(a.entry) - Number(b.entry) || a.file.localeCompare(b.file) || a.line - b.line)
   const found = ownership([...new Set(hits.map((hit) => hit.file))], architecture.components)
   const owners = new Map<string, string[]>([...found.owned.map((entry): [string, string[]] => [entry.path, [entry.owner]]), ...found.multi.map((entry): [string, string[]] => [entry.path, entry.owners])])
 
-  const byOwner = new Map<string | null, { functions: number; first: string }>()
+  const byOwner = new Map<string | null, { functions: number; entries: number; first: string }>()
   for (const hit of hits) {
     for (const id of owners.get(hit.file) ?? [null]) {
-      const held = byOwner.get(id)
-      byOwner.set(id, { functions: (held?.functions ?? 0) + 1, first: held?.first ?? `${hit.file}:${hit.line}` })
+      const held = byOwner.get(id) ?? { functions: 0, entries: 0, first: hit.entry ? hit.file : `${hit.file}:${hit.line}` }
+      byOwner.set(id, { ...held, functions: held.functions + Number(!hit.entry), entries: held.entries + Number(hit.entry) })
     }
   }
-  return [...byOwner].map(([id, held]) => ({ id, ...held })).sort((a, b) => b.functions - a.functions || Number(a.id === null) - Number(b.id === null) || (a.id ?? '').localeCompare(b.id ?? ''))
+  const weight = (held: { functions: number; entries: number }) => held.functions + held.entries
+  return [...byOwner].map(([id, held]) => ({ id, ...held })).sort((a, b) => weight(b) - weight(a) || Number(a.id === null) - Number(b.id === null) || (a.id ?? '').localeCompare(b.id ?? ''))
 }
 
 export function impactOf(input: ImpactInput, root: string, architecture: Architecture, map: CodeMap): Impact {
@@ -118,13 +88,13 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
   const seeded = file !== undefined && content !== undefined ? fileSeeds({ ...input, file, content }, root, files, fns) : edgeSeeds(from ?? '', to ?? '', architecture, fns)
   const both = file !== undefined && content !== undefined && from !== undefined && to !== undefined ? [`impact is worked out from ${file}; the edge ${from} -> ${to} is answered by the verdict only`] : []
 
-  const reach = reachOf(edgesOf(map), seeded.seeds)
-  const { notes, ...callers } = callersOf(fns, reach)
+  const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds)
   const tests = testsOf(root, fns, files, reach, seeded.added[0])
   return {
     touched: { total: seeded.touched.length, listed: seeded.touched.slice(0, LISTED) },
     callers,
-    components: componentsOf(architecture, fns, reach, seeded.added),
+    entries,
+    components: componentsOf(architecture, fns, reach, seeded.added, reached),
     tests: { total: tests.total, listed: tests.listed },
     notes: [...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes],
   }
@@ -134,7 +104,7 @@ function current(root: string, map: CodeMap): boolean {
   const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path))]
   return paths.every((entry) => {
     const stat = fs.statSync(path.join(root, entry), { throwIfNoEntry: false })
-    return stat !== undefined && stat.mtimeMs < map.scannedAt
+    return stat !== undefined && stat.mtimeMs < map.scannedAt - SETTLE_MS
   })
 }
 
@@ -156,6 +126,6 @@ export async function impactFor(input: ImpactInput, root: string, architecture: 
     return impactOf(input, root, architecture, await mapOf(root))
   } catch (err) {
     const empty = { total: 0, listed: [] }
-    return { touched: empty, callers: { ...empty, depths: [], listedThrough: LIST_DEPTH, unlisted: 0 }, components: [], tests: empty, notes: [`impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`] }
+    return { touched: empty, callers: { ...empty, depths: [], listedThrough: 3, unlisted: 0 }, entries: empty, components: [], tests: empty, notes: [`impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`] }
   }
 }
