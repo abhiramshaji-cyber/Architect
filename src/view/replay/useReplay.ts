@@ -16,12 +16,11 @@ export type Stored = {
   error: string | null
 }
 
-async function read(root: string, days: number): Promise<Stored> {
+async function read(root: string, days: number, held: Stored | null): Promise<Stored> {
+  const verdicts = await window.architect.verdicts(root)
+  if (held) return { ...held, verdicts }
   const start = Date.now() - days * DAY_MS
-  const [log, verdicts] = await Promise.all([
-    window.architect.gitCommits(root, start, LIMIT + 1),
-    window.architect.verdicts(root),
-  ])
+  const log = await window.architect.gitCommits(root, start, LIMIT + 1)
   if (!log.ok) return { root, days, since: start, commits: [], capped: false, verdicts, error: gitMessage(log.error) }
   const capped = log.value.length > LIMIT
   const commits = log.value.slice(0, LIMIT)
@@ -30,6 +29,8 @@ async function read(root: string, days: number): Promise<Stored> {
 }
 
 const POLL_MS = 5000
+
+const LOG_EVERY = 6
 
 const sameAs = (a: Stored | null, b: Stored) =>
   a !== null &&
@@ -48,11 +49,17 @@ export function useReplay(root: string | null, days: number): Stored | null {
     if (!root) return
     let live = true
     let busy = false
-    const keep = (found: Stored) => live && setStored((held) => (sameAs(held, found) ? held : found))
-    const refresh = () => {
+    let ticks = 0
+    let last: Stored | null = null
+    const keep = (found: Stored) => {
+      last = found.error === null ? found : null
+      if (live) setStored((held) => (sameAs(held, found) ? held : found))
+    }
+    const refresh = (full: boolean) => {
       if (busy || document.visibilityState === 'hidden') return
       busy = true
-      read(root, days)
+      ticks += 1
+      read(root, days, full || ticks % LOG_EVERY === 0 ? null : last)
         .then(keep, (err: unknown) =>
           keep({
             root,
@@ -69,15 +76,16 @@ export function useReplay(root: string | null, days: number): Stored | null {
         })
     }
 
-    refresh()
-    const timer = setInterval(refresh, POLL_MS)
-    window.addEventListener('focus', refresh)
-    document.addEventListener('visibilitychange', refresh)
+    const now = () => refresh(true)
+    now()
+    const timer = setInterval(() => refresh(false), POLL_MS)
+    window.addEventListener('focus', now)
+    document.addEventListener('visibilitychange', now)
     return () => {
       live = false
       clearInterval(timer)
-      window.removeEventListener('focus', refresh)
-      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('focus', now)
+      document.removeEventListener('visibilitychange', now)
     }
   }, [root, days])
 

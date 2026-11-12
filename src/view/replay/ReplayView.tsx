@@ -136,7 +136,7 @@ export default function ReplayView({ theme, show }: ViewProps) {
           Showing the newest {LIMIT.toLocaleString()} commits of the window, back to {when(stored.since)}.
         </p>
       )}
-      {recorded && (
+      {recorded && steps[0] && recorded.at > Math.max(stored?.since ?? 0, steps[0].at) && (
         <p className="fn-notice">
           {KEPT[recorded.by]} {when(recorded.at)} may be missing; the shaded part of the timeline is before it.
         </p>
