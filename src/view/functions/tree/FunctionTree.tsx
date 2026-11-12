@@ -37,13 +37,13 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated, 
   const [overrides, setOverrides] = useState(() => new Map<string, boolean>())
   const [focus, setFocus] = useState<string | null>(null)
   const anchor = useRef<Anchor>(null)
-  const [jump, setJump] = useState<{ id: string } | null>(null)
+  const jump = useRef<string | null>(null)
   const turns = useRef(new Map<number, number>())
 
   useEffect(() => {
     setOverrides(new Map())
     setFocus(null)
-    setJump(null)
+    jump.current = null
     turns.current = new Map()
   }, [tree])
 
@@ -85,8 +85,8 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated, 
       turns.current.set(at, turn + 1)
       const id = idOf(target)
       setFocus(id)
-      setOverrides((prev) => revealedOf(outline, prev, id, forced))
-      setJump({ id })
+      jump.current = id
+      setOverrides((prev) => revealedOf(outline, prev, id, new Set([...forced, ...lineageOf(outline, idOf(at))])))
     },
     [outline, list, forced],
   )

@@ -22,7 +22,7 @@ export default function Keep({
   anchor: MutableRefObject<Anchor>
   spots: Map<string, Spot>
   hits: Set<string> | null
-  jump: { id: string } | null
+  jump: MutableRefObject<string | null>
 }) {
   const { getViewport, setViewport, fitView } = useReactFlow()
   const width = useStore((state) => state.width)
@@ -54,7 +54,10 @@ export default function Keep({
   }, [hits, fitView])
 
   useEffect(() => {
-    if (jump && spots.has(jump.id)) requestAnimationFrame(() => fitView({ ...FIT, nodes: [{ id: jump.id }], duration: 200 }))
+    const id = jump.current
+    if (id === null || !spots.has(id)) return
+    jump.current = null
+    requestAnimationFrame(() => fitView({ ...FIT, nodes: [{ id }], duration: 200 }))
   }, [jump, spots, fitView])
 
   return null

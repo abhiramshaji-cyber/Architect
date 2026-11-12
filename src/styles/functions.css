@@ -241,6 +241,12 @@
 
 .fn-card-open > * {
   max-width: 100%;
+  flex-shrink: 0;
+}
+
+.fn-card-open > .fn-card-doc {
+  flex-shrink: 1;
+  min-height: 0;
 }
 
 .fn-card-open:hover {

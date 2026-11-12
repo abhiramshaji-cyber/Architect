@@ -61,5 +61,10 @@ describe('cardOf', () => {
     const nested = outlineOf({ ...list, tree: { ...list.tree, unreached: [1], children: rows.map((_, at) => (at === 1 ? [2] : [])) } })
     expect(elsewhereOf(nested, list, 1)).toEqual([])
     expect(elsewhereOf(outline, { calls: [[99]] }, 0)).toEqual([])
+
+    const wide = rows.map((_, at) => (at === 0 ? rows.slice(1).map((_, k) => k + 1) : []))
+    const bucketed = outlineOf({ ...list, tree: { ...list.tree, unreached: [], children: wide } })
+    expect(bucketed.up.get('f5')).not.toBe('f0')
+    expect(elsewhereOf(bucketed, { calls: wide }, 0)).toEqual([])
   })
 })

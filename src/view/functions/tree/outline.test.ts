@@ -188,6 +188,9 @@ describe('outline', () => {
     expect(isOpen(outlined, core, shown, none)).toBe(false)
     expect(isOpen(outlined, group, shown, none)).toBe(true)
     expect(shownOf(outlined, (id) => isOpen(outlined, id, shown, none)).ids).toContain('f1')
+    const kept = revealedOf(outlined, second, 'f1', new Set(lineageOf(outlined, 'f0')))
+    expect(isOpen(outlined, core, kept, none)).toBe(true)
+    expect(isOpen(outlined, ui, kept, none)).toBe(true)
 
     const forced = new Set([group, ui])
     const searching = toggledOf(outlined, new Map(), core, forced)
