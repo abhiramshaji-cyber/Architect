@@ -2605,7 +2605,7 @@ describe("check_change rules", () => {
   it("keeps checking rules and says so when the contract is stale", async () => {
     await ask({ file: "api/a.ts", content: "export const a = 1\n" });
     writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")).replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await vi.waitFor(() => expect(daemon.projects()[0]?.contract.status).toBe("invalid"), { timeout: 5000 });
 
     const alone = await ask({ file: "api/a.ts", content: "export const a = 1\n" });
     expect(alone.ok && alone.result).toMatchObject({ status: "unknown", reason: expect.stringMatching(/stale/) });
@@ -2640,6 +2640,65 @@ describe("check_change rules outside the scan", () => {
       const res = await c.request({ op: "check_change", cwd: tmpRoot, file, content: long });
       expect(res.ok && res.result).toEqual({ status: "allowed" });
     }
+    c.close();
+  });
+});
+
+describe("write_agents", () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")));
+    fs.mkdirSync(path.join(tmpRoot, "api"));
+    fs.mkdirSync(path.join(tmpRoot, "db"));
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+  });
+
+  const agents = (folder: string) => path.join(tmpRoot, folder, "AGENTS.md");
+
+  it("writes AGENTS.md on request and keeps them in step with every contract change", async () => {
+    const c = await client(socketPath);
+    const res = await c.request({ op: "write_agents", cwd: tmpRoot });
+    expect(res.ok && res.result).toMatchObject({ written: ["api/AGENTS.md", "db/AGENTS.md"] });
+
+    await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+    expect(fs.readFileSync(agents("api"), "utf8")).toContain("## May call\n\n- db\n");
+
+    writeArchitect(tmpRoot, fixture(component("api")));
+    await vi.waitFor(() => expect(fs.existsSync(agents("db"))).toBe(false), { timeout: 3000 });
+    c.close();
+  });
+
+  it("still applies a contract change when AGENTS.md cannot be rewritten", async () => {
+    const c = await client(socketPath);
+    await c.request({ op: "write_agents", cwd: tmpRoot });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    fs.chmodSync(agents("api"), 0o444);
+    try {
+      const res = await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+      expect(res.ok && res.result).toEqual({ status: "approved" });
+      if (process.getuid?.() !== 0) expect(logged).toHaveBeenCalledWith("could not refresh AGENTS.md:", expect.stringContaining("EACCES"));
+    } finally {
+      fs.chmodSync(agents("api"), 0o644);
+      logged.mockRestore();
+      c.close();
+    }
+  });
+
+  it("writes nothing on a contract change until AGENTS.md has been asked for", async () => {
+    const c = await client(socketPath);
+    await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+    expect(fs.existsSync(agents("api"))).toBe(false);
+    c.close();
+  });
+
+  it("refuses while architect.md does not parse", async () => {
+    const c = await client(socketPath);
+    await c.request({ op: "get_architecture", cwd: tmpRoot });
+    writeArchitect(tmpRoot, fixture(component("api")).replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
+    await vi.waitFor(() => expect(daemon.projects()[0]?.contract.status).toBe("invalid"), { timeout: 5000 });
+    const res = await c.request({ op: "write_agents", cwd: tmpRoot });
+    expect(res).toMatchObject({ ok: false, error: expect.stringContaining("malformed dependency") });
+    expect(fs.existsSync(agents("api"))).toBe(false);
     c.close();
   });
 });

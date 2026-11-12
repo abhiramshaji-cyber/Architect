@@ -67,19 +67,24 @@ afterEach(() => {
 
 describe('parseArgs', () => {
   it('defaults to the working directory', () => {
-    expect(parseArgs([])).toEqual({ root: process.cwd(), json: false, help: false, history: false })
+    expect(parseArgs([])).toEqual({ command: 'check', root: process.cwd(), json: false, help: false, history: false })
   })
 
   it('consumes a leading check subcommand', () => {
-    expect(parseArgs(['check', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: false, help: false, history: false })
+    expect(parseArgs(['check', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: false })
   })
 
   it('reads the json flag in any position', () => {
-    expect(parseArgs(['--json', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: true, help: false, history: false })
+    expect(parseArgs(['--json', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: true, help: false, history: false })
   })
 
   it('reads the history flag', () => {
-    expect(parseArgs(['--history', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: false, help: false, history: true })
+    expect(parseArgs(['--history', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: true })
+  })
+
+  it('reads the agents command and refuses history with it', () => {
+    expect(parseArgs(['agents', '/tmp', '--json'])).toEqual({ command: 'agents', root: path.resolve('/tmp'), json: true, help: false, history: false })
+    expect(parseArgs(['agents', '--history'])).toBe('unknown option: --history')
   })
 
   it('rejects an unknown option', () => {
@@ -91,7 +96,7 @@ describe('parseArgs', () => {
   })
 
   it('treats help as a flag', () => {
-    expect(parseArgs(['-h'])).toEqual({ root: process.cwd(), json: false, help: true, history: false })
+    expect(parseArgs(['-h'])).toEqual({ command: 'check', root: process.cwd(), json: false, help: true, history: false })
   })
 })
 
@@ -290,6 +295,24 @@ describe('rules', () => {
     const lines: string[] = []
     await run(['--history', fixture({})], (l) => lines.push(l), () => {}, fixture({}))
     expect(lines.join('\n')).toBe('architect: no rule runs recorded yet')
+  })
+})
+
+describe('agents', () => {
+  it('writes AGENTS.md per component, reports the rest and writes nothing when run again', async () => {
+    const root = fixture({ 'architect.md': contract(), 'api/handler.ts': API, 'store/db.ts': STORE })
+    const first = await outcome(root, ['agents'])
+
+    expect(first.code).toBe(OK)
+    expect(first.out).toContain('architect: 2 AGENTS.md written, 0 unchanged, 0 removed')
+    expect(fs.readFileSync(path.join(root, 'api', 'AGENTS.md'), 'utf8')).toContain('# api\n\nThe http surface.')
+
+    const again = await outcome(root, ['agents', '--json'])
+    expect(JSON.parse(again.out)).toMatchObject({ written: [], unchanged: ['api/AGENTS.md', 'store/AGENTS.md'] })
+  })
+
+  it('exits 2 without architect.md', async () => {
+    expect((await outcome(fixture({}), ['agents'])).code).toBe(USAGE)
   })
 })
 

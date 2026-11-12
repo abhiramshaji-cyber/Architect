@@ -8,6 +8,7 @@ import {
   disconnect,
   getArchitecture,
   checkChange,
+  writeAgents,
   proposeChange,
   listEdits,
   getEdit,
@@ -231,6 +232,21 @@ describe('bridge', () => {
     await checkChange({ from: 'a', to: 'b' }, path)
     const { id: _id, ...sent } = seenReq as Request
     expect(sent).toEqual({ op: 'check_change', cwd: process.cwd(), from: 'a', to: 'b', ...expected })
+
+    stopServer(server, path)
+  })
+
+  it('maps write_agents to op write_agents', async () => {
+    let seenReq: Request | undefined
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seenReq = req
+        s.write(JSON.stringify({ id: req.id, ok: true, result: { written: [] } }) + '\n')
+      })
+    })
+
+    await writeAgents(path)
+    expect(seenReq).toMatchObject({ op: 'write_agents' })
 
     stopServer(server, path)
   })
