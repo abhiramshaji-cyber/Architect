@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { FunctionRow, FunctionTree } from '../../../../shared/types'
-import { layoutOf } from './layout'
+import { INDENT, ROW, layoutOf } from './layout'
 import { WIDE } from './buckets'
-import { PROJECT, UNREACHED, forcedOf, hitsOf, isOpen, lineageOf, outlineOf, shownOf, toggledOf, type Outline } from './outline'
+import {
+  PROJECT,
+  UNREACHED,
+  forcedOf,
+  hitsOf,
+  isOpen,
+  lineageOf,
+  outlineOf,
+  revealedOf,
+  shownOf,
+  toggledOf,
+  type Outline,
+} from './outline'
 
 const row = (name: string, doc?: string): FunctionRow => ({
   file: 'src/a.ts',
@@ -78,7 +90,7 @@ describe('outline', () => {
     expect(lineageOf(outline, null).size).toBe(0)
   })
 
-  it('handles an empty project and lays out a top down chart', () => {
+  it('handles an empty project and lays out an indented outline, one row per card', () => {
     const empty = outlineOf({
       tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
       rows: [],
@@ -87,10 +99,11 @@ describe('outline', () => {
     })
     expect(shown(empty)).toEqual({ ids: [PROJECT], links: [] })
 
-    const spots = layoutOf(shown(outline))
-    const top = spots.get(PROJECT)?.y ?? 0
-    expect(spots.get('f0')?.y).toBeGreaterThan(top)
-    expect(spots.get('f1')?.y).toBeGreaterThan(spots.get('f0')?.y ?? 0)
+    const spots = layoutOf(shown(outline), 'indent')
+    expect(spots.get(PROJECT)).toEqual({ x: 0, y: 0 })
+    expect(spots.get('f0')).toEqual({ x: INDENT, y: ROW })
+    expect(spots.get('f1')).toEqual({ x: 2 * INDENT, y: 2 * ROW })
+    expect(spots.get('f5')).toEqual({ x: INDENT, y: 3 * ROW })
   })
 
   it('folds starting points under a card per reason, with ungrouped starts beside them', () => {
@@ -170,9 +183,61 @@ describe('outline', () => {
     expect(isOpen(outlined, core, toggledOf(outlined, second, core, none), none)).toBe(false)
     expect(toggledOf(outlined, new Map(), group, none).get(group)).toBe(true)
 
+    const shown = revealedOf(outlined, second, 'f1', none)
+    expect(isOpen(outlined, ui, shown, none)).toBe(true)
+    expect(isOpen(outlined, core, shown, none)).toBe(false)
+    expect(isOpen(outlined, group, shown, none)).toBe(true)
+    expect(shownOf(outlined, (id) => isOpen(outlined, id, shown, none)).ids).toContain('f1')
+    const kept = revealedOf(outlined, second, 'f1', new Set(lineageOf(outlined, 'f0')))
+    expect(isOpen(outlined, core, kept, none)).toBe(true)
+    expect(isOpen(outlined, ui, kept, none)).toBe(true)
+
     const forced = new Set([group, ui])
     const searching = toggledOf(outlined, new Map(), core, forced)
     expect(isOpen(outlined, core, searching, forced)).toBe(true)
     expect(isOpen(outlined, ui, searching, forced)).toBe(true)
+  })
+
+  it('keeps the outline width fixed however many siblings a level holds, and only grows it with depth', () => {
+    const widthOf = (siblings: number, depth: number) => {
+      const chain = Array.from({ length: depth }, (_, at) => `c${at}`)
+      const leaves = Array.from({ length: siblings }, (_, at) => `s${at}`)
+      const links = [
+        ...chain.slice(1).map((to, at) => ({ from: chain[at] ?? '', to })),
+        ...leaves.map((to) => ({ from: chain[depth - 1] ?? '', to })),
+      ]
+      const spots = [...layoutOf({ ids: [...chain, ...leaves], links }, 'indent').values()]
+      return { width: Math.max(...spots.map((spot) => spot.x)), height: Math.max(...spots.map((spot) => spot.y)) }
+    }
+    expect(widthOf(1, 3).width).toBe(widthOf(12, 3).width)
+    expect(widthOf(12, 3).width).toBe(widthOf(5000, 3).width)
+    expect(widthOf(5000, 3).height).toBe((5000 + 2) * ROW)
+    expect(widthOf(5, 6).width).toBe(widthOf(5, 3).width + 3 * INDENT)
+
+    const reversed = layoutOf({ ids: ['a', 'b', 'c'], links: [{ from: 'b', to: 'c' }, { from: 'a', to: 'b' }] }, 'indent')
+    expect(reversed.get('c')).toEqual({ x: 2 * INDENT, y: 2 * ROW })
+    const looped = layoutOf({ ids: ['a', 'b'], links: [{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }] }, 'indent')
+    expect(looped.get('b')?.x).toBe(2 * INDENT)
+  })
+
+  it('gives every card of a fully open wide tree its own row', () => {
+    const count = 400
+    const outlined = outlineOf({
+      tree: {
+        starts: [0],
+        groups: [],
+        unreached: [],
+        children: Array.from({ length: count }, (_, at) => (at === 0 ? Array.from({ length: count - 1 }, (_, k) => k + 1) : [])),
+        also: new Array(count).fill(0),
+      },
+      rows: [],
+      calls: [],
+      owners: {},
+    })
+    const all = shownOf(outlined, () => true)
+    expect(all.ids).toHaveLength(new Set(all.ids).size)
+    expect([...outlined.kids.values()].every((list) => list.length <= WIDE)).toBe(true)
+    const spots = layoutOf(all, 'indent')
+    expect(new Set([...spots.values()].map((spot) => spot.y)).size).toBe(all.ids.length)
   })
 })

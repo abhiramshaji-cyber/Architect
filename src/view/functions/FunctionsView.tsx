@@ -16,6 +16,7 @@ import { storeScope, storedScope } from './scope/pick'
 import FunctionTree from './tree/FunctionTree'
 import { useFunctions } from './useFunctions'
 import Related, { useRelated } from './facts/Related'
+import Splits from './splits/Splits'
 
 export default function FunctionsView({ show }: ViewProps) {
   const { currentRoot, codeMap } = useProject()
@@ -88,10 +89,11 @@ export default function FunctionsView({ show }: ViewProps) {
 
   const showLatest = useRef(show)
   showLatest.current = show
-  const onOpen = useCallback((row: FunctionRow) => {
-    openFile(row.file, row.line)
+  const onGo = useCallback((file: string, line: number) => {
+    openFile(file, line)
     showLatest.current('files')
   }, [])
+  const onOpen = useCallback((row: FunctionRow) => onGo(row.file, row.line), [onGo])
 
   if (!currentRoot) return null
 
@@ -116,6 +118,8 @@ export default function FunctionsView({ show }: ViewProps) {
         onSort={setSort}
         onQuery={setQuery}
       />
+
+      {list?.splits && mode === 'list' && <Splits splits={list.splits} scope={list.scope} onGo={onGo} />}
 
       {error && (
         <p className="fn-notice" role="status">
