@@ -17,7 +17,7 @@ const socketPath = process.env.ARCHITECT_SOCKET ?? (app.isPackaged ? SOCKET_PATH
 const daemon = createDaemon({ socketPath })
 let tray: Tray | null = null
 
-// dev and screenshot runs share userData with the installed app, so locking them would hand their launch to it
+// dev and screenshot runs share userData with the installed app, so a lock there would quit them
 const primary = socketPath !== SOCKET_PATH || app.requestSingleInstanceLock()
 if (!primary) app.exit(0)
 
@@ -94,5 +94,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  if (tabs.length === 0) createWindow(null)
+  if (started && tabs.length === 0) createWindow(null)
 })

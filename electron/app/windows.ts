@@ -4,7 +4,7 @@ import { spawn as spawnPty } from 'node-pty'
 import type { PtyEvent } from '../../shared/types'
 import { createPtyHost } from '../pty/pty'
 import { TAB_DIGITS, TAB_GROUP, claim, owner, tabIndex } from '../tabs'
-import { folderAt, sameFolder } from './launch'
+import { sameFolder, sortLaunch } from './launch'
 
 const TABBED = process.platform === 'darwin'
 
@@ -109,7 +109,8 @@ export function createWindow(sibling: BrowserWindow | null, bound?: { root: stri
   return window
 }
 
-export function openRoot(root: string, touch?: string): BrowserWindow {
+export function openRoot(given: string, touch?: string): BrowserWindow {
+  const root = sameFolder(claims.values(), given)
   const holder = holderOf(root)
   if (holder) {
     if (touch) holder.webContents.send('architect:touch', { root, file: touch })
@@ -122,15 +123,8 @@ export function openRoot(root: string, touch?: string): BrowserWindow {
 }
 
 export function openFolders(requests: { cwd: string; args: string[] }[]): void {
-  const errors: string[] = []
-  let front: BrowserWindow | null = null
-  for (const { cwd, args } of requests) {
-    for (const arg of args) {
-      const folder = folderAt(cwd, arg)
-      if (folder.ok) front = openRoot(sameFolder(claims.values(), folder.value))
-      else errors.push(folder.error)
-    }
-  }
+  const { folders, errors } = sortLaunch(requests)
+  const front = folders.map((folder) => openRoot(folder)).at(-1)
 
   const parent = front ?? tabs.at(-1) ?? createWindow(null)
   parent.focus()

@@ -10,7 +10,7 @@ export function folderAt(cwd: string, arg: string): IpcResult<string> {
   const target = path.resolve(cwd, arg)
   try {
     if (!fs.statSync(target).isDirectory()) return { ok: false, error: `${target} is a file, not a folder` }
-    return { ok: true, value: fs.realpathSync(target) }
+    return { ok: true, value: fs.realpathSync.native(target) }
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
     if (code === 'ENOENT' || code === 'ENOTDIR') return { ok: false, error: `${target} does not exist` }
@@ -19,10 +19,23 @@ export function folderAt(cwd: string, arg: string): IpcResult<string> {
 }
 
 export function sameFolder(claimed: Iterable<string>, root: string): string {
-  for (const held of claimed) {
-    try {
-      if (held === root || fs.realpathSync(held) === root) return held
-    } catch {}
-  }
+  const real = realOf(root)
+  for (const held of claimed) if (held === root || realOf(held) === real) return held
   return root
+}
+
+function realOf(target: string): string {
+  try {
+    return fs.realpathSync.native(target)
+  } catch {
+    return target
+  }
+}
+
+export function sortLaunch(requests: { cwd: string; args: string[] }[]): { folders: string[]; errors: string[] } {
+  const results = requests.flatMap(({ cwd, args }) => args.map((arg) => folderAt(cwd, arg)))
+  return {
+    folders: results.flatMap((result) => (result.ok ? [result.value] : [])),
+    errors: results.flatMap((result) => (result.ok ? [] : [result.error])),
+  }
 }

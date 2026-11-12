@@ -2,15 +2,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { folderAt, launchArgs, sameFolder } from './launch'
+import { folderAt, launchArgs, sameFolder, sortLaunch } from './launch'
 
 const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'architect-launch-')))
 const project = path.join(base, 'project')
 const file = path.join(base, 'notes.txt')
 const link = path.join(base, 'link')
+const cased = path.join(base, 'CaseDir')
 fs.mkdirSync(project)
 fs.writeFileSync(file, 'x')
 fs.symlinkSync(project, link)
+fs.mkdirSync(cased)
+const caseless = fs.existsSync(path.join(base, 'casedir'))
 
 afterAll(() => fs.rmSync(base, { recursive: true, force: true }))
 
@@ -50,6 +53,11 @@ describe('folderAt', () => {
     expect(folderAt('/', link)).toEqual({ ok: true, value: project })
   })
 
+  it('returns the on disk case for a path typed in another case', () => {
+    const typed = folderAt(base, 'casedir')
+    expect(typed).toEqual(caseless ? { ok: true, value: cased } : { ok: false, error: `${path.join(base, 'casedir')} does not exist` })
+  })
+
   it('rejects a missing path', () => {
     expect(folderAt(base, 'gone')).toEqual({ ok: false, error: `${path.join(base, 'gone')} does not exist` })
   })
@@ -69,7 +77,24 @@ describe('sameFolder', () => {
     expect(sameFolder([project], project)).toBe(project)
   })
 
+  it('matches a root given through a symlink against the claimed real folder', () => {
+    expect(sameFolder([project], link)).toBe(project)
+  })
+
   it('keeps the root when nothing claims it', () => {
     expect(sameFolder([path.join(base, 'gone'), file], project)).toBe(project)
+  })
+})
+
+describe('sortLaunch', () => {
+  it('splits a batch from several callers into folders and errors, in order', () => {
+    expect(sortLaunch([{ cwd: base, args: ['project', 'notes.txt'] }, { cwd: '/', args: [] }, { cwd: project, args: ['..', 'gone'] }])).toEqual({
+      folders: [project, base],
+      errors: [`${file} is a file, not a folder`, `${path.join(project, 'gone')} does not exist`],
+    })
+  })
+
+  it('returns nothing for an empty batch', () => {
+    expect(sortLaunch([])).toEqual({ folders: [], errors: [] })
   })
 })
