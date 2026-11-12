@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import { ruleViolationSchema, type RuleEntry } from './rules/rules'
+import type { SplitSuggestion } from './rules/split'
+
+export * from './rules/rules'
+export * from './rules/split'
 
 export type Component = {
   id: string
@@ -32,37 +37,6 @@ export type Architecture = {
   scope?: string
   rules?: RuleEntry[]
 }
-
-export type LimitRule = 'lines' | 'files' | 'jobs'
-
-export type RuleEntry =
-  | { rule: LimitRule; limit: number | 'off'; globs: string[] }
-  | { rule: 'names'; banned: string[] | 'off'; globs: string[] }
-  | { rule: 'skip'; globs: string[] }
-
-const checkedRuleSchema = z.enum(['lines', 'files', 'names', 'jobs'])
-
-export type CheckedRule = z.infer<typeof checkedRuleSchema>
-
-export const ruleViolationSchema = z.object({
-  rule: checkedRuleSchema,
-  path: z.string(),
-  line: z.number().optional(),
-  key: z.string(),
-  amount: z.number(),
-  message: z.string(),
-})
-
-export type RuleViolation = z.infer<typeof ruleViolationSchema>
-
-export const ruleRunSchema = z.object({
-  at: z.number(),
-  source: z.enum(['check', 'check_change']),
-  file: z.string().optional(),
-  results: z.array(z.object({ rule: checkedRuleSchema, pass: z.boolean(), violations: z.number().int().nonnegative() })),
-})
-
-export type RuleRun = z.infer<typeof ruleRunSchema>
 
 export type AgentsReport = { written: string[]; unchanged: string[]; removed: string[]; kept: string[]; unplaced: { component: string; reason: string }[] }
 
@@ -543,7 +517,7 @@ export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unreached: 
 
 export type ScopeFolder = { path: string; functions: number }
 
-export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; owners: Record<string, string> }
+export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; owners: Record<string, string>; splits?: SplitSuggestion[] }
 
 export type CommitDraft = { title: string; description: string }
 
