@@ -21,7 +21,7 @@ Shells out to the gh CLI for the GitHub credential, reads the account's repos, a
 owns: `electron/github/**`
 
 ### draft
-Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its functions and their own doc comments, and candidate edges aggregated from real call refs. Also asks it for a commit title and description from a staged diff, and for a pull request title and body from the account's own `pr` instructions read off disk. Every reply is a JSON object that is parsed, scrubbed of attribution and validated before it is offered, and nothing it writes is ever submitted on its own.
+Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its functions and their own doc comments, and candidate edges aggregated from real call refs. Also asks it for a commit title and description from a staged diff, and for a pull request title and body from the account's own `pr` instructions read off disk. Also asks it, only when the engineer clicks for it, for conventions the code follows, from the scanned file paths and function names, the components and the rules in force; a suggestion is kept only when it names files the scan found, and it carries at most one rule line. Every reply is a JSON object that is parsed, scrubbed of attribution and validated before it is offered, and nothing it writes is ever submitted on its own.
 owns: `electron/draft/**`
 
 ### functions
@@ -47,6 +47,10 @@ owns: `electron/churn/**`
 ### coupling
 Finds pairs of files that change together with no import between them. Co-change is counted twice, apart: from git commits in a window of 1 to 36500 days, 90 unless asked, skipping commits that touch more than a set number of files, 30 unless asked; and from the change history grouped by Claude Code session, which reaches only as far back as the history keeps. Each source gives a pair its shared changes and a confidence of shared changes over the fewer changes of the two files, and a pair is kept when either source reaches the minimum shared count and confidence, 3 and 50% unless asked. A pair is dropped when either file imports the other, directly or through a file that re-exports it, as the scan resolves them. Each kept pair carries the commits and sessions it shares. Fully deterministic, no model calls.
 owns: `electron/coupling/**`
+
+### conventions
+Learned conventions, optional and off unless the engineer turns them on, persisted as one setting. While off it reads no code and calls no model. When on, it measures each component (or top level folder without a contract) and offers a lines, jobs or files rule set to the largest count found there whenever every file or folder in it sits below the limit in force, with the count and the files behind it; on request it passes the AI suggestions from draft through the same checks. Every rule line, measured or suggested, is parsed by the rules syntax and audited against the code, listing the violations it would add and the ones it would lift. A suggestion is only ever added to the Rules section of `architect.md`, as its last line, when the engineer adds it, and nothing it finds reaches the Functions page or the Tree.
+owns: `electron/conventions/**`
 
 ### daemon
 Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files, and answering where a new function belongs.
@@ -82,7 +86,7 @@ Spawns and owns pty processes in the main process, keyed by session id, and batc
 owns: `electron/pty/**`
 
 ### canvas
-React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Layers page draws the component matrix it is handed as a grid, outlines each cycle block, and lists a cell's calls to open them. The Flow page picks a starting point and draws the flow it is handed as a plain SVG sequence diagram, one lifeline per component and one arrow per call, opening the call site when an arrow is clicked. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The Hotspots page plots each file or function by its lines against its commits over a 30, 90 or 365 day churn window, on log scales, and ranks the top 20 by lines over the most lines times commits over the most commits, with that formula and both maxima shown; a file opens in the editor and a function opens in Focus. The Map page is a squarified treemap of components (or top level folders when there is no contract), folders, files and functions, sized by lines of code (each file by its scanned lines, split into its functions and the lines outside them) and coloured by importance, churn, AI touched or unreached, with click to zoom, breadcrumbs back out and the facts on hover, laid out by a pure function and drawn on a canvas. The Coupling page lists the pairs it is handed with their shared commits and sessions, each file's share of its own changes and the commits and sessions behind them, and sets the window, the minimum shared count and confidence, and the bulk commit limit it asks with. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
+React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Layers page draws the component matrix it is handed as a grid, outlines each cycle block, and lists a cell's calls to open them. The Flow page picks a starting point and draws the flow it is handed as a plain SVG sequence diagram, one lifeline per component and one arrow per call, opening the call site when an arrow is clicked. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The Hotspots page plots each file or function by its lines against its commits over a 30, 90 or 365 day churn window, on log scales, and ranks the top 20 by lines over the most lines times commits over the most commits, with that formula and both maxima shown; a file opens in the editor and a function opens in Focus. The Map page is a squarified treemap of components (or top level folders when there is no contract), folders, files and functions, sized by lines of code (each file by its scanned lines, split into its functions and the lines outside them) and coloured by importance, churn, AI touched or unreached, with click to zoom, breadcrumbs back out and the facts on hover, laid out by a pure function and drawn on a canvas. The Conventions page, off until the engineer turns it on, lists the measured conventions and, when asked, the AI suggestions, each labelled as measured or as an AI suggestion with the rule line, what it would flag or lift, and a button that adds the rule; it is the only page that shows them. The Coupling page lists the pairs it is handed with their shared commits and sessions, each file's share of its own changes and the commits and sessions behind them, and sets the window, the minimum shared count and confidence, and the bulk commit limit it asks with. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
 owns: `src/**`
 
 ### cli
@@ -131,6 +135,10 @@ owns: `lsp/**`
 - layers -> graph
 - daemon -> churn
 - app -> coupling
+- app -> conventions
+- conventions -> types
+- conventions -> rules
+- conventions -> draft
 - coupling -> types
 - coupling -> git
 - churn -> types
@@ -178,6 +186,7 @@ owns: `lsp/**`
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
 - canvas -> functions : the renderer never ranks or arranges functions itself, the ranked list and its call tree arrive over the preload bridge
 - canvas -> coupling : the renderer never counts co-changes itself, the kept pairs and their evidence arrive over the preload bridge
+- canvas -> conventions : the renderer never measures conventions or writes a rule itself, both go over the preload bridge
 - canvas -> recency : the renderer never reads git history, when each function and component last changed arrives over the preload bridge
 - canvas -> churn : the renderer never reads git history, how often each file and function changed arrives over the preload bridge
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
@@ -233,7 +242,7 @@ owns: `lsp/**`
 - lines: 597 `src/model/store.ts`
 - lines: 630 `electron/scan/scan.ts`
 - lines: 649 `shared/types.ts`
-- lines: 653 `src/model/demo-mock.ts`
+- lines: 655 `src/model/demo-mock.ts`
 - lines: 1049 `electron/daemon.ts`
 - files: 6 `scripts`
 - files: 7 `shared`

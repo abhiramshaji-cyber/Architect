@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { readSettings } from '../../shared/settings'
+import { readSettings, saveSettings } from '../../shared/settings'
 import {
   EDIT_TIMEOUT_MS,
   PROPOSAL_TIMEOUT_MS,
@@ -37,17 +37,6 @@ async function current(file: string): Promise<string | null> {
   } catch (err) {
     return (err as NodeJS.ErrnoException).code === 'ENOENT' ? '' : null
   }
-}
-
-function saveSettings(file: string, patch: Record<string, unknown>) {
-  let kept: Record<string, unknown> = {}
-  try {
-    const raw: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
-    if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) kept = raw as Record<string, unknown>
-  } catch {}
-
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, `${JSON.stringify({ ...kept, ...patch }, null, 2)}\n`)
 }
 
 export function rejection(feedback?: string): Decision {

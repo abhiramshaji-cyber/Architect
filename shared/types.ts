@@ -4,6 +4,7 @@ import type { SplitSuggestion } from './rules/split'
 
 export * from './rules/rules'
 export * from './rules/split'
+export * from './rules/conventions'
 
 export type Component = {
   id: string
@@ -549,7 +550,7 @@ export type PtyEvent =
   | { type: 'data'; id: string; chunk: string }
   | { type: 'exit'; id: string; exitCode: number; signal?: number }
 
-export type ArchitectApi = {
+export type ArchitectApi = import('./rules/conventions').ConventionsApi & {
   projects(): Promise<ProjectSummary[]>
   open(root: string): Promise<OpenedProject>
   closeProject(root: string): Promise<void>

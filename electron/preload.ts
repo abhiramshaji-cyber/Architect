@@ -44,6 +44,10 @@ const architect: ArchitectApi = {
   recency: (root) => invoke('architect:recency', root),
   churn: (root, days) => invoke('architect:churn', root, days),
   coupling: (root, ask) => invoke('architect:coupling', root, ask),
+  conventions: (root) => invoke('architect:conventions', root),
+  setConventions: (root, enabled) => invoke('architect:set-conventions', root, enabled),
+  suggestConventions: (root) => invoke('architect:suggest-conventions', root),
+  promoteConvention: (root, rule) => invoke('architect:promote-convention', root, rule),
   readSource: (root, file, from, length) =>
     invoke('architect:read-source', root, file, from, length),
   openSource: (root, file) => invoke('architect:open-source', root, file),
