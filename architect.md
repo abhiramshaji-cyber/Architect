@@ -33,7 +33,7 @@ Works out when each function and each component last changed. Each function gets
 owns: `electron/recency/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on every contract change once a project has any, the per project change history, the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history, the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
 
 ### journal
@@ -45,7 +45,7 @@ Reads the Rules section of `architect.md`, falling back to the defaults when it 
 owns: `electron/rules/**`
 
 ### agents
-Writes an `AGENTS.md` into the folder each component's globs share, copied from `architect.md`: the component's purpose and owned globs, the components it may call with their labels, the ones it must never call with their reasons, and the rule lines that reach that folder. A component whose globs share no folder below the root, or that shares its folder with another component, is reported and gets no file. Every file it writes starts with a marker line, so it only ever rewrites or deletes files carrying that marker, never one written by hand, and leaves a file untouched when its text is unchanged. Fully deterministic, no model calls.
+Writes an `AGENTS.md` into the folder each component's globs share, copied from `architect.md`: the component's purpose and owned globs, the components it may call with their labels, the ones it must never call with their reasons, and the rule lines that reach that folder. A component is placed only when one of its globs takes in that whole folder; one that owns only some files there, whose globs share no folder below the root, climb out with `..`, sit in a folder the scan ignores, or share a folder with another component, is reported and gets no file. It never writes through a link that leads outside the project. Every file it writes starts with a marker line, so it only ever rewrites or deletes files carrying that marker, never one written by hand, and leaves a file untouched when its text is unchanged. Fully deterministic, no model calls.
 owns: `electron/agents/**`
 
 ### review

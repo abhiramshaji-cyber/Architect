@@ -604,7 +604,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
       notifyProjects()
       record(state.root, 'contract', contractDiff(architecture, state.architecture))
-      if (state.contract.status === 'ready' && state.architecture) contractChanged(state.root, state.architecture)
+      if (state.contract.status === 'ready' && state.architecture) contractChanged(state.root, state.architecture, architecture)
     })
     state.watcher = watcher
 
@@ -625,13 +625,13 @@ export function createDaemon(options: DaemonOptions = {}) {
     state.contract = { status: 'ready' }
     notifyProjects()
     record(state.root, 'contract', contractDiff(before, architecture))
-    contractChanged(state.root, architecture)
+    contractChanged(state.root, architecture, before)
   }
 
-  function contractChanged(root: string, architecture: Architecture) {
+  function contractChanged(root: string, architecture: Architecture, before: Architecture | null) {
     changeListener?.(root, architecture)
     try {
-      if (hasAgents(root)) writeAgents(root, architecture)
+      if (hasAgents(root, before ? [before, architecture] : [architecture])) writeAgents(root, architecture)
     } catch (err) {
       console.error('could not refresh AGENTS.md:', errorText(err))
     }

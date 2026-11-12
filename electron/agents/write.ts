@@ -30,8 +30,19 @@ function generatedIn(root: string, relative = ''): string[] {
   })
 }
 
-export function hasAgents(root: string): boolean {
-  return generatedIn(root).length > 0
+export function hasAgents(root: string, architectures: Architecture[]): boolean {
+  return architectures.some((architecture) =>
+    renderAgents(architecture).placed.some(({ folder }) => readText(path.join(root, folder, NAME))?.startsWith(MARKER)),
+  )
+}
+
+function inside(root: string, folder: string): boolean {
+  try {
+    const relative = path.relative(fs.realpathSync.native(root), fs.realpathSync.native(path.join(root, folder)))
+    return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
+  } catch {
+    return false
+  }
 }
 
 export function writeAgents(root: string, architecture: Architecture): AgentsReport {
@@ -43,12 +54,14 @@ export function writeAgents(root: string, architecture: Architecture): AgentsRep
     const relative = `${folder}/${NAME}`
     const target = path.join(root, relative)
     const existing = readText(target)
-    if (existing === text) report.unchanged.push(relative)
-    else if (existing !== undefined && !existing.startsWith(MARKER)) report.kept.push(relative)
-    else if (fs.existsSync(path.join(root, folder))) {
+    if (!fs.existsSync(path.join(root, folder))) report.unplaced.push({ component, reason: `${folder} does not exist` })
+    else if (!inside(root, folder)) report.unplaced.push({ component, reason: `${folder} leads outside the project` })
+    else if (existing === text) report.unchanged.push(relative)
+    else if (fs.existsSync(target) && !existing?.startsWith(MARKER)) report.kept.push(relative)
+    else {
       fs.writeFileSync(target, text)
       report.written.push(relative)
-    } else report.unplaced.push({ component, reason: `${folder} does not exist` })
+    }
   }
 
   for (const stale of generatedIn(root).filter((file) => !targets.has(file))) {

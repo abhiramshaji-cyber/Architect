@@ -33,11 +33,12 @@ const read = (root: string, file: string) => fs.readFileSync(path.join(root, fil
 describe('writeAgents', () => {
   it('writes one AGENTS.md per placed component and nothing the second time', () => {
     const root = project(['src/api', 'src/db'])
-    expect(hasAgents(root)).toBe(false)
+    expect(hasAgents(root, [arch(['api', 'db'])])).toBe(false)
 
     expect(writeAgents(root, arch(['api', 'db']))).toEqual({ written: ['src/api/AGENTS.md', 'src/db/AGENTS.md'], unchanged: [], removed: [], kept: [], unplaced: [] })
     expect(read(root, 'src/api/AGENTS.md').startsWith(`${MARKER}\n# api\n`)).toBe(true)
-    expect(hasAgents(root)).toBe(true)
+    expect(hasAgents(root, [arch(['api', 'db'])])).toBe(true)
+    expect(hasAgents(root, [arch(['other'])])).toBe(false)
 
     const before = fs.statSync(path.join(root, 'src/api/AGENTS.md')).mtimeMs
     expect(writeAgents(root, arch(['api', 'db']))).toEqual({ written: [], unchanged: ['src/api/AGENTS.md', 'src/db/AGENTS.md'], removed: [], kept: [], unplaced: [] })
@@ -74,6 +75,21 @@ describe('writeAgents', () => {
 
     expect(writeAgents(root, arch(['api']))).toEqual({ written: [], unchanged: [], removed: [], kept: [], unplaced: [{ component: 'api', reason: 'src/api does not exist' }] })
     expect(fs.existsSync(path.join(root, 'node_modules/pkg/AGENTS.md'))).toBe(true)
-    expect(hasAgents(root)).toBe(false)
+    expect(hasAgents(root, [arch(['api'])])).toBe(false)
+  })
+
+  it('refuses a folder that a link leads outside the project, and an AGENTS.md that is not a file', () => {
+    const root = project(['src/db/AGENTS.md'])
+    const away = project([])
+    fs.symlinkSync(away, path.join(root, 'src', 'api'))
+
+    expect(writeAgents(root, arch(['api', 'db']))).toEqual({
+      written: [],
+      unchanged: [],
+      removed: [],
+      kept: ['src/db/AGENTS.md'],
+      unplaced: [{ component: 'api', reason: 'src/api leads outside the project' }],
+    })
+    expect(fs.readdirSync(away)).toEqual([])
   })
 })

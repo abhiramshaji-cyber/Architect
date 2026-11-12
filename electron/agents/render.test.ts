@@ -11,14 +11,14 @@ function architecture(components: Component[], extra: Partial<Architecture> = {}
 const folders = (arch: Architecture) => Object.fromEntries(renderAgents(arch).placed.map((p) => [p.component, p.folder]))
 
 describe('renderAgents placement', () => {
-  it('places each component at the folder its globs share', () => {
+  it('places each component at the folder its globs share when it owns that whole folder', () => {
     const arch = architecture([
       component('api', ['src/api/**']),
-      component('db', ['src/db/models/**', 'src/db/migrate/*.ts']),
-      component('graph', ['electron/contract/graph.ts']),
-      component('ui', ['web/**/*.tsx', '!web/legacy/**']),
+      component('db', ['src/db/**/*.ts', 'src/db/migrate/*.sql']),
+      component('ui', ['web/**', '!web/legacy/**']),
+      component('scoped', ['packages/@acme/ui/**']),
     ])
-    expect(folders(arch)).toEqual({ api: 'src/api', db: 'src/db', graph: 'electron/contract', ui: 'web' })
+    expect(folders(arch)).toEqual({ api: 'src/api', db: 'src/db', ui: 'web', scoped: 'packages/@acme/ui' })
   })
 
   it('reports a component it cannot place instead of guessing', () => {
@@ -26,8 +26,14 @@ describe('renderAgents placement', () => {
       component('root', ['*.ts']),
       component('spread', ['api/**', 'web/**']),
       component('empty', []),
-      component('daemon', ['electron/daemon.ts']),
+      component('graph', ['electron/contract/graph.ts']),
       component('app', ['electron/main.ts', 'electron/app/**']),
+      component('outside', ['../evil/**']),
+      component('climb', ['src/../lib/**']),
+      component('built', ['dist/**']),
+      component('hidden', ['.github/**']),
+      component('one', ['shared/**']),
+      component('two', ['shared/**/*.ts']),
     ])
     expect(renderAgents(arch)).toEqual({
       placed: [],
@@ -35,15 +41,21 @@ describe('renderAgents placement', () => {
         { component: 'root', reason: 'its globs share no folder below the project root' },
         { component: 'spread', reason: 'its globs share no folder below the project root' },
         { component: 'empty', reason: 'it owns nothing' },
-        { component: 'daemon', reason: 'it shares electron with app' },
-        { component: 'app', reason: 'it shares electron with daemon' },
+        { component: 'graph', reason: 'it owns files in electron/contract but not the whole folder' },
+        { component: 'app', reason: 'it owns files in electron but not the whole folder' },
+        { component: 'outside', reason: 'its globs climb out with .., so its folder is not certain' },
+        { component: 'climb', reason: 'its globs climb out with .., so its folder is not certain' },
+        { component: 'built', reason: 'dist is a folder Architect does not scan' },
+        { component: 'hidden', reason: '.github is a folder Architect does not scan' },
+        { component: 'one', reason: 'it shares shared with two' },
+        { component: 'two', reason: 'it shares shared with one' },
       ],
     })
   })
 })
 
 describe('renderAgents content', () => {
-  const arch = architecture([component('api', ['src/api/**'], 'Handles HTTP.'), component('db', ['src/db/**']), component('ui', ['src/ui/**'])], {
+  const arch = architecture([{ ...component('api', ['src/api/**'], 'Handles HTTP.'), covers: ['src/api/routes.ts#handle'] }, component('db', ['src/db/**']), component('ui', ['src/ui/**'])], {
     edges: [
       { from: 'api', to: 'db', label: 'reads orders' },
       { from: 'ui', to: 'api' },
@@ -52,7 +64,7 @@ describe('renderAgents content', () => {
     rules: [
       { rule: 'lines', limit: 300, globs: [] },
       { rule: 'lines', limit: 900, globs: ['src/api/big.ts', 'src/ui/huge.ts'] },
-      { rule: 'files', limit: 9, globs: ['src/db'] },
+      { rule: 'files', limit: 9, globs: ['src/db', '.'] },
     ],
   })
   const text = (id: string) => renderAgents(arch).placed.find((p) => p.component === id)?.text
@@ -68,6 +80,7 @@ describe('renderAgents content', () => {
         '## Owns',
         '',
         '- `src/api/**`',
+        '- covers `src/api/routes.ts#handle`',
         '',
         '## May call',
         '',
@@ -78,6 +91,8 @@ describe('renderAgents content', () => {
         '- none',
         '',
         '## Rules',
+        '',
+        'A later line whose globs match a path overrides an earlier one.',
         '',
         '- files: 5',
         '- names: Manager, Helper, Service, Factory, Base',

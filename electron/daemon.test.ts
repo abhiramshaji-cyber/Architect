@@ -2531,6 +2531,22 @@ describe("write_agents", () => {
     c.close();
   });
 
+  it("still applies a contract change when AGENTS.md cannot be rewritten", async () => {
+    const c = await client(socketPath);
+    await c.request({ op: "write_agents", cwd: tmpRoot });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    fs.chmodSync(agents("api"), 0o444);
+    try {
+      const res = await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+      expect(res.ok && res.result).toEqual({ status: "approved" });
+      if (process.getuid?.() !== 0) expect(logged).toHaveBeenCalledWith("could not refresh AGENTS.md:", expect.stringContaining("EACCES"));
+    } finally {
+      fs.chmodSync(agents("api"), 0o644);
+      logged.mockRestore();
+      c.close();
+    }
+  });
+
   it("writes nothing on a contract change until AGENTS.md has been asked for", async () => {
     const c = await client(socketPath);
     await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });

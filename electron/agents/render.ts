@@ -1,4 +1,6 @@
+import picomatch from 'picomatch'
 import type { Architecture, Component, RuleEntry } from '../../shared/types'
+import { IGNORED_DIRS } from '../scan/scan'
 import { effective } from '../rules/audit'
 import { ruleLine } from '../rules/syntax'
 
@@ -8,30 +10,31 @@ export type Placed = { component: string; folder: string; text: string }
 
 export type Unplaced = { component: string; reason: string }
 
-const MAGIC = /[*?[\]{}()!+@]/
-
-function staticDirs(glob: string): string[] {
-  const parts = glob.replace(/\\/g, '/').split('/').filter((part) => part !== '' && part !== '.')
-  const magic = parts.findIndex((part) => MAGIC.test(part))
-  return magic === -1 ? parts.slice(0, -1) : parts.slice(0, magic)
+function globRoot(glob: string): { dirs: string[]; rest: string } {
+  const scanned = picomatch.scan(glob.replace(/\\/g, '/'))
+  const parts = scanned.base.split('/').filter((part) => part !== '' && part !== '.')
+  return { dirs: scanned.isGlob ? parts : parts.slice(0, -1), rest: scanned.glob }
 }
 
-function sharedFolder(owns: string[]): string {
-  const bases = owns.filter((glob) => !glob.startsWith('!')).map(staticDirs)
-  const first = bases[0] ?? []
-  const shared: string[] = []
-  for (const [i, part] of first.entries()) {
-    if (!bases.every((base) => base[i] === part)) break
-    shared.push(part)
-  }
-  return shared.join('/')
+function placeOf(component: Component): { folder: string } | { reason: string } {
+  const globs = component.owns.filter((glob) => !glob.startsWith('!'))
+  if (globs.length === 0) return { reason: 'it owns nothing' }
+
+  const bases = globs.map(globRoot)
+  if (bases.some((base) => base.dirs.includes('..'))) return { reason: 'its globs climb out with .., so its folder is not certain' }
+
+  const first = bases[0]?.dirs ?? []
+  const shared = first.slice(0, [...first, ''].findIndex((part, i) => !bases.every((base) => base.dirs[i] === part)))
+  const folder = shared.join('/')
+  if (folder === '') return { reason: 'its globs share no folder below the project root' }
+  if (shared.some((part) => IGNORED_DIRS.has(part) || part.startsWith('.'))) return { reason: `${folder} is a folder Architect does not scan` }
+  if (!bases.some((base) => base.dirs.join('/') === folder && /^\*\*(\/|$)/.test(base.rest))) return { reason: `it owns files in ${folder} but not the whole folder` }
+  return { folder }
 }
 
 function touches(glob: string, folder: string): boolean {
   if (glob === '.') return false
-  const parts = glob.split('/')
-  const magic = parts.findIndex((part) => MAGIC.test(part))
-  const base = (magic === -1 ? parts : parts.slice(0, magic)).join('/')
+  const base = picomatch.scan(glob).base
   return base === '' || base === folder || base.startsWith(`${folder}/`) || folder.startsWith(`${base}/`)
 }
 
@@ -76,22 +79,26 @@ function textOf(architecture: Architecture, component: Component, folder: string
     '',
     '## Rules',
     '',
+    'A later line whose globs match a path overrides an earlier one.',
+    '',
     ...rules.map(ruleLine),
     '',
   ].join('\n')
 }
 
 export function renderAgents(architecture: Architecture): { placed: Placed[]; unplaced: Unplaced[] } {
-  const folders = architecture.components.map((component) => ({ component, folder: sharedFolder(component.owns) }))
+  const places = architecture.components.map((component) => ({ component, place: placeOf(component) }))
   const placed: Placed[] = []
   const unplaced: Unplaced[] = []
 
-  for (const { component, folder } of folders) {
-    const others = folders.filter((other) => other.folder === folder && other.component.id !== component.id).map((other) => other.component.id)
-    if (component.owns.length === 0) unplaced.push({ component: component.id, reason: 'it owns nothing' })
-    else if (folder === '') unplaced.push({ component: component.id, reason: 'its globs share no folder below the project root' })
-    else if (others.length > 0) unplaced.push({ component: component.id, reason: `it shares ${folder} with ${others.join(', ')}` })
-    else placed.push({ component: component.id, folder, text: textOf(architecture, component, folder) })
+  for (const { component, place } of places) {
+    if ('reason' in place) {
+      unplaced.push({ component: component.id, reason: place.reason })
+      continue
+    }
+    const others = places.filter((other) => other.component !== component && 'folder' in other.place && other.place.folder === place.folder)
+    if (others.length > 0) unplaced.push({ component: component.id, reason: `it shares ${place.folder} with ${others.map((other) => other.component.id).join(', ')}` })
+    else placed.push({ component: component.id, folder: place.folder, text: textOf(architecture, component, place.folder) })
   }
 
   return { placed, unplaced }
