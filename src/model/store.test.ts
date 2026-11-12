@@ -42,6 +42,7 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     listFunctions: vi.fn(),
     ownership: vi.fn().mockResolvedValue(null),
     recency: vi.fn().mockResolvedValue({ functions: {}, components: {} }),
+    churn: vi.fn().mockResolvedValue({ days: 90, files: {}, functions: {} }),
     readSource: vi.fn(),
     openSource: vi.fn(),
     writeSource: vi.fn(),

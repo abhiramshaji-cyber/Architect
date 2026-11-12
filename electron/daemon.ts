@@ -49,6 +49,7 @@ import { locateSession } from './git/session'
 import { listFunctions } from './functions'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
+import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
@@ -999,6 +1000,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       const blamed = await blameFiles(root, map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
       return recencyOf(map, loadProject(root).architecture, blamed)
     },
+    churn: async (root: string, days?: unknown) => churnOf(root, await mapOf(loadProject(root).root), days),
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },

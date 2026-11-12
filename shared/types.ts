@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Churn } from './recency'
 
 export type Component = {
   id: string
@@ -584,6 +585,7 @@ export type ArchitectApi = {
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
   recency(root: string): Promise<Recency>
+  churn(root: string, days?: number): Promise<Churn>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
   openSource(root: string, file: string): Promise<SourceFile>
   writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>

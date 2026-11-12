@@ -13,7 +13,7 @@ Parses, serializes and queries `architect.md`. Fully deterministic, no model cal
 owns: `electron/contract/graph.ts`
 
 ### git
-Shells out to the git binary and returns typed results for branch, dirty state, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. Also blames files line by line, batched and cached per HEAD. No git library, no domain logic.
+Shells out to the git binary and returns typed results for branch, dirty state, the remote default branch and a file at a ref. Also resolves where a GitHub repo's clone and per branch worktrees live on disk, and opens a branch by replaying it onto its upstream or by wiping and rebuilding it. Also blames files line by line, batched and cached per HEAD, and reads the per commit line counts and changed line ranges of a window of history, streamed so a large history never sits in memory and cached per HEAD. No git library, no domain logic.
 owns: `electron/git/**`
 
 ### github
@@ -31,6 +31,10 @@ owns: `electron/functions/**`
 ### recency
 Works out when each function and each component last changed. Each function gets the newest commit across its own lines from git blame, each component the newest change across the files it owns and the functions it covers, and lines nobody has committed yet count as the newest of all. Fully deterministic, no model calls.
 owns: `electron/recency/**`
+
+### churn
+Works out how often each file and each function changed over a window of days, 90 unless asked otherwise. A file gets the commits that touched it and the lines added and removed, read from git numstat along the first parent line of HEAD and followed across renames. A function gets the commits whose changed lines, carried forward through every later change and any uncommitted edit, land inside its current lines. Files deleted since, and older files that once had the same name, are left out. Fully deterministic, no model calls.
+owns: `electron/churn/**`
 
 ### daemon
 Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
@@ -87,6 +91,9 @@ owns: `lsp/**`
 - daemon -> functions
 - daemon -> review
 - daemon -> recency
+- daemon -> churn
+- churn -> types
+- churn -> git
 - daemon -> journal
 - recency -> types
 - recency -> graph
@@ -128,6 +135,7 @@ owns: `lsp/**`
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
 - canvas -> functions : the renderer never ranks or arranges functions itself, the ranked list and its call tree arrive over the preload bridge
 - canvas -> recency : the renderer never reads git history, when each function and component last changed arrives over the preload bridge
+- canvas -> churn : the renderer never reads git history, how often each file and function changed arrives over the preload bridge
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
 - bridge -> review : the hook only forwards an edit over the socket and prints the answer, the queue lives in the app
 - canvas -> journal : the renderer never reads the cache directory, history and verdicts arrive over the preload bridge
