@@ -11,7 +11,7 @@ const row = (name: string, summary = ''): FunctionRow => ({
   fanIn: 0,
   fanOut: 0,
   exported: false,
-  entry: false,
+  entry: null,
   importance: 1,
   summary,
 })
@@ -20,6 +20,7 @@ const rows = [row('main'), row('load'), row('parse', 'Reads the config.'), row('
 
 const tree: FunctionTree = {
   starts: [0, 5],
+  groups: [],
   unreached: [3],
   children: [[1], [2], [], [4], [], []],
   also: [0, 0, 0, 0, 0, 0],
@@ -79,6 +80,7 @@ describe('outline', () => {
   it('handles an empty project and lays out a top down chart', () => {
     const empty = outlineOf({
       starts: [],
+      groups: [],
       unreached: [],
       children: [],
       also: [],
@@ -91,9 +93,22 @@ describe('outline', () => {
     expect(spots.get('f1')?.y).toBeGreaterThan(spots.get('f0')?.y ?? 0)
   })
 
+  it('folds starting points under a card per reason, with ungrouped starts beside them', () => {
+    const grouped = outlineOf({ ...tree, groups: [{ file: 'cli.ts', reason: 'bin', members: [0] }] })
+    const id = 'g:bin:cli.ts'
+    expect(grouped.kids.get(PROJECT)).toEqual([id, 'f5', UNREACHED])
+    expect(grouped.kids.get(id)).toEqual(['f0'])
+    expect(grouped.groups.get(id)?.file).toBe('cli.ts')
+    expect(shown(grouped).ids).toEqual([PROJECT, id, 'f5', UNREACHED])
+    expect(shown(grouped, new Map([[id, true]])).ids).toEqual([PROJECT, id, 'f0', 'f1', 'f5', UNREACHED])
+    expect(lineageOf(grouped, 'f1')).toEqual(new Set(['f1', 'f0', id, PROJECT]))
+    expect(forcedOf(grouped, new Set(['f2']))).toEqual(new Set(['f1', 'f0', id, PROJECT]))
+  })
+
   it('stays cheap with 1,500 functions fully expanded', () => {
     const big: FunctionTree = {
       starts: [0],
+      groups: [],
       unreached: [],
       children: Array.from({ length: 1500 }, (_, at) => [2 * at + 1, 2 * at + 2].filter((to) => to < 1500)),
       also: new Array(1500).fill(0),

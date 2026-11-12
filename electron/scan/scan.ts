@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
-import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../../shared/types'
+import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry } from '../../shared/types'
+import { starred, startsIn } from './starts'
 import { docOf, kindOf, renderedTag } from './traits'
 
 export const IGNORED_DIRS = new Set([
@@ -327,6 +328,7 @@ type Pending = { from: number; spec: string; key: string }
 
 type Parsed = {
   functions: FunctionEntry[]
+  starts: FileStart[]
   topLevel: Map<string, number>
   exports: Map<string, string>
   reexports: Map<string, { spec: string; name: string }>
@@ -336,7 +338,7 @@ type Parsed = {
 }
 
 function empty(): Parsed {
-  return { functions: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], specs: new Set() }
+  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], specs: new Set() }
 }
 
 function loadedSpec(node: ts.Node): string | undefined {
@@ -390,6 +392,20 @@ function parseFile(source: string, file: string): Parsed {
     const calls = found.map((f) =>
       callsIn(f.node, f.owner, nested, (name, at) => resolveCall(name, at, byScope, shadows, imported)),
     )
+    const index = new Map(found.map((f, i) => [f.node, i]))
+    const opened = startsIn(
+      sourceFile,
+      found.map((f) => f.node),
+      {
+        nested,
+        local: (node) => index.get(node),
+        resolve: (expression, at) => {
+          const name = calleeName(expression, '')
+          return name === undefined ? undefined : resolveCall(name, at, byScope, shadows, imported)
+        },
+      },
+      new Set(imported.keys()),
+    )
 
     const order = found
       .map((f, i) => ({ f, i }))
@@ -411,9 +427,9 @@ function parseFile(source: string, file: string): Parsed {
     }
 
     const pending: Pending[] = []
-    const functions = order.map(({ f, i }, from) => {
+    const refsOf = (list: Call[], from: number): CallRef[] => {
       const refs: CallRef[] = []
-      for (const call of calls[i] ?? []) {
+      for (const call of list) {
         if (typeof call === 'number') {
           const to = rank.get(call)
           if (to !== undefined) refs.push({ file, fn: to })
@@ -427,9 +443,21 @@ function parseFile(source: string, file: string): Parsed {
         const key = binding.name === null ? rest.slice(1) : binding.name + rest
         if (key !== '') pending.push({ from, spec: binding.spec, key })
       }
+      return refs.sort((a, b) => a.fn - b.fn)
+    }
 
-      return { ...f.entry, calls: refs.sort((a, b) => a.fn - b.fn) }
-    })
+    const functions = order.map(({ f, i }, from) => ({ ...f.entry, calls: refsOf(calls[i] ?? [], from) }))
+    const starts: FileStart[] = opened.map((start, k) => ({
+      kind: start.kind,
+      calls: refsOf(start.calls, functions.length + k),
+    }))
+
+    // reexports
+    if (reexports.size > 0 || stars.length > 0) {
+      const from = functions.length + starts.length
+      starts.push({ kind: 'exports', calls: [] })
+      for (const { spec, name } of reexports.values()) if (name !== '*') pending.push({ from, spec, key: name })
+    }
 
     const exportedLocals = new Set(exports.values())
     for (const [name, at] of topLevel) {
@@ -437,7 +465,7 @@ function parseFile(source: string, file: string): Parsed {
       if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
     }
 
-    return { functions, topLevel, exports, reexports, stars, pending, specs }
+    return { functions, starts, topLevel, exports, reexports, stars, pending, specs }
   } catch {
     return empty()
   }
@@ -522,7 +550,7 @@ function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> 
 
   for (const [file, at] of parsed) {
     for (const { from, spec, key } of at.pending) {
-      const entry = at.functions[from]
+      const entry = at.functions[from] ?? at.starts[from - at.functions.length]
       const to = target(file, spec)
       const hit = to === undefined || entry === undefined ? undefined : find(to, key, new Set())
       if (hit === undefined || entry === undefined) continue
@@ -533,6 +561,13 @@ function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> 
     for (const entry of at.functions) {
       entry.calls.sort((a, b) => a.file.localeCompare(b.file) || a.fn - b.fn)
     }
+  }
+
+  starred(parsed, target)
+
+  for (const at of parsed.values()) {
+    for (const start of at.starts) start.calls.sort((a, b) => a.file.localeCompare(b.file) || a.fn - b.fn)
+    at.starts = at.starts.filter((start) => start.calls.length > 0)
   }
 
   const imports = new Map<string, string[]>()
@@ -621,6 +656,8 @@ export async function scan(root: string): Promise<CodeMap> {
     for (const file of folder.files) {
       const found = imports.get(file.path)
       if (found !== undefined && found.length > 0) file.imports = found
+      const starts = parsed.get(file.path)?.starts ?? []
+      if (starts.length > 0) file.starts = starts
     }
   }
 

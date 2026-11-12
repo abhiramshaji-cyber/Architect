@@ -502,7 +502,7 @@ export function installMock() {
             fanIn,
             fanOut: entry.calls.length,
             exported: true,
-            entry: false,
+            entry: null,
             importance: Math.min(5, 1 + fanIn + (entry.description.length % 3)) as Importance,
             summary: entry.description
           }
@@ -527,7 +527,7 @@ export function installMock() {
       }
       const unreached = rows.flatMap((_, at) => (placed.has(at) ? [] : [at]))
       const also = rows.map((row, at) => Math.max(0, row.fanIn - (starts.includes(at) || unreached.includes(at) ? 0 : 1)))
-      return { rows, tree: { starts, unreached, children, also }, scope: '', folders: [] }
+      return { rows, tree: { starts, groups: [], unreached, children, also }, scope: '', folders: [] }
     },
     onTouch() {},
     async ptySpawn() {

@@ -200,7 +200,11 @@ export type FunctionEntry = {
 
 export type FunctionKind = 'component' | 'constructor' | 'getter' | 'setter' | 'method'
 
-export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[] }
+export type StartKind = 'load' | 'exports' | 'mcpTool' | 'ipcHandler' | 'bridge' | 'cliCommand'
+
+export type FileStart = { kind: StartKind; calls: CallRef[] }
+
+export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[]; starts?: FileStart[] }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 
@@ -456,14 +460,36 @@ export type FunctionFacts = {
   fanIn: number
   fanOut: number
   exported: boolean
-  entry: boolean
+  entry: Entry | null
 }
+
+export type EntryReason =
+  | 'mcpTool'
+  | 'ipcHandler'
+  | 'bridge'
+  | 'cliCommand'
+  | 'electronMain'
+  | 'preload'
+  | 'renderer'
+  | 'page'
+  | 'bin'
+  | 'main'
+
+export type Entry = { reason: EntryReason; file: string }
 
 export type Importance = 1 | 2 | 3 | 4 | 5
 
 export type FunctionRow = FunctionFacts & { importance: Importance; summary: string; outside?: number }
 
-export type FunctionTree = { starts: number[]; unreached: number[]; children: number[][]; also: number[] }
+export type EntryGroup = { file: string; reason: EntryReason; members: number[] }
+
+export type FunctionTree = {
+  starts: number[]
+  groups: EntryGroup[]
+  unreached: number[]
+  children: number[][]
+  also: number[]
+}
 
 export type ScopeFolder = { path: string; functions: number }
 

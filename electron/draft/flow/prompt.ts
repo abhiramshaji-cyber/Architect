@@ -8,7 +8,7 @@ function oneLine(text: string): string {
 
 export function promptFor(found: Evidence, title: string, scope = '', feedback = ''): string {
   const functions = found.functions.map(({ ref, row }) =>
-    [ref, row.file, row.name, row.importance, row.fanIn, row.entry ? 'entry' : '-', oneLine(row.summary)].join(' | '),
+    [ref, row.file, row.name, row.importance, row.fanIn, row.entry?.reason ?? '-', oneLine(row.summary)].join(' | '),
   )
 
   const callees = new Map<number, number[]>()

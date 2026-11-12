@@ -10,7 +10,7 @@ const row = (over: Partial<FunctionRow>): FunctionRow => ({
   fanIn: 0,
   fanOut: 0,
   exported: false,
-  entry: false,
+  entry: null,
   importance: 1,
   summary: '',
   ...over,

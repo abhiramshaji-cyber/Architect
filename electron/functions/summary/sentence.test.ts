@@ -6,7 +6,7 @@ import { wordsOf } from './verbs'
 const said = (name: string, over: Partial<FunctionEntry> = {}, facts: Partial<FunctionFacts> = {}) =>
   sentenceOf(
     { name, line: 1, endLine: 1, description: '', calls: [], ...over },
-    { file: 'src/a.ts', name, line: 1, lines: 1, fanIn: 0, fanOut: 0, exported: false, entry: false, ...facts },
+    { file: 'src/a.ts', name, line: 1, lines: 1, fanIn: 0, fanOut: 0, exported: false, entry: null, ...facts },
   )
 
 describe('wordsOf', () => {
@@ -77,8 +77,8 @@ describe('sentenceOf', () => {
   it('adds who uses it', () => {
     expect(said('fnKey', {}, { fanIn: 12 })).toBe('Works out the fn key. Used in 12 places.')
     expect(said('fnKey', {}, { fanIn: 1 })).toBe('Works out the fn key. Used in 1 place.')
-    expect(said('main', {}, { entry: true })).toBe('Works out the main. Starting point of the app.')
-    expect(said('main', { doc: 'Boots everything.' }, { entry: true })).toBe(
+    expect(said('main', {}, { entry: { reason: 'bin', file: 'cli.ts' } })).toBe('Works out the main. Starting point of the app.')
+    expect(said('main', { doc: 'Boots everything.' }, { entry: { reason: 'bin', file: 'cli.ts' } })).toBe(
       'Boots everything. Starting point of the app.',
     )
   })

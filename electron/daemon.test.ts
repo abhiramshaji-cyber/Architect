@@ -320,13 +320,14 @@ describe("drafting a first contract", () => {
 
   it("lists every function with its facts, importance and summary without asking the agent", async () => {
     const root = repo();
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ main: "./ui/page.ts" }));
     const claude = vi.fn();
     daemon = createDaemon({ socketPath, claude });
 
     const { rows, tree } = await daemon.listFunctions(root);
     expect(rows.map((r) => [r.file, r.name, r.fanIn, r.entry])).toEqual([
-      ["api/handler.ts", "handler", 1, false],
-      ["ui/page.ts", "page", 0, true],
+      ["api/handler.ts", "handler", 1, null],
+      ["ui/page.ts", "page", 0, { reason: "main", file: "ui/page.ts" }],
     ]);
     expect(tree.starts).toEqual([1]);
     expect(tree.children[1]).toEqual([0]);

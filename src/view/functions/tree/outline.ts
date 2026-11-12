@@ -1,4 +1,4 @@
-import type { FunctionRow, FunctionTree } from '../../../../shared/types'
+import type { EntryGroup, FunctionRow, FunctionTree } from '../../../../shared/types'
 import { matches } from '../order'
 
 export const PROJECT = 'project'
@@ -8,6 +8,7 @@ export type Outline = {
   kids: Map<string, string[]>
   up: Map<string, string>
   starts: Set<string>
+  groups: Map<string, EntryGroup>
 }
 
 export type Shown = { ids: string[]; links: { from: string; to: string }[] }
@@ -15,6 +16,8 @@ export type Shown = { ids: string[]; links: { from: string; to: string }[] }
 export const idOf = (at: number) => `f${at}`
 
 export const indexOf = (id: string) => (/^f\d+$/.test(id) ? Number(id.slice(1)) : -1)
+
+export const groupIdOf = (group: EntryGroup) => `g:${group.reason}:${group.file}`
 
 export function outlineOf(tree: FunctionTree): Outline {
   const kids = new Map<string, string[]>()
@@ -24,12 +27,16 @@ export function outlineOf(tree: FunctionTree): Outline {
     for (const child of children) up.set(child, parent)
   }
 
-  adopt(PROJECT, [...tree.starts.map(idOf), ...(tree.unreached.length > 0 ? [UNREACHED] : [])])
+  const groups = new Map(tree.groups.map((group) => [groupIdOf(group), group]))
+  const grouped = new Set(tree.groups.flatMap((group) => group.members))
+  const loose = tree.starts.filter((at) => !grouped.has(at)).map(idOf)
+  adopt(PROJECT, [...groups.keys(), ...loose, ...(tree.unreached.length > 0 ? [UNREACHED] : [])])
+  for (const [id, group] of groups) adopt(id, group.members.map(idOf))
   if (tree.unreached.length > 0) adopt(UNREACHED, tree.unreached.map(idOf))
   tree.children.forEach((children, at) => {
     if (children.length > 0) adopt(idOf(at), children.map(idOf))
   })
-  return { kids, up, starts: new Set(tree.starts.map(idOf)) }
+  return { kids, up, starts: new Set(tree.starts.map(idOf)), groups }
 }
 
 export function lineageOf(outline: Outline, id: string | null): Set<string> {

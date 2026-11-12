@@ -33,7 +33,7 @@ const row = (name: string, fanIn: number): FunctionRow => ({
   fanIn,
   fanOut: 0,
   exported: true,
-  entry: false,
+  entry: null,
   importance: 4,
   summary: '',
 })

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Background, Controls, ReactFlow, useReactFlow, useStore, type Edge } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { FunctionList, FunctionRow } from '../../../../shared/types'
+import type { EntryReason, FunctionList, FunctionRow } from '../../../../shared/types'
 import { plural } from '../Mark'
 import Card, { type CardNode } from './Card'
 import { CARD_W, layoutOf, type Spot } from './layout'
@@ -17,6 +17,19 @@ type TreeProps = {
 }
 
 const nodeTypes = { card: Card }
+
+const REASON: Record<EntryReason, string> = {
+  mcpTool: 'MCP tool',
+  ipcHandler: 'IPC handler',
+  bridge: 'Preload bridge',
+  cliCommand: 'CLI command',
+  electronMain: 'Electron main',
+  preload: 'Electron preload',
+  renderer: 'Electron renderer',
+  page: 'Page script',
+  bin: 'package.json bin',
+  main: 'package.json main',
+}
 
 const FIT = { padding: 0.12, maxZoom: 1 }
 
@@ -116,8 +129,10 @@ export default function FunctionTree({ list, query, project, onOpen }: TreeProps
         const at = indexOf(id)
         const row = rows[at] ?? null
         const kids = outline.kids.get(id)?.length ?? 0
-        const group =
-          id === PROJECT
+        const entry = outline.groups.get(id)
+        const group = entry
+          ? { title: REASON[entry.reason], note: `${entry.file} · ${plural(entry.members.length, 'function')}` }
+          : id === PROJECT
             ? { title: project, note: plural(rows.length, 'function') }
             : id === UNREACHED
               ? {

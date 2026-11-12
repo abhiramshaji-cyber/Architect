@@ -1,4 +1,4 @@
-import type { FunctionRow, FunctionTree } from '../../shared/types'
+import type { EntryGroup, FunctionRow, FunctionTree } from '../../shared/types'
 
 export function rankOf(rows: FunctionRow[]): (a: number, b: number) => number {
   return (a, b) => {
@@ -13,6 +13,19 @@ export function rankOf(rows: FunctionRow[]): (a: number, b: number) => number {
       a - b
     )
   }
+}
+
+export function groupsOf(rows: FunctionRow[], starts: number[]): EntryGroup[] {
+  const groups = new Map<string, EntryGroup>()
+  for (const at of starts) {
+    const entry = rows[at]?.entry
+    if (!entry) continue
+    const key = `${entry.reason}\0${entry.file}`
+    const group = groups.get(key) ?? { file: entry.file, reason: entry.reason, members: [] }
+    group.members.push(at)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
 }
 
 export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): FunctionTree {
@@ -38,7 +51,7 @@ export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): 
   }
 
   const all = rows.map((_, at) => at).sort(rank)
-  const starts = all.filter((at) => rows[at]?.entry === true && rows[at]?.fanIn === 0)
+  const starts = all.filter((at) => (rows[at]?.entry ?? null) !== null)
   walk(starts)
 
   const loose = all.filter((at) => !seen[at] && rows[at]?.fanIn === 0)
@@ -58,5 +71,5 @@ export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): 
   }
 
   const also = rows.map((row, at) => Math.max(0, row.fanIn - (parent[at] === null ? 0 : 1)))
-  return { starts: lifted ? [...starts, ...loose] : starts, unreached, children, also }
+  return { starts: lifted ? [...starts, ...loose] : starts, groups: groupsOf(rows, starts), unreached, children, also }
 }
