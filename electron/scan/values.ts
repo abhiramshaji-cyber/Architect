@@ -42,12 +42,26 @@ function isNamedObject(node: ts.ObjectLiteralExpression): boolean {
   return ts.isPropertyAssignment(parent) && ts.isObjectLiteralExpression(parent.parent) && isNamedObject(parent.parent)
 }
 
-function loaded(node: ts.Node): string | undefined {
-  if (!ts.isCallExpression(node)) return undefined
+function patternOf(node: ts.Expression | undefined): string | undefined {
+  if (node === undefined) return undefined
+  if (ts.isStringLiteralLike(node)) return node.text
+  if (ts.isTemplateExpression(node)) return node.head.text + node.templateSpans.map((span) => `*${span.literal.text}`).join('')
+  if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.PlusToken) return undefined
+  const head = patternOf(node.left)
+  return head === undefined ? undefined : `${head}*`
+}
+
+function loaded(node: ts.Node): string[] {
+  if (!ts.isCallExpression(node)) return []
+  const [first] = node.arguments
+  if (/^import\.meta\.glob/.test(node.expression.getText())) {
+    const globs = first !== undefined && ts.isArrayLiteralExpression(first) ? [...first.elements] : [first]
+    return globs.flatMap((glob) => patternOf(glob) ?? []).filter((glob) => !glob.startsWith('!'))
+  }
   const dynamic = node.expression.kind === ts.SyntaxKind.ImportKeyword
   const required = ts.isIdentifier(node.expression) && node.expression.text === 'require'
-  const spec = node.arguments[0]
-  return (dynamic || required) && spec !== undefined && ts.isStringLiteralLike(spec) ? spec.text : undefined
+  const spec = dynamic || required ? patternOf(first) : undefined
+  return spec === undefined ? [] : [spec]
 }
 
 function chainOf(root: ts.Node, self: string): { names: string[]; top: ts.Node } {
@@ -87,8 +101,7 @@ function valuesIn(node: ts.Node, self: string, nested: Set<ts.Node>, lookup: Loo
 
   const visit = (child: ts.Node): void => {
     if ((child !== node && nested.has(child)) || isSkipped(child)) return
-    const spec = loaded(child)
-    if (spec !== undefined) add({ spec })
+    for (const spec of loaded(child)) add({ spec })
     if (ts.isObjectLiteralExpression(child) && !isNamedObject(child)) {
       for (const property of child.properties) {
         const fn = lookup.local(property)

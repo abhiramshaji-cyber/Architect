@@ -73,6 +73,15 @@ describe('value references', () => {
     expect(valuesOf(map, 'a.ts')).toEqual(['lib.ts:api.two', 'lib.ts:one', 'more.ts:three'])
   })
 
+  it('records every module a glob or a dynamic import with a static folder can load', async () => {
+    const map = await mapOf({
+      'src/pages/home.tsx': 'export default function Home() { return null }\n',
+      'src/locales/en.ts': 'export function greet() {}\n',
+      'src/main.ts': "const pages = import.meta.glob('./pages/*.tsx')\nexport function load(n: string) { return import(`./locales/${n}.ts`) }\n",
+    })
+    expect(valuesOf(map, 'src/main.ts')).toEqual(['src/locales/en.ts:greet', 'src/pages/home.tsx:Home'])
+  })
+
   it('records nothing for a test file', async () => {
     const map = await mapOf({ 'a.test.ts': 'function cb() {}\n[1].map(cb)\n' })
     expect(valuesOf(map, 'a.test.ts')).toEqual([])

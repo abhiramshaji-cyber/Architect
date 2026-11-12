@@ -69,10 +69,10 @@ describe('cardOf', () => {
     const notes = (at: number, over: Partial<FunctionRow> = {}) =>
       cardOf(split, `f${at}`, { ...list, rows: marked.map((one, k) => (k === at ? { ...one, ...over } : one)), tree }, 'demo').notes
     expect(notes(1)).toEqual(['no callers'])
-    expect(notes(2)).toEqual(['2 callers, all unreached'])
+    expect(notes(2)).toEqual(['2 callers, none reached'])
     expect(notes(3)).toEqual(['used as a value'])
     expect(notes(5)).toEqual(['called when its file loads'])
-    expect(notes(7, { fanIn: 1 })).toEqual(['1 caller, none from a starting point'])
+    expect(notes(7, { fanIn: 1 })).toEqual(['1 caller, reach unknown'])
     expect(notes(0)).toEqual([])
     expect(cardOf(split, UNKNOWN, { ...list, rows: marked, tree }, 'demo')).toMatchObject({ title: 'Reach unknown' })
     expect(split.kids.get(PROJECT)).toEqual(['g:bin:cli.ts', UNKNOWN, UNREACHED])

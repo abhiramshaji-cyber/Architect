@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-export type Declared = { reason: 'main' | 'exports' | 'module' | 'bin' | 'script'; file: string; subpath?: string }
+export type Declared = { reason: 'main' | 'exports' | 'module' | 'bin' | 'script'; file: string; subpath?: string; excluded?: true }
 
 function clean(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -19,6 +19,19 @@ function subpathsOf(exports: unknown): [string, unknown][] {
   return keys.length > 0 && keys.every((key) => key.startsWith('.')) ? Object.entries(exports as object) : [['.', exports]]
 }
 
+function excludedOf(exports: unknown): unknown[] {
+  const subpaths = subpathsOf(exports)
+  return subpaths.flatMap(([hidden, value]) => {
+    if (value !== null) return []
+    return subpaths.flatMap(([key, target]) => {
+      const [head = '', tail = ''] = key.split('*')
+      const fits = key.includes('*') && hidden.startsWith(head) && hidden.endsWith(tail) && hidden.length >= key.length - 1
+      const captured = hidden.slice(head.length, hidden.length - tail.length)
+      return fits ? targetsOf(target).map((file) => (typeof file === 'string' ? file.replaceAll('*', captured) : file)) : []
+    })
+  })
+}
+
 export function declaredIn(manifest: unknown): Declared[] {
   if (typeof manifest !== 'object' || manifest === null) return []
   const { main, exports, module, bin, scripts } = manifest as Record<string, unknown>
@@ -32,6 +45,7 @@ export function declaredIn(manifest: unknown): Declared[] {
       targetsOf(value).map((file) => ({ reason: 'exports' as const, file: clean(file), subpath })),
     ),
     ...[module].map((file) => ({ reason: 'module' as const, file: clean(file), subpath: '.' })),
+    ...excludedOf(exports).map((file) => ({ reason: 'exports' as const, file: clean(file), excluded: true as const })),
     ...bins.map((file) => ({ reason: 'bin' as const, file: clean(file) })),
     ...words.map((file) => ({ reason: 'script' as const, file: clean(file) })),
   ].flatMap(({ file, ...rest }) => (file === null ? [] : [{ ...rest, file }]))

@@ -5,7 +5,7 @@ import { builtIn, type Built } from './build'
 import { compiledFrom } from './compiled'
 import { declaredIn, type Declared } from './manifest'
 
-export type EntryFiles = Map<string, EntryReason[]> & { opaque?: string[] }
+export type EntryFiles = Map<string, EntryReason[]> & { opaque?: string[]; packages?: string[] }
 
 const CODE = /\.[cm]?[jt]sx?$/
 
@@ -38,8 +38,12 @@ export function entriesIn(root: string, files: Set<string>, manifest: unknown, d
   const base = path.join(root, dir)
   const built = builtIn(base)
   const compiled = compiledFrom(base)
+  const declared = declaredIn(manifest)
+  const hidden = new Set(
+    declared.filter((one) => one.excluded).flatMap((one) => sourcesOf(one, built, compiled).flatMap((file) => matching(path.posix.join(dir, file), files))),
+  )
   const add = (file: string, reason: EntryReason) => {
-    const hits = matching(path.posix.join(dir, file), files)
+    const hits = matching(path.posix.join(dir, file), files).filter((hit) => !hidden.has(hit))
     for (const hit of hits) {
       const reasons = into.get(hit) ?? []
       if (!reasons.includes(reason)) into.set(hit, [...reasons, reason])
@@ -49,10 +53,10 @@ export function entriesIn(root: string, files: Set<string>, manifest: unknown, d
 
   const mapped = new Map<string, boolean>()
   for (const entry of built) if (entry.reason !== null) add(entry.file, entry.reason)
-  for (const declared of declaredIn(manifest)) {
-    const found = sourcesOf(declared, built, compiled).reduce((sum, file) => sum + add(file, declared.reason), 0)
-    const code = CODE.test(declared.file) && !/\.d\.[cm]?ts$/.test(declared.file)
-    if (declared.subpath !== undefined && code) mapped.set(declared.subpath, (mapped.get(declared.subpath) ?? false) || found > 0)
+  for (const one of declared.filter((each) => !each.excluded)) {
+    const found = sourcesOf(one, built, compiled).reduce((sum, file) => sum + add(file, one.reason), 0)
+    const code = CODE.test(one.file) && !/\.d\.[cm]?ts$/.test(one.file)
+    if (one.subpath !== undefined && code) mapped.set(one.subpath, (mapped.get(one.subpath) ?? false) || found > 0)
   }
   if ([...mapped.values()].includes(false)) into.opaque = [...new Set([...(into.opaque ?? []), dir])]
   return into
@@ -62,9 +66,7 @@ export function entryFiles(root: string, map: CodeMap): EntryFiles {
   const files = new Set(map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
   const packages = [...files].filter((file) => path.posix.basename(file) === 'package.json').map(path.posix.dirname)
   const into: EntryFiles = new Map()
-  for (const dir of new Set(['.', ...packages])) {
-    const at = dir === '.' ? '' : dir
-    entriesIn(root, files, manifestOf(path.join(root, at)), at, into)
-  }
+  into.packages = [...new Set(['', ...packages.map((dir) => (dir === '.' ? '' : dir))])]
+  for (const at of into.packages) entriesIn(root, files, manifestOf(path.join(root, at)), at, into)
   return into
 }

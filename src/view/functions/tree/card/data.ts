@@ -7,6 +7,7 @@ const UNTRACED: Record<Untraced, string> = {
   value: 'used as a value',
   load: 'called when its file loads',
   export: 'exported by a package entry not mapped to source',
+  test: 'in a test file',
 }
 
 const countsOf = (tally: Tally | undefined) =>
@@ -51,9 +52,10 @@ const callersOf = (row: FunctionList['rows'][number]) =>
 export function reachOf(outline: Outline, id: string, row: FunctionRow): string[] {
   const line = lineageOf(outline, id)
   const callers = row.fanIn === 0 ? 'no callers' : plural(row.fanIn, 'caller')
-  if (line.has(UNREACHED)) return [`${row.fanIn === 0 ? callers : `${callers}, all unreached`}`]
+  if (line.has(UNREACHED)) return [`${row.fanIn === 0 ? callers : `${callers}, none reached`}`]
   if (!line.has(UNKNOWN)) return []
-  return [`${row.untraced ? UNTRACED[row.untraced] : `${callers}, none from a starting point`}`]
+  if (row.overload) return ['declaration without a body']
+  return [`${row.untraced ? UNTRACED[row.untraced] : `${callers}, reach unknown`}`]
 }
 
 export function cardOf(outline: Outline, id: string, list: FunctionList, project: string) {

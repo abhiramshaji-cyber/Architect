@@ -80,10 +80,17 @@ export function entriesOf(map: CodeMap, entries: EntryFiles): Map<string, Entry>
   return best
 }
 
-function untracedOf(files: FileEntry[], opaque: string[]): Map<string, Untraced> {
+function packageOf(file: string, packages: string[]): string {
+  return packages.filter((dir) => within(file, dir)).reduce((deepest, dir) => (dir.length > deepest.length ? dir : deepest), '')
+}
+
+function untracedOf(files: FileEntry[], entries: EntryFiles): Map<string, Untraced> {
   const marks = new Map<string, Untraced>()
+  for (const file of files.filter((one) => isTestFile(one.path))) {
+    file.functions.forEach((_, at) => marks.set(`${file.path}\0${at}`, 'test'))
+  }
   for (const file of files.filter((one) => !isTestFile(one.path))) {
-    if (opaque.some((dir) => within(file.path, dir))) {
+    if (entries.opaque?.includes(packageOf(file.path, entries.packages ?? ['']))) {
       file.functions.forEach((fn, at) => {
         if (fn.exported) marks.set(`${file.path}\0${at}`, 'export')
       })
@@ -99,7 +106,7 @@ function untracedOf(files: FileEntry[], opaque: string[]): Map<string, Untraced>
 export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map)): FunctionFacts[] {
   const files = map.folders.flatMap((folder) => folder.files)
   const claimed = entriesOf(map, entries)
-  const untraced = untracedOf(files, entries.opaque ?? [])
+  const untraced = untracedOf(files, entries)
   const callers = new Array<number>(edges.length).fill(0)
   for (const out of edges) for (const to of out) callers[to] = (callers[to] ?? 0) + 1
 

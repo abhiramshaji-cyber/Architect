@@ -4,6 +4,7 @@ import ts from 'typescript'
 import type { CallRef, FileStart, FunctionEntry } from '../../../shared/types'
 import { starred } from './exports'
 import { placeSites, type Raw } from './sites'
+import { globbed } from './glob'
 import { spreadOf } from './spread'
 
 export type { Raw } from './sites'
@@ -101,12 +102,15 @@ export function link(root: string, parsed: Map<string, Parsed>): Map<string, str
   for (const [file, at] of parsed) {
     for (const { from, spec, key } of at.pending) {
       const entry = at.functions[from] ?? at.starts[from - at.functions.length]
-      const to = target(file, spec)
-      if (to === undefined || entry === undefined) continue
-      const exact = find(to, key, new Set())
+      if (entry === undefined) continue
       const spreads = 'kind' in entry && (entry.kind === 'value' || entry.kind === 'exports')
-      const hits = exact !== undefined ? [exact] : spreads ? spread(to, key) : []
-      for (const hit of hits) if (!entry.calls.some((c) => c.file === hit.file && c.fn === hit.fn)) entry.calls.push(hit)
+      const targets = spec.includes('*') ? globbed(file, spec, [...parsed.keys()]) : [target(file, spec)]
+      for (const to of targets) {
+        if (to === undefined) continue
+        const exact = find(to, key, new Set())
+        const hits = exact !== undefined ? [exact] : spreads ? spread(to, key) : []
+        for (const hit of hits) if (!entry.calls.some((c) => c.file === hit.file && c.fn === hit.fn)) entry.calls.push(hit)
+      }
     }
 
     for (const entry of at.functions) {

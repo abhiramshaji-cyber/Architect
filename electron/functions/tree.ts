@@ -51,14 +51,14 @@ export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): 
   const signatures = signaturesOf(rows)
   const signed = new Set(signatures.flat())
 
-  const walk = (seeds: number[]) => {
+  const walk = (seeds: number[], allow = (_: number) => true) => {
     for (const seed of seeds) seen[seed] = true
     let frontier = seeds
     while (frontier.length > 0) {
       const next: number[] = []
       for (const from of frontier) {
         for (const to of [...(edges[from] ?? []), ...(signatures[from] ?? [])].sort(rank)) {
-          if (to < 0 || to >= rows.length || seen[to]) continue
+          if (to < 0 || to >= rows.length || seen[to] || !allow(to)) continue
           seen[to] = true
           parent[to] = from
           next.push(to)
@@ -80,8 +80,15 @@ export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): 
     walk([at])
   }
 
-  const unknown = all.filter((at) => !seen[at] && (rows[at]?.untraced ?? null) !== null)
+  const tested = (at: number) => rows[at]?.untraced === 'test'
+  const declared = (at: number) => rows[at]?.overload === true && !signed.has(at)
+  const unknown = all.filter((at) => !seen[at] && !tested(at) && ((rows[at]?.untraced ?? null) !== null || declared(at)))
   walk(unknown)
+  for (const at of all) {
+    if (seen[at] || !tested(at)) continue
+    unknown.push(at)
+    walk([at], tested)
+  }
 
   const unreached = loose.filter((at) => !seen[at])
   walk(unreached)

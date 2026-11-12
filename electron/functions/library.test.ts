@@ -67,6 +67,29 @@ describe('a library published through package.json exports', () => {
     expect(rolled.list.rows.find((row) => row.name === 'api')?.untraced).toBe('export')
   })
 
+  it('keeps a package with an unmapped entry from hiding dead code in the packages inside it', async () => {
+    const { unreached, unknown } = await listOf({
+      'package.json': JSON.stringify({ exports: { './worker': './build/worker.js' } }),
+      'src/root.ts': 'export function rootApi() {}\n',
+      'packages/b/package.json': JSON.stringify({ exports: './src/index.ts' }),
+      'packages/b/src/index.ts': 'export function live() {}\n',
+      'packages/b/src/dead.ts': 'export function deadExport() {}\n',
+    })
+    expect(unreached).toEqual(['deadExport'])
+    expect(unknown).toEqual(['rootApi'])
+  })
+
+  it('puts test code and bodiless declarations in reach unknown, never what only tests call', async () => {
+    const { unreached, unknown } = await listOf({
+      'package.json': JSON.stringify({ exports: './src/index.ts' }),
+      'src/index.ts': 'export function api() {}\n',
+      'src/shim.ts': 'declare global { function later(): void }\nexport function onlyTested() {}\n',
+      'src/index.test.ts': "import { onlyTested } from './shim'\nfunction setup() { onlyTested() }\nit('x', () => setup())\n",
+    })
+    expect(unreached).toEqual(['onlyTested'])
+    expect(unknown).toEqual(['later', 'setup'])
+  })
+
   it('counts the members of an anonymous default class as library API', async () => {
     const { unreached, list } = await listOf({
       'package.json': JSON.stringify({ exports: { '.': './src/index.ts' } }),
