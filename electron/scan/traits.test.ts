@@ -21,7 +21,7 @@ async function scanned(file: string, text: string): Promise<Record<string, Funct
 }
 
 describe('doc', () => {
-  it('copies a doc comment verbatim, tags, links and line breaks included', async () => {
+  it('copies a doc block verbatim, tags, links and line breaks included', async () => {
     const by = await scanned(
       'a.ts',
       [
@@ -39,38 +39,29 @@ describe('doc', () => {
     expect(by.short?.doc).toBe('one line, no full stop')
   })
 
-  it('joins consecutive line comments above an arrow constant without rewording them', async () => {
-    const by = await scanned('a.ts', '// works out the total price\n// for one basket\nexport const total = () => 1\n')
-    expect(by.total?.doc).toBe('works out the total price\nfor one basket')
-  })
-
-  it('keeps a long doc whole', async () => {
+  it('keeps a long doc whole, whatever it starts with or shows', async () => {
     const words = Array.from({ length: 60 }, (_, i) => `w${i}`).join(' ')
-    const by = await scanned('a.ts', `/** ${words}. Second sentence. */\nfunction long() {}\n`)
-    expect(by.long?.doc).toBe(`${words}. Second sentence.`)
-  })
-
-  it('drops a directive between the doc and the function but keeps the doc', async () => {
-    const by = await scanned('a.ts', '/** Reads it. */\n// eslint-disable-next-line no-console\nfunction read() {}\n')
-    expect(by.read?.doc).toBe('Reads it.')
-  })
-
-  it('treats a doc block as a doc even when it shows code', async () => {
-    const by = await scanned('a.ts', '/** Use as `run({ fast: true })`. */\nfunction run() {}\n')
-    expect(by.run?.doc).toBe('Use as `run({ fast: true })`.')
-  })
-
-  it('keeps a doc block whatever word it starts with', async () => {
-    const by = await scanned('a.ts', '/** License key check for the user. */\nfunction a() {}\n/** #1 rule: never block */\nfunction b() {}\n')
-    expect([by.a?.doc, by.b?.doc]).toEqual(['License key check for the user.', '#1 rule: never block'])
-  })
-
-  it('keeps line comment prose that shows code or punctuation', async () => {
     const by = await scanned(
       'a.ts',
-      '// Parse the config.\n// Example: parse({ a: 1 })\nfunction parse() {}\n// Returns the id; never null\nfunction id() {}\n',
+      [
+        `/** ${words}. Second sentence. */`,
+        'function long() {}',
+        '/** License key check for the user. */',
+        'function a() {}',
+        '/** Use as `run({ fast: true })`; returns early. */',
+        'function run() {}',
+      ].join('\n'),
     )
-    expect([by.parse?.doc, by.id?.doc]).toEqual(['Parse the config.\nExample: parse({ a: 1 })', 'Returns the id; never null'])
+    expect([by.long?.doc, by.a?.doc, by.run?.doc]).toEqual([
+      `${words}. Second sentence.`,
+      'License key check for the user.',
+      'Use as `run({ fast: true })`; returns early.',
+    ])
+  })
+
+  it('finds a doc block above a const arrow and past a directive line', async () => {
+    const by = await scanned('a.ts', '/** Totals it. */\nexport const total = () => 1\n/** Reads it. */\n// eslint-disable-next-line\nfunction read() {}\n')
+    expect([by.total?.doc, by.read?.doc]).toEqual(['Totals it.', 'Reads it.'])
   })
 
   it('keeps indentation inside a block without stars', async () => {
@@ -78,17 +69,18 @@ describe('doc', () => {
     expect(by['A.run']?.doc).toBe('Runs:\n  step one')
   })
 
-  it('ignores labels, directives, code, empty blocks and comments separated by a blank line', async () => {
+  it('never takes line or plain block comments, empty blocks or a block separated by a blank line', async () => {
     const by = await scanned(
       'a.ts',
       [
-        '// fetch-user',
+        '// return early',
         'function a() {}',
-        '// eslint-disable-next-line no-console',
+        '/* Copyright 2024 Acme */',
         'function b() {}',
-        '// const old = run();',
+        '// if (ready) {',
+        '//   start()',
         'function c() {}',
-        '// Something unrelated here.',
+        '/** Something unrelated here. */',
         '',
         'function d() {}',
         'function e() {}',

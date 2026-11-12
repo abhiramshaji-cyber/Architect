@@ -60,9 +60,11 @@ export default memo(function Row({ row, at, change, step, onOpen, onScope, onRel
               </bdi>
             </span>
           </span>
-          {row.doc !== undefined && <span className="fn-doc" title={row.doc}>
+          {row.doc !== undefined && (
+            <span className="fn-doc" title={row.doc}>
               {row.doc}
-            </span>}
+            </span>
+          )}
           <span className="fn-foot">
             <Facts row={row} at={at} onRelated={onRelated} />
             {row.exported && <span className="fn-badge">exported</span>}

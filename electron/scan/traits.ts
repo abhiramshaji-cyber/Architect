@@ -1,11 +1,6 @@
 import ts from 'typescript'
 import type { Param, Signature } from '../../shared/types'
 
-const DIRECTIVE =
-  /^(eslint[\s-]|eslint$|global\s|oxlint-|prettier-ignore|istanbul ignore|c8 ignore|biome-ignore|tslint:|jshint\s|jscs:|@ts-|#region|#endregion|#!|<reference|@jsx|spdx-license-identifier)/i
-
-type Comment = { line: boolean; doc: boolean; text: string }
-
 function anchorOf(node: ts.Node): ts.Node {
   const list = node.parent
   if (!ts.isVariableDeclaration(node) || !ts.isVariableDeclarationList(list)) return node
@@ -25,21 +20,11 @@ function adjacent(node: ts.Node, source: ts.SourceFile): ts.CommentRange[] {
   return kept
 }
 
-function commentOf(range: ts.CommentRange, source: ts.SourceFile): Comment {
-  const raw = source.text.slice(range.pos, range.end)
-  const line = range.kind === ts.SyntaxKind.SingleLineCommentTrivia
-  const inner = line ? raw.replace(/^\/+ ?/, '') : raw.slice(2, -2)
-  const text = line
-    ? inner.trimEnd()
-    : inner
-        .split(/\r?\n/)
-        .map((row) => row.replace(/^\s*\* ?/, '').trimEnd())
-        .join('\n')
-  return { line, doc: !line && /^\/\*\*[^/]/.test(raw), text }
-}
-
-function dedented(text: string): string {
-  const rows = text.split('\n')
+function docText(raw: string): string {
+  const rows = raw
+    .slice(3, -2)
+    .split(/\r?\n/)
+    .map((row) => row.replace(/^\s*\* ?/, '').trimEnd())
   const indents = rows.filter((row) => row.trim() !== '').map((row) => /^[ \t]*/.exec(row)?.[0].length ?? 0)
   const cut = indents.length === 0 ? 0 : Math.min(...indents)
   return rows
@@ -48,33 +33,12 @@ function dedented(text: string): string {
     .replace(/^\n+|\s+$/g, '')
 }
 
-function parses(text: string): boolean {
-  return (ts.transpileModule(text, { reportDiagnostics: true }).diagnostics ?? []).length === 0
-}
-
-function merged(comments: Comment[]): Comment[] {
-  const blocks: Comment[] = []
-  for (const comment of comments) {
-    const last = blocks.at(-1)
-    if (comment.line && last?.line) last.text = `${last.text}\n${comment.text}`
-    else blocks.push({ ...comment })
-  }
-  return blocks
-}
-
-function authored(block: Comment): boolean {
-  const text = block.text.trim()
-  if (text === '') return false
-  return block.doc || (/\s/.test(text) && !parses(text))
-}
-
 export function docOf(node: ts.Node, source: ts.SourceFile): string | undefined {
-  const comments = adjacent(anchorOf(node), source)
-    .map((range) => commentOf(range, source))
-    .filter((comment) => comment.doc || !DIRECTIVE.test(comment.text.trimStart()))
-  const text = merged(comments)
-    .filter(authored)
-    .map((block) => dedented(block.text))
+  const text = adjacent(anchorOf(node), source)
+    .map((range) => source.text.slice(range.pos, range.end))
+    .filter((raw) => /^\/\*\*[^/]/.test(raw))
+    .map(docText)
+    .filter((doc) => doc !== '')
     .join('\n\n')
   return text === '' ? undefined : text
 }

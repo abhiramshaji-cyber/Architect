@@ -33,7 +33,7 @@ export default function Related({ list, asked, onOpen, onClose }: RelatedProps) 
 
   return (
     <div className="fn-related-dock">
-      <aside className="fn-related" aria-label={`${asked.way} of ${shown.row.name}`} onKeyDown={close}>
+      <aside key={`${asked.at}:${asked.way}`} className="fn-related" aria-label={`${asked.way} of ${shown.row.name}`} onKeyDown={close}>
         <header className="fn-related-head">
           <span className="fn-related-title">
             {asked.way === 'callers' ? 'Called by' : 'Calls'} <code>{shown.row.name}</code>
