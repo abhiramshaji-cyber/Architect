@@ -382,11 +382,7 @@ export function installMock() {
       return []
     },
     async edits(root) {
-      return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({
-        id,
-        status,
-        title: architecture.title
-      }))
+      return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({ id, status, title: architecture.title }))
     },
     async edit(root, id) {
       return findEdit(root, id)
@@ -466,6 +462,9 @@ export function installMock() {
     },
     async ownership(root) {
       return ownerships[root] ?? null
+    },
+    async layers() {
+      return { contract: false, rows: [], cells: [] }
     },
     async recency() {
       return { functions: {}, components: {} }
