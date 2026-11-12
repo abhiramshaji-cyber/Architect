@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs } from './args'
 import { OK, USAGE, VIOLATED, audit, run } from './check'
-import { report } from './report'
+import { report } from './text/report'
 import { parse } from '../electron/contract/graph'
 import { scan } from '../electron/scan/scan'
 
@@ -67,19 +67,24 @@ afterEach(() => {
 
 describe('parseArgs', () => {
   it('defaults to the working directory', () => {
-    expect(parseArgs([])).toEqual({ root: process.cwd(), json: false, help: false, history: false })
+    expect(parseArgs([])).toEqual({ command: 'check', root: process.cwd(), json: false, help: false, history: false })
   })
 
   it('consumes a leading check subcommand', () => {
-    expect(parseArgs(['check', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: false, help: false, history: false })
+    expect(parseArgs(['check', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: false })
   })
 
   it('reads the json flag in any position', () => {
-    expect(parseArgs(['--json', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: true, help: false, history: false })
+    expect(parseArgs(['--json', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: true, help: false, history: false })
   })
 
   it('reads the history flag', () => {
-    expect(parseArgs(['--history', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: false, help: false, history: true })
+    expect(parseArgs(['--history', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: true })
+  })
+
+  it('reads the agents command and refuses history with it', () => {
+    expect(parseArgs(['agents', '/tmp', '--json'])).toEqual({ command: 'agents', root: path.resolve('/tmp'), json: true, help: false, history: false })
+    expect(parseArgs(['agents', '--history'])).toBe('unknown option: --history')
   })
 
   it('rejects an unknown option', () => {
@@ -91,7 +96,7 @@ describe('parseArgs', () => {
   })
 
   it('treats help as a flag', () => {
-    expect(parseArgs(['-h'])).toEqual({ root: process.cwd(), json: false, help: true, history: false })
+    expect(parseArgs(['-h'])).toEqual({ command: 'check', root: process.cwd(), json: false, help: true, history: false })
   })
 })
 
@@ -290,6 +295,64 @@ describe('rules', () => {
     const lines: string[] = []
     await run(['--history', fixture({})], (l) => lines.push(l), () => {}, fixture({}))
     expect(lines.join('\n')).toBe('architect: no rule runs recorded yet')
+  })
+})
+
+describe('agents', () => {
+  it('writes AGENTS.md per component, reports the rest and writes nothing when run again', async () => {
+    const root = fixture({ 'architect.md': contract(), 'api/handler.ts': API, 'store/db.ts': STORE })
+    const first = await outcome(root, ['agents'])
+
+    expect(first.code).toBe(OK)
+    expect(first.out).toContain('architect: 2 AGENTS.md written, 0 unchanged, 0 removed')
+    expect(fs.readFileSync(path.join(root, 'api', 'AGENTS.md'), 'utf8')).toContain('# api\n\nThe http surface.')
+
+    const again = await outcome(root, ['agents', '--json'])
+    expect(JSON.parse(again.out)).toMatchObject({ written: [], unchanged: ['api/AGENTS.md', 'store/AGENTS.md'] })
+  })
+
+  it('exits 2 without architect.md', async () => {
+    expect((await outcome(fixture({}), ['agents'])).code).toBe(USAGE)
+  })
+})
+
+describe('where', () => {
+  it('reads repeatable refs, inline values and the name and file', () => {
+    expect(parseArgs(['where', '/tmp', '--calls', 'load', '--calls=store/db.ts:save', '--callers', 'api', '--name', 'go', '--file=x.ts'])).toEqual({
+      command: 'where',
+      root: path.resolve('/tmp'),
+      json: false,
+      help: false,
+      history: false,
+      where: { calls: ['load', 'store/db.ts:save'], callers: ['api'], name: 'go', file: 'x.ts' },
+    })
+    expect(parseArgs(['where', '--calls'])).toBe('--calls needs a value')
+    expect(parseArgs(['where', '--calls', '--json'])).toBe('--calls needs a value')
+    expect(parseArgs(['where', '--name='])).toBe('--name needs a value')
+    expect(parseArgs(['check', '--calls', 'x'])).toBe('unknown option: --calls')
+  })
+
+  it('answers with or without architect.md and exits 0', async () => {
+    const files = { 'api/handler.ts': API, 'store/db.ts': STORE }
+    const drawn = fixture({ ...files, 'architect.md': contract({ edges: ['- api -> store'] }) })
+    const answered = await outcome(drawn, ['where', '--calls', path.join(drawn, 'store/db.ts'), '--json'])
+    expect(answered.code).toBe(OK)
+    expect(JSON.parse(answered.out)).toMatchObject({ component: { status: 'found', id: 'store' }, folder: { path: 'store' } })
+
+    const blocked = await outcome(drawn, ['where', '--calls', 'handle', '--callers', path.join(drawn, 'store/db.ts'), '--name', 'go', '--file', path.join(drawn, 'api/new.ts')])
+    expect(blocked.out).toContain('component  (blocked)')
+    expect(blocked.out).toContain('needs store -> api, cycle, for')
+    expect(blocked.out).toContain('go starts with go, which leads 0 names there')
+    expect(blocked.out).toContain('file       api/new.ts  owned by api, breaks no rule')
+
+    const placed = await outcome(drawn, ['where', '--calls', 'load', '--file', path.join(drawn, 'store')])
+    expect(placed.out).toContain('new file: fits the files rule')
+    expect(placed.out).toContain('could not check')
+
+    const bare = await outcome(fixture(files), ['where', '--calls', 'load'])
+    expect(bare.code).toBe(OK)
+    expect(bare.out).toContain('component  (no-contract)')
+    expect(bare.out).toContain('folder     store  holds 1 of the 1 matched neighbours')
   })
 })
 

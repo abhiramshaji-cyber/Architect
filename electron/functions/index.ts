@@ -6,10 +6,17 @@ import { importanceOf } from './importance'
 import { foldersOf, scopeOf, subgraphOf, within } from './scope'
 import { treeOf } from './tree'
 
+function selfCallsOf(map: CodeMap): boolean[] {
+  return map.folders
+    .flatMap((folder) => folder.files)
+    .flatMap((file) => file.functions.map((fn, at) => fn.calls.some((call) => call.file === file.path && call.fn === at)))
+}
+
 export function indexOf(map: CodeMap, declared: EntryFiles, scope: string): { rows: FunctionRow[]; calls: number[][] } {
   const edges = edgesOf(map)
   const facts = factsOf(map, declared, edges)
   const entries = map.folders.flatMap((folder) => folder.files).flatMap((file) => file.functions)
+  const recursive = selfCallsOf(map)
 
   const keep = facts.flatMap((fact, at) => (within(fact.file, scope) ? [at] : []))
   const sub = scope === '' ? edges : subgraphOf(edges, keep)
@@ -31,6 +38,7 @@ export function indexOf(map: CodeMap, declared: EntryFiles, scope: string): { ro
     }
     if (entry.signature !== undefined) row.signature = entry.signature
     if (entry.doc !== undefined) row.doc = entry.doc
+    if (recursive[keep[i] ?? -1]) row.recursive = true
     if (whole.fanIn > fact.fanIn) row.outsideCallers = whole.fanIn - fact.fanIn
     if (whole.fanOut > fact.fanOut) row.outsideCallees = whole.fanOut - fact.fanOut
     return [row]

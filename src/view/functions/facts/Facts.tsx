@@ -7,11 +7,12 @@ type FactsProps = {
   row: FunctionRow
   at: number
   onRelated: (at: number, way: Way) => void
+  onFocus?: (at: number) => void
 }
 
 const WORD: Record<Way, string> = { callers: 'caller', callees: 'callee' }
 
-export default function Facts({ row, at, onRelated }: FactsProps) {
+export default function Facts({ row, at, onRelated, onFocus }: FactsProps) {
   const ask = (way: Way) => (event: MouseEvent) => {
     event.stopPropagation()
     onRelated(at, way)
@@ -28,6 +29,18 @@ export default function Facts({ row, at, onRelated }: FactsProps) {
           </button>
         )
       })}
+      {onFocus && (
+        <button
+          className="fn-count-link"
+          title={`Show what calls ${row.name} and what it calls`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onFocus(at)
+          }}
+        >
+          Focus
+        </button>
+      )}
     </span>
   )
 }

@@ -64,6 +64,8 @@ export const ruleRunSchema = z.object({
 
 export type RuleRun = z.infer<typeof ruleRunSchema>
 
+export type AgentsReport = { written: string[]; unchanged: string[]; removed: string[]; kept: string[]; unplaced: { component: string; reason: string }[] }
+
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
 export type SourceWindow = {
@@ -112,6 +114,7 @@ export const historyEntrySchema = z.object({
   changed: z.array(z.string()),
   removed: z.array(z.string()),
   file: z.string().optional(),
+  session: z.string().optional(),
 })
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>
@@ -231,14 +234,13 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('await_proposal'), cwd: z.string(), proposalId: z.string() }),
   z.object({ id: z.string(), op: z.literal('review_edit'), cwd: z.string(), change: codeChangeSchema }),
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
+  z.object({ id: z.string(), op: z.literal('write_agents'), cwd: z.string() }),
+  z.object({ id: z.string(), op: z.literal('where'), cwd: z.string(), calls: z.array(z.string()), callers: z.array(z.string()), name: z.string().optional(), file: z.string().optional() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
-  z.object({
-    id: z.string(),
-    op: z.literal('session-event'),
-    cwd: z.string(),
-    event: z.string(),
+  z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string() }).extend({
     session: z.string().optional(),
     file: z.string().optional(),
+    digest: z.string().optional(),
   }),
 ])
 
@@ -538,6 +540,7 @@ export type FunctionRow = FunctionFacts & {
   doc?: string
   outsideCallers?: number
   outsideCallees?: number
+  recursive?: true
 }
 
 export type EntryGroup = { file: string; reason: EntryReason; members: number[] }

@@ -1,0 +1,24 @@
+export type Mode = 'list' | 'tree' | 'focus'
+
+export const MODES: { key: Mode; label: string }[] = [
+  { key: 'list', label: 'List' },
+  { key: 'tree', label: 'Tree' },
+  { key: 'focus', label: 'Focus' },
+]
+
+const slotOf = (root: string) => `architect.functions.mode:${root}`
+
+export function storedMode(root: string | null): Mode {
+  try {
+    const stored = root ? localStorage.getItem(slotOf(root)) : null
+    return MODES.find(({ key }) => key === stored)?.key ?? 'list'
+  } catch {
+    return 'list'
+  }
+}
+
+export function storeMode(root: string | null, mode: Mode) {
+  try {
+    if (root) localStorage.setItem(slotOf(root), mode)
+  } catch {}
+}
