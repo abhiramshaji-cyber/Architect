@@ -1,33 +1,28 @@
-import { useEffect, useState } from "react";
-import type {
-  Commit,
-  HistoryEntry,
-  VerdictRecord,
-} from "../../../shared/types";
+import { useEffect, useState } from 'react'
+import type { Commit, HistoryEntry, VerdictRecord } from '../../../shared/types'
 
-export const LIMIT = 1000;
+export const LIMIT = 1000
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000
 
 export type Stored = {
-  root: string;
-  days: number;
-  since: number;
-  commits: Commit[];
-  capped: boolean;
-  verdicts: VerdictRecord[];
-  error: string | null;
-};
+  root: string
+  days: number
+  since: number
+  commits: Commit[]
+  capped: boolean
+  verdicts: VerdictRecord[]
+  error: string | null
+}
 
-const messageOf = (err: unknown) =>
-  err instanceof Error ? err.message : String(err);
+const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 async function read(root: string, days: number): Promise<Stored> {
-  const window = Date.now() - days * DAY_MS;
+  const window = Date.now() - days * DAY_MS
   const [log, verdicts] = await Promise.all([
     window_.architect.gitCommits(root, window, LIMIT + 1),
     window_.architect.verdicts(root).catch(() => []),
-  ]);
+  ])
   if (!log.ok)
     return {
       root,
@@ -37,25 +32,21 @@ async function read(root: string, days: number): Promise<Stored> {
       capped: false,
       verdicts,
       error: log.error.message,
-    };
-  const capped = log.value.length > LIMIT;
-  const commits = log.value.slice(0, LIMIT);
-  const since = capped ? (commits.at(-1)?.at ?? window) : window;
-  return { root, days, since, commits, capped, verdicts, error: null };
+    }
+  const capped = log.value.length > LIMIT
+  const commits = log.value.slice(0, LIMIT)
+  const since = capped ? (commits.at(-1)?.at ?? window) : window
+  return { root, days, since, commits, capped, verdicts, error: null }
 }
 
-const window_ = globalThis.window;
+const window_ = globalThis.window
 
-export function useReplay(
-  root: string | null,
-  days: number,
-  history: HistoryEntry[],
-): Stored | null {
-  const [stored, setStored] = useState<Stored | null>(null);
+export function useReplay(root: string | null, days: number, history: HistoryEntry[]): Stored | null {
+  const [stored, setStored] = useState<Stored | null>(null)
 
   useEffect(() => {
-    if (!root) return;
-    let live = true;
+    if (!root) return
+    let live = true
     read(root, days).then(
       (found) => live && setStored(found),
       (err: unknown) =>
@@ -69,11 +60,11 @@ export function useReplay(
           verdicts: [],
           error: messageOf(err),
         }),
-    );
+    )
     return () => {
-      live = false;
-    };
-  }, [root, days, history]);
+      live = false
+    }
+  }, [root, days, history])
 
-  return stored?.root === root && stored.days === days ? stored : null;
+  return stored?.root === root && stored.days === days ? stored : null
 }
