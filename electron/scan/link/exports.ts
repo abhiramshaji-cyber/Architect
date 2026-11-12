@@ -1,10 +1,14 @@
 import type { CallRef, FileStart } from '../../../shared/types'
 
-type Linked = { functions: { exported?: true }[]; starts: FileStart[]; stars: string[] }
+type Linked = { functions: { exported?: true }[]; starts: FileStart[]; stars: string[]; specs: Set<string>; reexports: Map<string, { spec: string }> }
+
+type Target = (file: string, spec: string) => string | undefined
+
+export type Links = { imports: string[]; reexports: string[] }
 
 const order = (a: CallRef, b: CallRef) => a.file.localeCompare(b.file) || a.fn - b.fn
 
-export function starred(parsed: Map<string, Linked>, target: (file: string, spec: string) => string | undefined): void {
+function starred(parsed: Map<string, Linked>, target: Target): void {
   const api = (file: string, seen: Set<string>): CallRef[] => {
     const at = parsed.get(file)
     if (at === undefined || seen.has(file)) return []
@@ -30,4 +34,12 @@ export function starred(parsed: Map<string, Linked>, target: (file: string, spec
     for (const start of at.starts) start.calls.sort(order)
     at.starts = at.starts.filter((start) => start.calls.length > 0 || start.channel !== undefined)
   }
+}
+
+export function linked(parsed: Map<string, Linked>, target: Target): Map<string, Links> {
+  starred(parsed, target)
+  const resolved = (file: string, specs: Iterable<string>) => [...new Set([...specs].flatMap((spec) => target(file, spec) ?? []))].filter((to) => to !== file).sort()
+  return new Map(
+    [...parsed].map(([file, at]) => [file, { imports: resolved(file, at.specs), reexports: resolved(file, [...[...at.reexports.values()].map((r) => r.spec), ...at.stars]) }]),
+  )
 }

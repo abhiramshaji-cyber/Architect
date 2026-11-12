@@ -467,6 +467,7 @@ export function installMock() {
       return { functions: {}, components: {} }
     },
     churn: async () => ({ days: 90, files: {}, functions: {} }),
+    coupling: async (_root, ask) => ({ ok: true, value: { ask: { days: 90, minShared: 3, minConfidence: 0.5, maxFiles: 30, ...ask }, skipped: 0, historyFrom: null, commits: {}, sessions: {}, pairs: [] } }),
     async rescan(root) {
       const scanned = mockCodeMap(root)
       codeMaps[root] = scanned

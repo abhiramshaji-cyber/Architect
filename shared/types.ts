@@ -240,7 +240,7 @@ export type StartKind = 'load' | 'exports' | StartReason
 
 export type FileStart = { kind: StartKind; calls: CallRef[]; channel?: string; member?: string; line?: number; sites?: CallSite[] }
 
-export type FileEntry = { path: string; lines?: number; code?: true; functions: FunctionEntry[]; imports?: string[]; starts?: FileStart[] }
+export type FileEntry = { path: string; lines?: number; code?: true; functions: FunctionEntry[]; imports?: string[]; reexports?: string[]; starts?: FileStart[] }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 
@@ -522,6 +522,14 @@ export type ScopeFolder = { path: string; functions: number }
 
 export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; owners: Record<string, string>; splits?: SplitSuggestion[] }
 
+export type CouplingAsk = { days: number; minShared: number; minConfidence: number; maxFiles: number }
+
+export type CoChange = { shared: string[]; changes: [number, number]; confidence: number }
+
+export type CouplingPair = { files: [string, string]; commits: CoChange; sessions: CoChange }
+
+export type Coupling = { ask: CouplingAsk; skipped: number; historyFrom: number | null; commits: Record<string, Omit<Commit, 'sha' | 'files'>>; sessions: Record<string, number>; pairs: CouplingPair[] }
+
 export type CommitDraft = { title: string; description: string }
 
 export type PullDraft = { title: string; body: string }
@@ -563,6 +571,7 @@ export type ArchitectApi = {
   flow(root: string, ask: FlowAsk): Promise<Flow>
   recency(root: string): Promise<Recency>
   churn(root: string, days?: number): Promise<import('./recency').Churn>
+  coupling(root: string, ask: Partial<CouplingAsk>): Promise<GitResult<Coupling>>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
   openSource(root: string, file: string): Promise<SourceFile>
   writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>
