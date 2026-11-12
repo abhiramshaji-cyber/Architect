@@ -33,7 +33,7 @@ Works out when each function and each component last changed. Each function gets
 owns: `electron/recency/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
 
 ### journal
@@ -43,6 +43,10 @@ owns: `electron/journal/**`
 ### rules
 Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Fully deterministic, no model calls.
 owns: `electron/rules/**`
+
+### agents
+Writes an `AGENTS.md` into the folder each component's globs share, copied from `architect.md`: the component's purpose and owned globs, the components it may call with their labels, the ones it must never call with their reasons, and the rule lines that reach that folder. A component is placed only when one of its globs is exactly that folder followed by `/**` and no `!` glob carves anything out of it; one that owns only some files there, whose globs share no folder below the root, climb out with `..`, sit in a folder the scan ignores, or share a folder with another component, is reported and gets no file. It never writes through a link: not into a folder whose real path leads outside the project, and not through an `AGENTS.md` that is itself a link. Every file it writes starts with a marker line, so it only ever rewrites or deletes files carrying that marker, never one written by hand, and leaves a file untouched when its text is unchanged. Fully deterministic, no model calls.
+owns: `electron/agents/**`
 
 ### review
 Opt in change review. Persists the on or off switch, holds contract proposals and Claude Code edits waiting on the engineer, keeps proposals across a restart, wakes the waiting caller with approve, deny or the engineer's feedback, and drops an edit whose hook went away. Rebuilds the file an edit would produce and works out its impact: the components that own it, the functions added, removed or changed in it, and the before and after diff, or for a proposal the architecture it would leave behind. A switch that is off answers every edit at once.
@@ -62,7 +66,7 @@ React Flow diagram, the file tree and CodeMirror editor, the contract rail holdi
 owns: `src/**`
 
 ### cli
-Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. Records every run in the rule history and lists it with `--history`.
+Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. Records every run in the rule history and lists it with `--history`. `architect agents` writes the AGENTS.md files.
 owns: `cli/**`
 
 ### bridge
@@ -80,6 +84,10 @@ owns: `lsp/**`
 - rules -> types
 - daemon -> rules
 - cli -> rules
+- cli -> agents
+- daemon -> agents
+- agents -> types
+- agents -> rules
 - rules -> journal
 - daemon -> types
 - daemon -> graph
@@ -131,6 +139,7 @@ owns: `lsp/**`
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
 - bridge -> review : the hook only forwards an edit over the socket and prints the answer, the queue lives in the app
 - canvas -> journal : the renderer never reads the cache directory, history and verdicts arrive over the preload bridge
+- canvas -> agents : the renderer never writes AGENTS.md, the daemon writes them
 
 ## Packages
 
@@ -165,27 +174,27 @@ owns: `lsp/**`
 - jobs: 1
 - lines: 206 `src/view/ContractView.tsx`
 - lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
-- lines: 241 `mcp/bridge.ts`
+- lines: 252 `mcp/bridge.ts`
 - lines: 272 `electron/git/open.ts`
 - lines: 279 `src/model/codemap.ts`
 - lines: 328 `src/view/Inspector.tsx`
 - lines: 332 `src/view/Canvas.tsx`
 - lines: 339 `src/view/CodeCanvas.tsx`
-- lines: 412 `electron/contract/graph.ts`
+- lines: 405 `electron/contract/graph.ts`
 - lines: 425 `src/view/RepoPicker.tsx`
 - lines: 469 `electron/github/github.ts`
 - lines: 537 `electron/git/git.ts`
 - lines: 597 `src/model/store.ts`
 - lines: 630 `electron/scan/scan.ts`
-- lines: 646 `shared/types.ts`
+- lines: 649 `shared/types.ts`
 - lines: 653 `src/model/demo-mock.ts`
-- lines: 1034 `electron/daemon.ts`
+- lines: 1049 `electron/daemon.ts`
 - files: 6 `scripts`
 - files: 7 `shared`
 - files: 9 `src/shell`
 - files: 13 `src/model`
 - files: 22 `src/view`
-- jobs: 2 `electron/contract/history.ts`, `electron/contract/infer.ts`, `electron/draft/flow/evidence.ts`, `electron/functions/facts.ts`, `electron/functions/summary/verbs.ts`, `electron/git/diff/file.ts`, `electron/git/diff/hunks.ts`, `electron/git/diff/parse.ts`, `electron/github/github.ts`, `electron/review/change.ts`, `electron/tabs.ts`, `shared/folders.ts`, `shared/recency.ts`, `src/model/buffer.ts`, `src/model/language.ts`, `src/model/recency.ts`, `src/shell/chords.ts`, `src/shell/leaderKey.ts`, `src/shell/views.ts`, `src/view/SplitDiff.tsx`, `src/view/diff/BranchBox.tsx`, `src/view/functions/Mark.tsx`, `src/view/functions/facts/Related.tsx`, `src/view/functions/facts/calls.ts`
+- jobs: 2 `electron/contract/history.ts`, `electron/contract/infer.ts`, `electron/draft/flow/evidence.ts`, `electron/functions/facts.ts`, `electron/functions/summary/verbs.ts`, `electron/git/diff/file.ts`, `electron/git/diff/hunks.ts`, `electron/git/diff/parse.ts`, `electron/github/github.ts`, `electron/review/change.ts`, `electron/rules/syntax.ts`, `electron/tabs.ts`, `shared/folders.ts`, `shared/recency.ts`, `src/model/buffer.ts`, `src/model/language.ts`, `src/model/recency.ts`, `src/shell/chords.ts`, `src/shell/leaderKey.ts`, `src/shell/views.ts`, `src/view/SplitDiff.tsx`, `src/view/diff/BranchBox.tsx`, `src/view/functions/Mark.tsx`, `src/view/functions/facts/Related.tsx`, `src/view/functions/facts/calls.ts`
 - jobs: 3 `electron/app/launch.ts`, `electron/functions/scope.ts`, `electron/scan/traits.ts`, `lsp/features.ts`, `src/shell/pane-tree.ts`, `src/view/editor/trail.ts`, `src/view/segments.ts`
 - jobs: 4 `electron/app/windows.ts`, `src/model/codemap.ts`, `src/model/live/recent.ts`, `src/view/editor/symbols.ts`, `src/view/functions/scope/pick.ts`
 - jobs: 5 `electron/contract/graph.ts`, `electron/git/diff/changes.ts`, `src/model/layout.ts`, `src/model/live/history.ts`, `src/model/store.ts`, `src/model/tree.ts`

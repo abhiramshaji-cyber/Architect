@@ -26,7 +26,7 @@ function matches(glob: string, file: string): boolean {
   return isMatch(file)
 }
 
-function effective(declared: RuleEntry[] | undefined): RuleEntry[] {
+export function effective(declared: RuleEntry[] | undefined): RuleEntry[] {
   const own = declared ?? []
   const skips = own.some((entry) => entry.rule === 'skip') ? [] : DEFAULT_RULES.filter((entry) => entry.rule === 'skip')
   return [...DEFAULT_RULES.filter((entry) => entry.rule !== 'skip'), ...skips, ...own]

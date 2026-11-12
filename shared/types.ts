@@ -64,6 +64,8 @@ export const ruleRunSchema = z.object({
 
 export type RuleRun = z.infer<typeof ruleRunSchema>
 
+export type AgentsReport = { written: string[]; unchanged: string[]; removed: string[]; kept: string[]; unplaced: { component: string; reason: string }[] }
+
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
 export type SourceWindow = {
@@ -232,6 +234,7 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('await_proposal'), cwd: z.string(), proposalId: z.string() }),
   z.object({ id: z.string(), op: z.literal('review_edit'), cwd: z.string(), change: codeChangeSchema }),
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
+  z.object({ id: z.string(), op: z.literal('write_agents'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
   z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string() }).extend({
     session: z.string().optional(),
