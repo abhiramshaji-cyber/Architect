@@ -1,5 +1,6 @@
 import type { Architecture, CodeMap, FunctionList, FunctionRow } from '../../shared/types'
 import { ownership } from '../contract/graph'
+import { splitsIn } from '../rules/split'
 import { entryFiles, type EntryFiles } from './entries'
 import { edgesOf, factsOf } from './facts'
 import { importanceOf } from './importance'
@@ -83,5 +84,5 @@ export function listFunctions(
   scope?: unknown,
   architecture: Architecture | null = null,
 ): FunctionList {
-  return functionsOf(map, entryFiles(root, map), scope, architecture)
+  return { ...functionsOf(map, entryFiles(root, map), scope, architecture), splits: splitsIn(root, map, architecture) }
 }

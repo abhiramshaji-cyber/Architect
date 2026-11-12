@@ -25,7 +25,7 @@ Asks the Claude Code binary for a first `architect.md`, from a bounded summary o
 owns: `electron/draft/**`
 
 ### functions
-Lists every function in a project with facts measured from the scan (its signature as written, line count, how many functions call it, how many it calls, whether it calls itself, whether it is exported, and why it is a starting point when it is one), the author's own doc comment copied verbatim when there is one, the calls between the listed functions, and an importance from 1 to 5. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. Nothing is worded from a function's name. A function is a starting point only for a reason it can name: the package.json main, bin or a script that runs its file, the Electron main, preload or renderer entry or a page script read from the vite or electron-vite build config, a preload bridge member, an MCP tool handler, an IPC handler or a CLI command, each found in the parse. Being unimported never makes a starting point, and test files never are. It also arranges the functions into a call tree for the indented outline view: starting points sit at the top, grouped by their reason and the file that declares it, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Given a folder inside the project it narrows all of this to the functions under that folder: importance and the tree are worked out again from only the calls between them, callers from outside the folder are counted apart, and the folders inside it come back with their function counts so the renderer can drill in. It also maps each file in scope to the component that owns it in `architect.md`, so the renderer can bucket a wide level of the tree by component. A folder that is missing or outside the project falls back to the whole project. Fully deterministic, no model calls, computed in one pass over the code map.
+Lists every function in a project with facts measured from the scan (its signature as written, line count, how many functions call it, how many it calls, whether it calls itself, whether it is exported, and why it is a starting point when it is one), the author's own doc comment copied verbatim when there is one, the calls between the listed functions, and an importance from 1 to 5. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. Nothing is worded from a function's name. A function is a starting point only for a reason it can name: the package.json main, bin or a script that runs its file, the Electron main, preload or renderer entry or a page script read from the vite or electron-vite build config, a preload bridge member, an MCP tool handler, an IPC handler or a CLI command, each found in the parse. Being unimported never makes a starting point, and test files never are. It also arranges the functions into a call tree for the indented outline view: starting points sit at the top, grouped by their reason and the file that declares it, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Given a folder inside the project it narrows all of this to the functions under that folder: importance and the tree are worked out again from only the calls between them, callers from outside the folder are counted apart, and the folders inside it come back with their function counts so the renderer can drill in. It also maps each file in scope to the component that owns it in `architect.md`, so the renderer can bucket a wide level of the tree by component. A folder that is missing or outside the project falls back to the whole project. Each list also carries the split suggestions the rules component makes for the project. Fully deterministic, no model calls, computed in one pass over the code map.
 owns: `electron/functions/**`
 
 ### layers
@@ -49,7 +49,7 @@ A capped, newest first list of records per project kept as one JSON file each in
 owns: `electron/journal/**`
 
 ### rules
-Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Fully deterministic, no model calls.
+Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Also suggests splits, never applying them: a file over its lines or jobs limit, or over the project wide one when a later line grandfathers it, gets one file per connected group of exported functions in a folder named after it behind the same entry file, each file named after the most common leading word of its group's names or left unnamed with the tie that stopped it, and a function longer and more called than the split thresholds gets the extraction points its parse shows: compound statements, block callbacks and inner functions at the top of its body. Fully deterministic, no model calls.
 owns: `electron/rules/**`
 
 ### agents
@@ -78,7 +78,7 @@ React Flow diagram, the file tree and CodeMirror editor, the contract rail holdi
 owns: `src/**`
 
 ### cli
-Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. Records every run in the rule history and lists it with `--history`. `architect agents` writes the AGENTS.md files. `architect where` answers where a new function belongs.
+Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. With `--suggest` it also prints the split suggestions with their evidence. Records every run in the rule history and lists it with `--history`. `architect agents` writes the AGENTS.md files. `architect where` answers where a new function belongs.
 owns: `cli/**`
 
 ### bridge
@@ -128,6 +128,7 @@ owns: `lsp/**`
 - review -> graph
 - review -> git
 - functions -> types
+- functions -> rules
 - functions -> graph
 - daemon -> git
 - draft -> types
@@ -200,6 +201,7 @@ owns: `lsp/**`
 - files: 5
 - names: Manager, Helper, Service, Factory, Base
 - jobs: 1
+- split: 50 lines, 3 callers
 - lines: 206 `src/view/ContractView.tsx`
 - lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
 - lines: 272 `electron/git/open.ts`

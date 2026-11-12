@@ -4,8 +4,9 @@ import { writeAgents } from '../electron/agents/write'
 import { check, parse } from '../electron/contract/graph'
 import { crossings } from '../electron/layers/crossings'
 import { auditRules } from '../electron/rules/audit'
-import { factsOf, type SourceFacts } from '../electron/rules/facts'
+import { sourcesIn } from '../electron/rules/facts'
 import { readRuns, recordRuns } from '../electron/rules/runs'
+import { splitsIn } from '../electron/rules/split'
 import { scan } from '../electron/scan/scan'
 import { whereOf } from '../electron/where'
 import { SOCKET_PATH } from '../shared/socket'
@@ -35,17 +36,6 @@ export function audit(architecture: Architecture, map: CodeMap): Violation[] {
   }
 
   return [...found.values()].sort((a, b) => `${a.from} -> ${a.to}`.localeCompare(`${b.from} -> ${b.to}`))
-}
-
-export function sourcesOf(root: string, map: CodeMap): SourceFacts[] {
-  const read = (file: string) => () => {
-    try {
-      return fs.readFileSync(path.join(root, file), 'utf8')
-    } catch {
-      return undefined
-    }
-  }
-  return map.folders.flatMap((folder) => folder.files.flatMap((file) => factsOf(file.path, read(file.path), () => file.functions) ?? []))
 }
 
 function history(runs: RuleRun[]): string {
@@ -132,10 +122,11 @@ export async function run(
 
   const map = await scan(args.root)
   const violations = audit(architecture, map)
-  const rules = auditRules(architecture.rules, sourcesOf(args.root, map), architecture.scope)
+  const rules = auditRules(architecture.rules, sourcesIn(args.root, map), architecture.scope)
+  const suggestions = args.suggest ? splitsIn(args.root, map, architecture) : undefined
 
   recordRuns(cacheDir, args.root, 'check', rules)
 
-  out(args.json ? JSON.stringify({ root: args.root, violations, rules }, null, 2) : report(architecture, violations, rules))
+  out(args.json ? JSON.stringify({ root: args.root, violations, rules, ...(suggestions ? { suggestions } : {}) }, null, 2) : report(architecture, violations, rules, suggestions))
   return violations.length === 0 && rules.length === 0 ? OK : VIOLATED
 }
