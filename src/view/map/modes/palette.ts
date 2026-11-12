@@ -43,6 +43,14 @@ export const MODES: Mode[] = [
     high: 'unreached',
     title: 'Code no starting point reaches through calls',
   },
+  {
+    id: 'style',
+    label: 'Style',
+    token: '--diff-del-fg',
+    low: 'all pass',
+    high: 'all fail',
+    title: 'Share of files failing a rule (lines, files, names, jobs), grandfathered limits counted as failures',
+  },
 ]
 
 export const FLOOR = 0.1

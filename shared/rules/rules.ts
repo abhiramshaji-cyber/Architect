@@ -33,3 +33,5 @@ export const ruleRunSchema = z.object({
 })
 
 export type RuleRun = z.infer<typeof ruleRunSchema>
+
+export type StyleFile = { path: string; failing: { rule: CheckedRule; line?: number; message: string; grandfathered: boolean }[] }

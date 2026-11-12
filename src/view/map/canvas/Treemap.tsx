@@ -33,6 +33,8 @@ export default function Treemap({ focus, values, token, theme, describe, onPick 
   const canvas = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [hover, setHover] = useState<{ at: number; x: number; y: number } | null>(null)
+  const tip = useRef<HTMLDivElement>(null)
+  const [tall, setTall] = useState(0)
 
   useLayoutEffect(() => {
     const el = box.current
@@ -67,6 +69,10 @@ export default function Treemap({ focus, values, token, theme, describe, onPick 
   const shown = hover ? tiles[hover.at] : undefined
   const told = useMemo(() => (shown ? describe(shown.node) : null), [shown, describe])
 
+  useLayoutEffect(() => {
+    setTall(tip.current?.offsetHeight ?? 0)
+  }, [told])
+
   return (
     <div className="map-box" ref={box}>
       <canvas
@@ -88,18 +94,19 @@ export default function Treemap({ focus, values, token, theme, describe, onPick 
       {shown && <div className="map-hover" style={{ left: shown.x, top: shown.y, width: shown.w, height: shown.h }} />}
       {hover && told && (
         <div
+          ref={tip}
           className="map-tip"
           role="tooltip"
           style={{
             left: Math.min(hover.x + 14, Math.max(0, size.w - 320)),
-            top: hover.y + 14 > size.h - 200 ? Math.max(0, hover.y - 200) : hover.y + 14,
+            top: hover.y + 14 + tall > size.h ? Math.max(0, Math.min(hover.y - 14, size.h) - tall) : hover.y + 14,
           }}
         >
           <p className="map-tip-kind">{told.kind}</p>
           <p className="map-tip-title">{told.title}</p>
           <dl>
-            {told.lines.map(([name, value]) => (
-              <div key={name}>
+            {told.lines.map(([name, value], at) => (
+              <div key={at}>
                 <dt>{name}</dt>
                 <dd>{value}</dd>
               </div>

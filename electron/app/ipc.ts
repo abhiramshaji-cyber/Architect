@@ -74,6 +74,7 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>) {
   handle('architect:coupling', async (root: string, ask?: unknown) =>
     couplingOf(root, daemon.codeMap(root) ?? (await daemon.rescan(root)), daemon.history(root), ask),
   )
+  handle('architect:style', (root: string) => daemon.style(root))
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
   )

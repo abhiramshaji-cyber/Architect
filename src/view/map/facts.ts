@@ -1,5 +1,6 @@
 import type { MapNode } from './layout/nest'
 import { churnOf, type Facts } from './modes/shade'
+import { RULES, scoreOf } from './style/score'
 
 export type Line = [string, string]
 
@@ -88,8 +89,31 @@ function groupLines(node: MapNode, facts: Facts): Line[] {
   return [...lines, ...sessionLines(files, facts)]
 }
 
+function styleLines(node: MapNode, facts: Facts): Line[] {
+  const style = facts.style
+  if (!style) return []
+  if (node.kind === 'file' || node.kind === 'function' || node.kind === 'rest') {
+    const failing = style.get(node.path)
+    if (!failing) return [['style', 'not checked, the rules skip this file']]
+    if (failing.length === 0) return [['style', 'passes every rule']]
+    return failing.map(({ rule, line, message, grandfathered }): Line => [
+      `fails ${rule}`,
+      `${line === undefined ? '' : `line ${line}: `}${message}${grandfathered ? ', allowed only by a grandfathered limit' : ''}`,
+    ])
+  }
+  const score = scoreOf(node, style)
+  if (score.files === 0) return [['style', 'no checked files']]
+  return [
+    ['style score', `${score.percent}%, ${score.passing} of ${score.files} files pass`],
+    ['passing per rule', RULES.map((rule) => `${rule} ${score.rules[rule]}`).join(', ')],
+  ]
+}
+
 export function factsFor(node: MapNode, facts: Facts): { kind: string; title: string; lines: Line[] } {
   const title = node.kind !== 'function' && node.kind !== 'root' ? node.path : node.label
-  const lines = node.fn !== undefined ? functionLines(node.fn, node, facts) : groupLines(node, facts)
+  const lines = [
+    ...(node.fn !== undefined ? functionLines(node.fn, node, facts) : groupLines(node, facts)),
+    ...styleLines(node, facts),
+  ]
   return { kind: KINDS[node.kind], title, lines }
 }

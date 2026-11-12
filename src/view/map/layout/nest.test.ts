@@ -131,4 +131,10 @@ describe('nest', () => {
     expect(byPath['main.ts']?.weight).toBe(5)
     expect(tree.weight).toBe(70 + 600 + 50 + 5)
   })
+
+  it('keeps an empty code file so its style still counts, while dropping empty functions', () => {
+    const tree = nest([], [{ path: 'a/empty.ts', lines: 0, code: true }], null, 'demo')
+    const file = tree.children[0]?.children[0]?.children[0]
+    expect(file).toMatchObject({ kind: 'file', path: 'a/empty.ts', weight: 0, children: [] })
+  })
 })

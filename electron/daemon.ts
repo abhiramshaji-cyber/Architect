@@ -55,6 +55,7 @@ import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
+import { styleIn } from './rules/style'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
 
@@ -1020,6 +1021,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       return recencyOf(map, loadProject(root).architecture, blamed)
     },
     churn: async (root: string, days?: unknown) => churnOf(root, await mapOf(loadProject(root).root), days),
+    style: async (root: string) => styleIn(root, await mapOf(loadProject(root).root), loadProject(root).architecture),
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },
