@@ -5,7 +5,7 @@ export type Change = { name: string; key: string; line: number; change: 'added' 
 
 type Span = { name: string; line: number; endLine: number }
 
-type Body = { name: string; key: string; line: number; endLine: number; text: string }
+type Body = { name: string; key: string; line: number; endLine: number; text: string; words: Set<string> }
 
 const ORDER: Change['change'][] = ['changed', 'removed', 'added']
 
@@ -35,7 +35,7 @@ function bodies(source: string, file: string): Map<string, Body> {
       const inner = fns.filter((_, j) => (keys[j] ?? '').startsWith(`${key}/`))
       const own = (line: number) => line === fn.line || line === fn.endLine || !inner.some((child) => child.line <= line && line <= child.endLine)
       const text = tokens(lines.slice(fn.line - 1, fn.endLine).filter((_, at) => own(fn.line + at)).join('\n'))
-      return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text }]
+      return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text, words: new Set(text.split(' ')) }]
     }),
   )
 }
@@ -61,36 +61,56 @@ function shape(node: ts.Node, source: ts.SourceFile): string {
 
 const isFunction = (node: ts.Node | undefined) => node !== undefined && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
 
-function declared(statement: ts.Statement): string[] | 'function' {
-  if (ts.isFunctionDeclaration(statement)) return 'function'
+const KINDS: [RegExp, ts.ScriptKind][] = [[/\.tsx$/i, ts.ScriptKind.TSX], [/\.[cm]?ts$/i, ts.ScriptKind.TS], [/\.([cm]?js|jsx)$/i, ts.ScriptKind.JSX]]
+
+export const sourceOf = (file: string, text: string) => ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, KINDS.find(([test]) => test.test(file))?.[1] ?? ts.ScriptKind.TS)
+
+function bound(name: ts.BindingName): string[] {
+  return ts.isIdentifier(name) ? [name.text] : name.elements.flatMap((element) => (ts.isOmittedExpression(element) ? [] : bound(element.name)))
+}
+
+type Declared = { kind: 'function' } | { kind: 'export'; names: string[] } | { kind: 'local'; bindings: [string, string][] } | { kind: 'other' }
+
+function declared(statement: ts.Statement): Declared {
+  if (ts.isFunctionDeclaration(statement)) return { kind: 'function' }
   if (ts.isVariableStatement(statement)) {
     const list = statement.declarationList.declarations
-    return list.every((one) => isFunction(one.initializer)) ? 'function' : list.map((one) => one.name.getText())
+    return list.every((one) => isFunction(one.initializer)) ? { kind: 'function' } : { kind: 'export', names: list.flatMap((one) => bound(one.name)) }
   }
-  if ((ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name) return [statement.name.text]
-  return ts.isExportAssignment(statement) ? ['default'] : []
+  if ((ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name) return { kind: 'export', names: [statement.name.text] }
+  if (ts.isExportAssignment(statement)) return { kind: 'export', names: ['default'] }
+  if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) return { kind: 'export', names: statement.exportClause.elements.map((element) => element.name.text) }
+  const clause = ts.isImportDeclaration(statement) ? statement.importClause : undefined
+  if (!clause) return { kind: 'other' }
+  const from = ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : ''
+  const space: [string, string][] = clause.namedBindings && ts.isNamespaceImport(clause.namedBindings) ? [[clause.namedBindings.name.text, `${from} *`]] : []
+  const named: [string, string][] = clause.namedBindings && ts.isNamedImports(clause.namedBindings) ? clause.namedBindings.elements.map((element) => [element.name.text, `${from} ${(element.propertyName ?? element.name).text}`]) : []
+  return { kind: 'local', bindings: [...(clause.name ? ([[clause.name.text, `${from} default`]] as [string, string][]) : []), ...space, ...named] }
 }
 
-function topLevel(text: string, file: string): { named: Map<string, string>; other: string[] } {
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
-  const named = new Map<string, string>()
-  const other: string[] = []
+function topLevel(text: string, file: string): { exported: Map<string, string>; local: Map<string, string>; other: string[] } {
+  const source = sourceOf(file, text)
+  const [exported, local, other] = [new Map<string, string>(), new Map<string, string>(), [] as string[]]
   for (const statement of source.statements) {
-    const names = declared(statement)
-    if (names === 'function') continue
-    if (names.length === 0) other.push(shape(statement, source))
-    for (const name of names) named.set(name, shape(statement, source))
+    const found = declared(statement)
+    if (found.kind === 'function') continue
+    if (found.kind === 'other') other.push(shape(statement, source))
+    else if (found.kind === 'local') for (const [name, from] of found.bindings) local.set(name, from)
+    else for (const name of found.names) exported.set(name, shape(statement, source))
   }
-  return { named, other: other.sort() }
+  return { exported, local, other: other.sort() }
 }
 
-function outsideOf(file: string, before: string, after: string): string[] | 'all' {
+export type Outside = { names: string[]; locals: string[] } | 'all'
+
+function outsideOf(file: string, before: string, after: string): Outside {
   const [old, next] = [topLevel(before, file), topLevel(after, file)]
   if (old.other.join('\n') !== next.other.join('\n')) return 'all'
-  return [...new Set([...old.named.keys(), ...next.named.keys()])].filter((name) => old.named.get(name) !== next.named.get(name)).sort()
+  const differ = (a: Map<string, string>, b: Map<string, string>, kept: boolean) => [...new Set([...a.keys(), ...b.keys()])].filter((name) => a.get(name) !== b.get(name) && (!kept || a.has(name))).sort()
+  return { names: differ(old.exported, next.exported, false), locals: differ(old.local, next.local, true) }
 }
 
-export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: string[] | 'all' } {
+export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: Outside; uses: (names: string[]) => string[] } {
   const old = bodies(before, file)
   const next = bodies(after, file)
   const change = (all: Map<string, Body>, body: Body, kind: Change['change']): Change => ({ name: body.name, key: body.key, line: body.line, change: kind, shares: sharing(all, body) })
@@ -103,5 +123,5 @@ export function changesOf(file: string, before: string, after: string): { change
   const removed = [...old.values()].flatMap((body): Change[] => (next.has(body.key) ? [] : [change(old, body, 'removed')]))
 
   const order = (entry: Change) => ORDER.indexOf(entry.change)
-  return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outsideOf(file, before, after) }
+  return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outsideOf(file, before, after), uses: (names) => [...next.values()].filter((body) => names.some((name) => body.words.has(name))).map((body) => body.key) }
 }

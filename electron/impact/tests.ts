@@ -6,14 +6,15 @@ import { isTestFile } from '../scan/starts'
 import type { Fn } from '../where/refs'
 import { refIndex, type Reach } from './callers'
 import type { TestReach } from './schema'
+import { sourceOf } from './touched'
 
 const LISTED = 10
 
 const at = (fn: Fn) => `${fn.file}:${fn.line}`
 
-const bare = (file: string) => file.replace(/\.[cm]?[jt]sx?$/, '').replace(/\/index$/, '')
+export const bare = (file: string) => file.replace(/\.[cm]?[jt]sx?$/i, '').replace(/\/index$/, '')
 
-type Loaded = { target: string; line: number; names: string[] | null }
+type Loaded = { target: string; line: number; names: string[] | null; forwards: boolean }
 
 const picked = (elements: readonly (ts.ImportSpecifier | ts.ExportSpecifier)[], types: boolean) => elements.filter((element) => types || !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text)
 
@@ -45,13 +46,13 @@ export function importsOf(root: string, test: string, types = false): Loaded[] |
   } catch {
     return 'unreadable'
   }
-  const source = ts.createSourceFile(test, text, ts.ScriptTarget.Latest, true)
+  const source = sourceOf(test, text)
   const found: Loaded[] = []
   const visit = (node: ts.Node): void => {
     const spec = specOf(node)
     const names = spec === undefined ? undefined : namesOf(node, types)
     if (spec !== undefined && names !== undefined && ts.isStringLiteralLike(spec) && spec.text.startsWith('.')) {
-      found.push({ target: bare(path.posix.join(path.posix.dirname(test), spec.text)), line: source.getLineAndCharacterOfPosition(spec.getStart(source)).line + 1, names })
+      found.push({ target: bare(path.posix.join(path.posix.dirname(test), spec.text)), line: source.getLineAndCharacterOfPosition(spec.getStart(source)).line + 1, names, forwards: ts.isExportDeclaration(node) })
     }
     ts.forEachChild(node, visit)
   }
@@ -59,7 +60,7 @@ export function importsOf(root: string, test: string, types = false): Loaded[] |
   return found
 }
 
-function aliasesOf(root: string, file: string): Map<string, string> {
+export function aliasesOf(root: string, file: string): Map<string, string> {
   const aliases = new Map<string, string>()
   let text: string
   try {
@@ -67,7 +68,7 @@ function aliasesOf(root: string, file: string): Map<string, string> {
   } catch {
     return aliases
   }
-  for (const statement of ts.createSourceFile(file, text, ts.ScriptTarget.Latest, false).statements) {
+  for (const statement of sourceOf(file, text).statements) {
     if (!ts.isExportDeclaration(statement) || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue
     for (const element of statement.exportClause.elements) if (element.propertyName) aliases.set(element.name.text, element.propertyName.text)
   }
@@ -126,7 +127,7 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
     const loaded = importsOf(root, file.path)
     for (const target of file.imports ?? []) {
       const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === bare(target))
-      const ways = (entries.length > 0 ? entries : [{ target, line: 0, names: null }]).map((way) => ({ ...way, names: originals(target, way.names) }))
+      const ways = (entries.length > 0 ? entries : [{ target, line: 0, names: null, forwards: false }]).map((way) => ({ ...way, names: originals(target, way.names) }))
       const hit = ways.flatMap((way) => {
         const index = (exposed.get(target) ?? []).find((i) => reach.depth.has(i) && fns[i]?.test === false && named(fns[i] as Fn, way.names))
         const reached = index === undefined ? undefined : fns[index]
@@ -149,4 +150,27 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
   const cut = found.size > LISTED ? [`${found.size - LISTED} of ${found.size} test files are counted but not listed`] : []
   const loose = listed.some((test) => test.via === 'import') ? ['a test listed via import imports a reached function by name, or a whole file holding one; the scan does not see calls inside test callbacks, so it may not call it'] : []
   return { total: found.size, listed, notes: [...cut, ...lineless, ...loose] }
+}
+
+type Loads = ReturnType<typeof importsOf>
+
+export function importersOf(root: string, file: string, names: string[] | 'all', files: FileEntry[]): Set<string> {
+  const [found, seen, loads] = [new Set<string>(), new Set<string>([file]), new Map<string, Loads>()]
+  const queue = [{ target: file, wanted: names }]
+  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+    const { target, wanted } = next
+    for (const entry of files) {
+      if (isTestFile(entry.path) || !(entry.imports ?? []).includes(target)) continue
+      const loaded = loads.get(entry.path) ?? (loads.set(entry.path, importsOf(root, entry.path, true)).get(entry.path) as Loads)
+      const ways = loaded === 'unreadable' ? [] : loaded.filter((way) => way.target === bare(target))
+      const hits = ways.length === 0 ? [{ forwards: false }] : ways.filter((way) => wanted === 'all' || way.names === null || way.names.some((name) => wanted.includes(name)))
+      if (hits.length === 0) continue
+      found.add(entry.path)
+      if (!hits.some((hit) => hit.forwards) || seen.has(entry.path)) continue
+      seen.add(entry.path)
+      const aliases = [...aliasesOf(root, entry.path)].filter(([, original]) => wanted === 'all' || wanted.includes(original)).map(([alias]) => alias)
+      queue.push({ target: entry.path, wanted: wanted === 'all' ? 'all' : [...wanted, ...aliases] })
+    }
+  }
+  return found
 }

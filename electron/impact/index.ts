@@ -8,8 +8,8 @@ import { isTestFile } from '../scan/starts'
 import { projectPath, type Fn } from '../where/refs'
 import { callersOf, LIST_DEPTH, LISTED, type Reach } from './callers'
 import type { Impact, Touch } from './schema'
-import { importsOf, testsOf } from './tests'
-import { changesOf, keysOf } from './touched'
+import { importersOf, testsOf } from './tests'
+import { changesOf, keysOf, type Outside } from './touched'
 
 export { impactSchema, type Impact } from './schema'
 
@@ -21,7 +21,7 @@ type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot;
 
 const SETTLE_MS = 2000
 
-const CODE = /\.[cm]?[jt]sx?$/
+const CODE = /\.[cm]?[jt]sx?$/i
 
 const NAMED = 5
 
@@ -54,18 +54,19 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const current = before(root, file)
   if (current instanceof Error) return { seeds: [], touched: [], added: [], file, notes: [`${file} could not be read (${current.message}), so no function is touched`] }
 
-  const { changes, parsed, outside } = changesOf(file, current, input.content)
+  const { changes, parsed, outside, uses } = changesOf(file, current, input.content)
   const same = current.replaceAll('\r\n', '\n') === input.content.replaceAll('\r\n', '\n')
   const code = CODE.test(file)
   const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 && !code ? [`${file} holds no function the scan parses, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
-  const wide = !same && code && (outside === 'all' || outside.length > 0) ? outsideSeeds(root, file, outside, files, fns) : null
+  const moved = outside === 'all' || outside.names.length > 0 || outside.locals.length > 0
+  const wide = !same && code && moved && fs.existsSync(path.join(root, file)) ? outsideSeeds(root, file, outside, uses, scanned, offset, files, fns) : null
   if (wide) notes.push(wide.note)
-  if (!same && code && !wide && changes.length === 0) notes.push(`the change to ${file} only touches formatting, quotes or comments, so nothing is counted`)
+  if (!same && code && !moved && changes.length === 0) notes.push(`the change to ${file} only touches formatting, quotes or comments, so nothing is counted`)
 
   const sharing = changes.filter((change) => change.change === 'changed' && change.shares.length > 0)
-  if (sharing.length > 0) notes.push(`${sharing.length} changed functions share a line with another function (${sharing.slice(0, NAMED).map((change) => `${change.name} at ${file}:${change.line}`).join(', ')}${sharing.length > NAMED ? ', ...' : ''}); the scan gives lines, not columns, so an edit on that line counts as a change to each`)
+  if (sharing.length > 0) notes.push(`${sharing.length} changed functions share a line with another function (${listed(sharing.map((change) => `${change.name} at ${file}:${change.line}`))}); the scan gives lines, not columns, so an edit on that line counts as a change to each`)
   const unseen: string[] = []
   const seeds = changes.flatMap((change) => {
     if (change.change === 'added') return []
@@ -75,23 +76,23 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
     unseen.push(`${change.name} at ${file}:${change.line}`)
     return []
   })
-  if (unseen.length > 0) notes.push(`${unseen.length} changed functions are not in the scan (${unseen.slice(0, NAMED).join(', ')}${unseen.length > NAMED ? ', ...' : ''}); the scan skips this path or the file changed after the scan, so their callers are not counted`)
+  if (unseen.length > 0) notes.push(`${unseen.length} changed functions are not in the scan (${listed(unseen)}); the scan skips this path or the file changed after the scan, so their callers are not counted`)
   const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? ('proposed' as const) : ('disk' as const) }))
   const added = changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name }))
-  return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide ? { whole: file, users: wide.users } : {}) }
+  return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide && wide.users.length > 0 ? { whole: file, users: wide.users } : {}) }
 }
 
-function outsideSeeds(root: string, file: string, names: string[] | 'all', files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; note: string } {
-  const uses = (importer: FileEntry) => {
-    const loaded = importsOf(root, importer.path, true)
-    const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === file.replace(/\.[cm]?[jt]sx?$/, '').replace(/\/index$/, ''))
-    return names === 'all' || entries.length === 0 || entries.some((entry) => entry.names === null || entry.names.some((name) => names.includes(name)))
-  }
-  const importers = new Set(files.filter((entry) => !isTestFile(entry.path) && (entry.imports ?? []).includes(file) && uses(entry)).map((entry) => entry.path))
-  const own = fns.flatMap((fn, i) => (fn.file === file ? [i] : []))
+const listed = (names: string[]) => names.slice(0, NAMED).join(', ') + (names.length > NAMED ? ', ...' : '')
+
+function outsideSeeds(root: string, file: string, outside: Outside, uses: (names: string[]) => string[], scanned: string[], offset: number, files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; note: string } {
+  const all = outside === 'all'
+  const changed = all ? [] : [...outside.names, ...outside.locals]
+  const keys = new Set(all ? scanned : uses(changed))
+  const own = offset < 0 ? [] : scanned.flatMap((key, index) => (keys.has(key) ? [offset + index] : []))
+  const importers = all || outside.names.length > 0 ? importersOf(root, file, all ? 'all' : outside.names, files) : new Set<string>()
   const using = fns.flatMap((fn, i) => (importers.has(fn.file) ? [i] : []))
-  const what = names === 'all' ? 'a statement with no name, such as a module load' : names.slice(0, NAMED).join(', ') + (names.length > NAMED ? ', ...' : '')
-  const note = `code outside every function in ${file} changed (${what}), so callers are counted from its ${own.length} functions, and the ${using.length} functions in the ${importers.size} files that import ${names === 'all' ? 'it' : 'those names'} count as its callers`
+  const what = all ? 'a statement with no name, such as a module load or a star re-export' : listed(changed)
+  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions in the ${importers.size} files that import ${all ? 'it' : 'those names'}, directly or through a re-export, count as its callers`
   return { seeds: own, users: using, note }
 }
 
@@ -172,7 +173,7 @@ export async function impactFor(input: ImpactInput, root: string, architecture: 
     const map = await Promise.race([mapOf(root), late])
     if (map === null) return failed('timeout', `impact was not worked out: scanning ${root} took longer than ${timeoutMs} ms; the scan goes on and a later check uses it`)
     const impact = impactOf(input, root, architecture, map)
-    return stale === null ? impact : { ...impact, notes: [`architect.md does not parse (${stale}); components come from the last version that parsed`, ...impact.notes] }
+    return stale === null ? impact : { ...impact, notes: capped([`architect.md does not parse (${stale}); components come from the last version that parsed`, ...impact.notes]) }
   } catch (err) {
     return failed('failed', `impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`)
   } finally {
