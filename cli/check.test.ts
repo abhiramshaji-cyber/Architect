@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs } from './args'
 import { OK, USAGE, VIOLATED, audit, run } from './check'
-import { report } from './report'
+import { report } from './text/report'
 import { parse } from '../electron/contract/graph'
 import { scan } from '../electron/scan/scan'
 
@@ -313,6 +313,36 @@ describe('agents', () => {
 
   it('exits 2 without architect.md', async () => {
     expect((await outcome(fixture({}), ['agents'])).code).toBe(USAGE)
+  })
+})
+
+describe('where', () => {
+  it('reads repeatable refs, inline values and the name and file', () => {
+    expect(parseArgs(['where', '/tmp', '--calls', 'load', '--calls=store/db.ts:save', '--callers', 'api', '--name', 'go', '--file=x.ts'])).toEqual({
+      command: 'where',
+      root: path.resolve('/tmp'),
+      json: false,
+      help: false,
+      history: false,
+      where: { calls: ['load', 'store/db.ts:save'], callers: ['api'], name: 'go', file: 'x.ts' },
+    })
+    expect(parseArgs(['where', '--calls'])).toBe('--calls needs a value')
+    expect(parseArgs(['where', '--calls', '--json'])).toBe('--calls needs a value')
+    expect(parseArgs(['where', '--name='])).toBe('--name needs a value')
+    expect(parseArgs(['check', '--calls', 'x'])).toBe('unknown option: --calls')
+  })
+
+  it('answers with or without architect.md and exits 0', async () => {
+    const files = { 'api/handler.ts': API, 'store/db.ts': STORE }
+    const drawn = fixture({ ...files, 'architect.md': contract({ edges: ['- api -> store'] }) })
+    const answered = await outcome(drawn, ['where', '--calls', path.join(drawn, 'store/db.ts'), '--json'])
+    expect(answered.code).toBe(OK)
+    expect(JSON.parse(answered.out)).toMatchObject({ component: { status: 'found', id: 'store' }, folder: { path: 'store' } })
+
+    const bare = await outcome(fixture(files), ['where', '--calls', 'load'])
+    expect(bare.code).toBe(OK)
+    expect(bare.out).toContain('component  (no-contract)')
+    expect(bare.out).toContain('folder     store  holds 1 of the 1 matched neighbours')
   })
 })
 

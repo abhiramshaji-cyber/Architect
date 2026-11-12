@@ -6,11 +6,13 @@ import { auditRules } from '../electron/rules/audit'
 import { factsOf, type SourceFacts } from '../electron/rules/facts'
 import { readRuns, recordRuns } from '../electron/rules/runs'
 import { scan } from '../electron/scan/scan'
+import { whereOf } from '../electron/where'
 import { SOCKET_PATH } from '../shared/socket'
 import type { Architecture, CodeMap, RuleRun } from '../shared/types'
 import { parseArgs, USAGE_TEXT } from './args'
-import { agentsText } from './agents'
-import { report, type Violation } from './report'
+import { agentsText } from './text/agents'
+import { report, type Violation } from './text/report'
+import { whereText } from './text/where'
 
 export const OK = 0
 export const VIOLATED = 1
@@ -80,7 +82,7 @@ function history(runs: RuleRun[]): string {
     .join('\n')
 }
 
-function readContract(root: string): Architecture | string {
+function readContract(root: string): Architecture | null | string {
   let stat: fs.Stats
   try {
     stat = fs.statSync(root)
@@ -95,7 +97,7 @@ function readContract(root: string): Architecture | string {
     markdown = fs.readFileSync(file, 'utf8')
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
-    return code === 'ENOENT' ? `no architect.md in ${root}` : `could not read ${file}: ${code ?? 'unreadable'}`
+    return code === 'ENOENT' ? null : `could not read ${file}: ${code ?? 'unreadable'}`
   }
 
   try {
@@ -131,6 +133,17 @@ export async function run(
   const architecture = readContract(args.root)
   if (typeof architecture === 'string') {
     err(architecture)
+    return USAGE
+  }
+
+  if (args.command === 'where') {
+    const found = whereOf(args.where ?? { calls: [], callers: [] }, { root: args.root, cwd: process.cwd(), map: await scan(args.root), architecture, stale: null })
+    out(args.json ? JSON.stringify({ root: args.root, ...found }, null, 2) : whereText(found))
+    return OK
+  }
+
+  if (architecture === null) {
+    err(`no architect.md in ${args.root}`)
     return USAGE
   }
 
