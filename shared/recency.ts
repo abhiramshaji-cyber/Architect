@@ -12,4 +12,4 @@ export function newer(a: Change | undefined, b: Change | undefined): Change | un
 
 export type FileChurn = { commits: number; added: number; removed: number; binary?: true }
 
-export type Churn = { days: number; files: Record<string, FileChurn>; functions: Record<string, number> }
+export type Churn = { days: number; files: Record<string, FileChurn>; functions: Record<string, number>; incomplete?: true }

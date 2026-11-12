@@ -33,7 +33,7 @@ Works out when each function and each component last changed. Each function gets
 owns: `electron/recency/**`
 
 ### churn
-Works out how often each file and each function changed over a window of days, 90 unless asked otherwise. A file gets the commits that touched it and the lines added and removed, read from git numstat along the first parent line of HEAD and followed across renames. A function gets the commits whose changed lines, carried forward through every later change and any uncommitted edit, land inside its current lines. Files deleted since, and older files that once had the same name, are left out. Fully deterministic, no model calls.
+Works out how often each file and each function changed over a window of days, 90 unless asked otherwise. A file gets the commits that touched it and the lines added and removed, read from git numstat along the first parent line of HEAD and followed across renames. A function gets the commits that changed its lines, found the way `git log -L` finds them: its current lines are traced back through any uncommitted edit and then one commit at a time, so each step costs only that commit's changes. Files deleted since, and older files that once had the same name, are left out, and a read that git could not finish is flagged rather than cached. Fully deterministic, no model calls.
 owns: `electron/churn/**`
 
 ### daemon

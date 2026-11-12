@@ -145,8 +145,8 @@ describe('streamLines', () => {
 
 describe('readHistory', () => {
   it('returns no history for a repo with no commits or no repo at all', async () => {
-    expect(await readHistory(repo(), 0)).toEqual({ commits: [], working: null })
-    expect(await readHistory(fs.mkdtempSync(path.join(os.tmpdir(), 'architect-none-')), 0)).toEqual({ commits: [], working: null })
+    expect(await readHistory(repo(), 0)).toEqual({ commits: [], working: null, complete: true })
+    expect(await readHistory(fs.mkdtempSync(path.join(os.tmpdir(), 'architect-none-')), 0)).toEqual({ commits: [], working: null, complete: true })
   })
 
   it('matches git log --numstat and pairs every file with its hunks', async () => {
@@ -176,6 +176,7 @@ describe('readHistory', () => {
       ],
     ])
     expect(history.working).toBeNull()
+    expect(history.complete).toBe(true)
   })
 
   it('reads uncommitted changes and limits commits to the window', async () => {
