@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
-import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../../shared/types'
+import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry } from '../../shared/types'
+import { calleeName, startsIn, type Call } from './starts'
+import { starred } from './exports'
 import { docOf, renderedTag, signatureOf } from './traits'
 
 export const IGNORED_DIRS = new Set([
@@ -22,6 +25,8 @@ const YIELD_EVERY = 50
 
 const SCRIPT_KINDS = new Map<string, ts.ScriptKind>([
   ['.ts', ts.ScriptKind.TS],
+  ['.mts', ts.ScriptKind.TS],
+  ['.cts', ts.ScriptKind.TS],
   ['.tsx', ts.ScriptKind.TSX],
   ['.js', ts.ScriptKind.JSX],
   ['.jsx', ts.ScriptKind.JSX],
@@ -87,19 +92,6 @@ function ownerFor(node: ts.Node, owner: string): string {
   }
 
   return ''
-}
-
-function calleeName(expression: ts.Expression, self: string): string | undefined {
-  if (ts.isIdentifier(expression)) return expression.text
-  if (expression.kind === ts.SyntaxKind.ThisKeyword) return self === '' ? undefined : self
-  if (ts.isParenthesizedExpression(expression)) return calleeName(expression.expression, self)
-
-  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
-    const base = calleeName(expression.expression, self)
-    return base === undefined ? undefined : `${base}.${expression.name.text}`
-  }
-
-  return undefined
 }
 
 type Found = { entry: FunctionEntry; node: ts.Node; owner: string }
@@ -277,8 +269,6 @@ function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
   return byScope
 }
 
-type Call = number | { name: string; root: string }
-
 function resolveCall(
   name: string,
   at: ts.Node,
@@ -327,6 +317,7 @@ type Pending = { from: number; spec: string; key: string }
 
 type Parsed = {
   functions: FunctionEntry[]
+  starts: FileStart[]
   topLevel: Map<string, number>
   exports: Map<string, string>
   reexports: Map<string, { spec: string; name: string }>
@@ -336,7 +327,7 @@ type Parsed = {
 }
 
 function empty(): Parsed {
-  return { functions: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], specs: new Set() }
+  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], specs: new Set() }
 }
 
 function loadedSpec(node: ts.Node): string | undefined {
@@ -387,9 +378,9 @@ function parseFile(source: string, file: string): Parsed {
     const byScope = bindingsOf(found)
     const shadows = shadowsOf(sourceFile)
     const imported = importBindings(sourceFile)
-    const calls = found.map((f) =>
-      callsIn(f.node, f.owner, nested, (name, at) => resolveCall(name, at, byScope, shadows, imported)),
-    )
+    const resolve = (name: string, at: ts.Node) => resolveCall(name, at, byScope, shadows, imported)
+    const calls = found.map((f) => callsIn(f.node, f.owner, nested, resolve))
+    const opened = startsIn(sourceFile, found.map((f) => f.node), nested, resolve, imported)
 
     const order = found
       .map((f, i) => ({ f, i }))
@@ -411,9 +402,9 @@ function parseFile(source: string, file: string): Parsed {
     }
 
     const pending: Pending[] = []
-    const functions = order.map(({ f, i }, from) => {
+    const refsOf = (list: Call[], from: number): CallRef[] => {
       const refs: CallRef[] = []
-      for (const call of calls[i] ?? []) {
+      for (const call of list) {
         if (typeof call === 'number') {
           const to = rank.get(call)
           if (to !== undefined) refs.push({ file, fn: to })
@@ -427,9 +418,17 @@ function parseFile(source: string, file: string): Parsed {
         const key = binding.name === null ? rest.slice(1) : binding.name + rest
         if (key !== '') pending.push({ from, spec: binding.spec, key })
       }
+      return refs.sort((a, b) => a.fn - b.fn)
+    }
 
-      return { ...f.entry, calls: refs.sort((a, b) => a.fn - b.fn) }
-    })
+    const functions = order.map(({ f, i }, from) => ({ ...f.entry, calls: refsOf(calls[i] ?? [], from) }))
+    const starts: FileStart[] = opened.map(({ kind, calls }, k) => ({ kind, calls: refsOf(calls, functions.length + k) }))
+
+    // reexports
+    if (reexports.size > 0 || stars.length > 0) {
+      for (const { spec, name } of reexports.values()) if (name !== '*') pending.push({ from: functions.length + starts.length, spec, key: name })
+      starts.push({ kind: 'exports', calls: [] })
+    }
 
     const exportedLocals = new Set(exports.values())
     for (const [name, at] of topLevel) {
@@ -437,7 +436,7 @@ function parseFile(source: string, file: string): Parsed {
       if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
     }
 
-    return { functions, topLevel, exports, reexports, stars, pending, specs }
+    return { functions, starts, topLevel, exports, reexports, stars, pending, specs }
   } catch {
     return empty()
   }
@@ -522,7 +521,7 @@ function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> 
 
   for (const [file, at] of parsed) {
     for (const { from, spec, key } of at.pending) {
-      const entry = at.functions[from]
+      const entry = at.functions[from] ?? at.starts[from - at.functions.length]
       const to = target(file, spec)
       const hit = to === undefined || entry === undefined ? undefined : find(to, key, new Set())
       if (hit === undefined || entry === undefined) continue
@@ -534,6 +533,8 @@ function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> 
       entry.calls.sort((a, b) => a.file.localeCompare(b.file) || a.fn - b.fn)
     }
   }
+
+  starred(parsed, target)
 
   const imports = new Map<string, string[]>()
   for (const [file, at] of parsed) {
@@ -561,13 +562,9 @@ function yieldToLoop() {
   return new Promise<void>((resolve) => setImmediate(resolve))
 }
 
-async function walk(
-  root: string,
-  relative: string,
-  into: FolderEntry[],
-  parsed: Map<string, Parsed>,
-  counter: { seen: number },
-): Promise<void> {
+type Walked = { into: FolderEntry[]; parsed: Map<string, Parsed>; counter: { seen: number }; digests: Map<string, string> }
+
+async function walk(root: string, relative: string, { into, parsed, counter, digests }: Walked): Promise<void> {
   const absolute = relative ? path.join(root, relative) : root
 
   let entries: fs.Dirent[]
@@ -586,7 +583,7 @@ async function walk(
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue
       folders.push(child)
-      await walk(root, child, into, parsed, counter)
+      await walk(root, child, { into, parsed, counter, digests })
       continue
     }
 
@@ -600,6 +597,7 @@ async function walk(
 
     const file = parseFile(source, child)
     parsed.set(child, file)
+    digests.set(child, createHash('sha256').update(source).digest('hex'))
     files.push({ path: child, functions: file.functions })
   }
 
@@ -609,11 +607,11 @@ async function walk(
   into.push({ path: relative, folders, files })
 }
 
-export async function scan(root: string): Promise<CodeMap> {
+export async function scan(root: string, digests = new Map<string, string>()): Promise<CodeMap> {
   const folders: FolderEntry[] = []
   const parsed = new Map<string, Parsed>()
 
-  await walk(root, '', folders, parsed, { seen: 0 })
+  await walk(root, '', { into: folders, parsed, counter: { seen: 0 }, digests })
   const imports = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 
@@ -621,6 +619,8 @@ export async function scan(root: string): Promise<CodeMap> {
     for (const file of folder.files) {
       const found = imports.get(file.path)
       if (found !== undefined && found.length > 0) file.imports = found
+      const starts = parsed.get(file.path)?.starts
+      if (starts !== undefined && starts.length > 0) file.starts = starts
     }
   }
 

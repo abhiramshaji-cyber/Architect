@@ -2,7 +2,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { OK, USAGE, VIOLATED, audit, parseArgs, report, run } from './check'
+import { parseArgs } from './args'
+import { OK, USAGE, VIOLATED, audit, run } from './check'
+import { report } from './report'
 import { parse } from '../electron/contract/graph'
 import { scan } from '../electron/scan/scan'
 
@@ -54,7 +56,8 @@ const STORE = 'export function load() {\n  return 1\n}\n'
 async function outcome(root: string, argv: string[] = []): Promise<{ code: number; out: string; err: string }> {
   const out: string[] = []
   const err: string[] = []
-  const code = await run([...argv, root], (l) => out.push(l), (l) => err.push(l))
+  const cache = fixture({})
+  const code = await run([...argv, root], (l) => out.push(l), (l) => err.push(l), cache)
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
 
@@ -64,15 +67,19 @@ afterEach(() => {
 
 describe('parseArgs', () => {
   it('defaults to the working directory', () => {
-    expect(parseArgs([])).toEqual({ root: process.cwd(), json: false, help: false })
+    expect(parseArgs([])).toEqual({ root: process.cwd(), json: false, help: false, history: false })
   })
 
   it('consumes a leading check subcommand', () => {
-    expect(parseArgs(['check', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: false, help: false })
+    expect(parseArgs(['check', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: false, help: false, history: false })
   })
 
   it('reads the json flag in any position', () => {
-    expect(parseArgs(['--json', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: true, help: false })
+    expect(parseArgs(['--json', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: true, help: false, history: false })
+  })
+
+  it('reads the history flag', () => {
+    expect(parseArgs(['--history', '/tmp'])).toEqual({ root: path.resolve('/tmp'), json: false, help: false, history: true })
   })
 
   it('rejects an unknown option', () => {
@@ -84,7 +91,7 @@ describe('parseArgs', () => {
   })
 
   it('treats help as a flag', () => {
-    expect(parseArgs(['-h'])).toEqual({ root: process.cwd(), json: false, help: true })
+    expect(parseArgs(['-h'])).toEqual({ root: process.cwd(), json: false, help: true, history: false })
   })
 })
 
@@ -236,6 +243,53 @@ describe('run', () => {
     expect(result.code).toBe(VIOLATED)
     expect(result.out).toContain('2 violations')
     expect(result.out).toContain('store -> api')
+  })
+})
+
+describe('rules', () => {
+  const long = `export function handle() {\n${'  void 0\n'.repeat(210)}}\n`
+
+  it('reports a rule violation with its file and line and exits 1', async () => {
+    const root = fixture({ 'architect.md': contract(), 'api/handler.ts': long })
+    const result = await outcome(root)
+
+    expect(result.code).toBe(VIOLATED)
+    expect(result.out).toContain('1 rule violation')
+    expect(result.out).toContain('lines  api/handler.ts:201  212 lines, the limit is 200')
+  })
+
+  it('lets the Rules section raise a limit for one file', async () => {
+    const rules = '\n## Rules\n\n- lines: 300 `api/handler.ts`\n'
+    const root = fixture({ 'architect.md': contract() + rules, 'api/handler.ts': long })
+    expect((await outcome(root)).code).toBe(OK)
+  })
+
+  it('reports drawing and rule violations together', async () => {
+    const root = fixture({ 'architect.md': contract(), 'api/handler.ts': API.replace('return load()', `return load()${'\n'.repeat(200)}`), 'store/db.ts': STORE })
+    const result = await outcome(root, ['--json'])
+
+    expect(result.code).toBe(VIOLATED)
+    const parsed = JSON.parse(result.out)
+    expect(parsed.violations).toHaveLength(1)
+    expect(parsed.rules.map((rule: { rule: string }) => rule.rule)).toEqual(['lines'])
+  })
+
+  it('records every run and lists the history', async () => {
+    const root = fixture({ 'architect.md': contract(), 'api/handler.ts': long })
+    const cache = fixture({})
+    const lines: string[] = []
+
+    await run([root], () => {}, () => {}, cache)
+    expect(await run(['--history', root], (l) => lines.push(l), () => {}, cache)).toBe(OK)
+
+    const shown = lines.join('\n')
+    expect(shown).toMatch(/check\s+lines fail 1, files pass, names pass, jobs pass$/)
+  })
+
+  it('says so when no run is recorded', async () => {
+    const lines: string[] = []
+    await run(['--history', fixture({})], (l) => lines.push(l), () => {}, fixture({}))
+    expect(lines.join('\n')).toBe('architect: no rule runs recorded yet')
   })
 })
 

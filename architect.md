@@ -25,7 +25,7 @@ Asks the Claude Code binary for a first `architect.md`, from a bounded summary o
 owns: `electron/draft/**`
 
 ### functions
-Lists every function in a project with facts measured from the scan (its signature as written, line count, how many functions call it, how many it calls, whether it calls itself, whether it is exported, whether its file is a starting point), the author's own doc comment copied verbatim when there is one, the calls between the listed functions, and an importance from 1 to 5. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. Nothing is worded from a function's name. It also arranges the functions into a call tree for the org chart view: starting points that nothing calls sit at the top, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Given a folder inside the project it narrows all of this to the functions under that folder: importance and the tree are worked out again from only the calls between them, callers from outside the folder are counted apart, and the folders inside it come back with their function counts so the renderer can drill in. A folder that is missing or outside the project falls back to the whole project. Fully deterministic, no model calls, computed in one pass over the code map.
+Lists every function in a project with facts measured from the scan (its signature as written, line count, how many functions call it, how many it calls, whether it calls itself, whether it is exported, and why it is a starting point when it is one), the author's own doc comment copied verbatim when there is one, the calls between the listed functions, and an importance from 1 to 5. Importance comes from how much of the call graph depends on the function, bucketed against the rest of the same project. Nothing is worded from a function's name. A function is a starting point only for a reason it can name: the package.json main, bin or a script that runs its file, the Electron main, preload or renderer entry or a page script read from the vite or electron-vite build config, a preload bridge member, an MCP tool handler, an IPC handler or a CLI command, each found in the parse. Being unimported never makes a starting point, and test files never are. It also arranges the functions into a call tree for the org chart view: starting points sit at the top, grouped by their reason and the file that declares it, each function appears once under its shallowest and most important caller, cycles are cut and anything unreachable goes into its own bucket. Given a folder inside the project it narrows all of this to the functions under that folder: importance and the tree are worked out again from only the calls between them, callers from outside the folder are counted apart, and the folders inside it come back with their function counts so the renderer can drill in. A folder that is missing or outside the project falls back to the whole project. Fully deterministic, no model calls, computed in one pass over the code map.
 owns: `electron/functions/**`
 
 ### recency
@@ -33,12 +33,16 @@ Works out when each function and each component last changed. Each function gets
 owns: `electron/recency/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), the per project change history, the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
 
 ### journal
-A capped, newest first list of records per project kept as one JSON file each in the cache directory. Rows are validated against a schema on load and any that fail are dropped, and every write replaces the file whole so a crash never leaves half a list. Holds the change history and the check_change verdicts.
+A capped, newest first list of records per project kept as one JSON file each in the cache directory. Rows are validated against a schema on load and any that fail are dropped, and every write replaces the file whole so a crash never leaves half a list. Holds the change history, the check_change verdicts and the rule runs.
 owns: `electron/journal/**`
+
+### rules
+Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Fully deterministic, no model calls.
+owns: `electron/rules/**`
 
 ### review
 Opt in change review. Persists the on or off switch, holds contract proposals and Claude Code edits waiting on the engineer, keeps proposals across a restart, wakes the waiting caller with approve, deny or the engineer's feedback, and drops an edit whose hook went away. Rebuilds the file an edit would produce and works out its impact: the components that own it, the functions added, removed or changed in it, and the before and after diff, or for a proposal the architecture it would leave behind. A switch that is off answers every edit at once.
@@ -58,7 +62,7 @@ React Flow diagram, the file tree and CodeMirror editor, the contract rail holdi
 owns: `src/**`
 
 ### cli
-Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing is violated.
+Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. Records every run in the rule history and lists it with `--history`.
 owns: `cli/**`
 
 ### bridge
@@ -72,6 +76,11 @@ owns: `lsp/**`
 ## Dependencies
 
 - graph -> types
+- graph -> rules
+- rules -> types
+- daemon -> rules
+- cli -> rules
+- rules -> journal
 - daemon -> types
 - daemon -> graph
 - daemon -> draft
@@ -145,3 +154,42 @@ owns: `lsp/**`
 - @codemirror/lang-markdown
 - @codemirror/lang-css
 - @lezer/highlight
+- typescript
+
+## Rules
+
+- skip: `**/*.test.*`, `**/*.spec.*`
+- lines: 200
+- files: 5
+- names: Manager, Helper, Service, Factory, Base
+- jobs: 1
+- lines: 206 `src/view/ContractView.tsx`
+- lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
+- lines: 241 `mcp/bridge.ts`
+- lines: 272 `electron/git/open.ts`
+- lines: 279 `src/model/codemap.ts`
+- lines: 328 `src/view/Inspector.tsx`
+- lines: 332 `src/view/Canvas.tsx`
+- lines: 339 `src/view/CodeCanvas.tsx`
+- lines: 412 `electron/contract/graph.ts`
+- lines: 425 `src/view/RepoPicker.tsx`
+- lines: 469 `electron/github/github.ts`
+- lines: 537 `electron/git/git.ts`
+- lines: 597 `src/model/store.ts`
+- lines: 630 `electron/scan/scan.ts`
+- lines: 646 `shared/types.ts`
+- lines: 653 `src/model/demo-mock.ts`
+- lines: 1034 `electron/daemon.ts`
+- files: 6 `scripts`
+- files: 7 `shared`
+- files: 9 `src/shell`
+- files: 13 `src/model`
+- files: 22 `src/view`
+- jobs: 2 `electron/contract/history.ts`, `electron/contract/infer.ts`, `electron/draft/flow/evidence.ts`, `electron/functions/facts.ts`, `electron/functions/summary/verbs.ts`, `electron/git/diff/file.ts`, `electron/git/diff/hunks.ts`, `electron/git/diff/parse.ts`, `electron/github/github.ts`, `electron/review/change.ts`, `electron/tabs.ts`, `shared/folders.ts`, `shared/recency.ts`, `src/model/buffer.ts`, `src/model/language.ts`, `src/model/recency.ts`, `src/shell/chords.ts`, `src/shell/leaderKey.ts`, `src/shell/views.ts`, `src/view/SplitDiff.tsx`, `src/view/diff/BranchBox.tsx`, `src/view/functions/Mark.tsx`, `src/view/functions/facts/Related.tsx`, `src/view/functions/facts/calls.ts`, `src/view/focus/history.ts`
+- jobs: 3 `electron/app/launch.ts`, `electron/functions/scope.ts`, `electron/scan/traits.ts`, `lsp/features.ts`, `src/shell/pane-tree.ts`, `src/view/editor/trail.ts`, `src/view/segments.ts`
+- jobs: 4 `electron/app/windows.ts`, `src/model/codemap.ts`, `src/model/live/recent.ts`, `src/view/editor/symbols.ts`, `src/view/functions/scope/pick.ts`
+- jobs: 5 `electron/contract/graph.ts`, `electron/git/diff/changes.ts`, `src/model/layout.ts`, `src/model/live/history.ts`, `src/model/store.ts`, `src/model/tree.ts`
+- jobs: 6 `src/model/review.ts`, `src/view/functions/tree/outline.ts`
+- jobs: 7 `src/shell/commands.ts`
+- jobs: 11 `src/model/picker.ts`
+- names: Manager, Helper, Service, Factory `electron/git/diff/changes.ts`, `src/model/codemap.ts`, `src/view/functions/tree/Card.tsx`

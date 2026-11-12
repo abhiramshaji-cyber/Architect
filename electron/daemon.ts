@@ -42,7 +42,8 @@ import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
 import { scopeOf } from './draft/scope'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
-import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
+import { contractDiff, type Touch } from './contract/history'
+import { createClaims } from './contract/claims'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
@@ -50,6 +51,7 @@ import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
 import { createReview } from './review'
 import { createJournal } from './journal'
+import { checkFile } from './rules/proposed'
 
 const HISTORY_LIMIT = 200
 
@@ -138,7 +140,7 @@ type ProjectState = {
   rescanTimer: ReturnType<typeof setTimeout> | null
   rescanning: boolean
   rescanAgain: boolean
-  touched: Set<string>
+  touched: Touch[]
   lastWrittenContent: string | null
 }
 
@@ -213,6 +215,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   let reviewListener: ((state: ReviewState) => void) | null = null
   const review = createReview(cacheDir, (state) => reviewListener?.(state), options.reviewTimeouts)
   const sessionCwds = new Map<string, string>()
+  const { record, changes } = createClaims(histories, HISTORY_LIMIT, (entry) => historyListener?.(entry))
   const drafting = new Map<string, Promise<DraftResult<string>>>()
   const draftFailures = new Map<string, DraftFailure>()
   let server: net.Server | null = null
@@ -418,14 +421,6 @@ export function createDaemon(options: DaemonOptions = {}) {
     saveProjects()
   }
 
-  function record(root: string, source: HistoryEntry['source'], diff: Diff, file?: string, at = Date.now()) {
-    if (isEmpty(diff)) return
-
-    const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...diff, ...(file === undefined ? {} : { file }) }
-    histories.append(root, entry)
-    historyListener?.(entry)
-  }
-
   function listProjects(): ProjectSummary[] {
     return [...projects.values()].map((p) => {
       const failure = draftFailures.get(p.root)
@@ -454,11 +449,12 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  async function rescanProject(root: string, touched: string[] = []): Promise<CodeMap> {
+  async function rescanProject(root: string, touched: Touch[] = []): Promise<CodeMap> {
     const seen = Date.now()
     const stored = readStoredMap(cacheDir, root)
-    const described = await describe(await scan(root), root, stored?.cache)
-    if (stored?.map) record(root, 'code', codeDiff(stored.map, described.map, touched), touched.at(-1), seen)
+    const digests = new Map<string, string>()
+    const described = await describe(await scan(root, digests), root, stored?.cache)
+    for (const change of stored?.map ? changes(root, stored.map, described.map, touched) : []) record(root, 'code', change, seen, digests)
 
     try {
       writeStoredMap(cacheDir, root, described)
@@ -484,8 +480,8 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
 
     state.rescanning = true
-    const touched = [...state.touched]
-    state.touched.clear()
+    const touched = state.touched
+    state.touched = []
     try {
       const map = await rescanProject(state.root, touched)
       if (projects.get(state.root) === state) codeMapListener?.(state.root, map)
@@ -500,7 +496,8 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  async function touchSession(cwd: string, session: string | undefined, file: string | undefined): Promise<string | null> {
+  async function touchSession(cwd: string, session?: string, file?: string, digest?: string): Promise<string | null> {
+    const at = Date.now()
     if (!file) {
       if (session) sessionCwds.set(session, cwd)
       return null
@@ -511,7 +508,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     const state = loadProject(located.root)
     const relative = path.relative(located.root, located.file).split(path.sep).join('/')
-    state.touched.add(relative)
+    state.touched.push(session ? { file: relative, session, at, ...(digest ? { digest } : {}) } : { file: relative })
     if (state.rescanTimer) clearTimeout(state.rescanTimer)
     state.rescanTimer = null
     void runRescan(state)
@@ -554,7 +551,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       rescanTimer: null,
       rescanning: false,
       rescanAgain: false,
-      touched: new Set(),
+      touched: [],
     }
 
     function absorb(content: string) {
@@ -759,13 +756,29 @@ export function createDaemon(options: DaemonOptions = {}) {
     return { status: 'unknown', reason: note }
   }
 
+  function changeVerdict(root: string, architecture: Architecture, stale: string | null, req: Extract<Request, { op: 'check_change' }>): Verdict {
+    const { from, to, file, content } = req
+    if ((from === undefined) !== (to === undefined)) throw new Error('check_change needs both from and to')
+
+    const edge = from !== undefined && to !== undefined ? verdictFor(architecture, stale, from, to) : null
+    if (edge && (file === undefined || (edge.status !== 'allowed' && edge.status !== 'unknown'))) return edge
+    if (file === undefined || content === undefined) throw new Error('check_change needs from and to, or a file with its proposed content')
+
+    const violations = checkFile(cacheDir, root, architecture, path.resolve(req.cwd, file), content)
+    if (violations.length > 0) return { status: 'rule-violation', violations }
+    if (edge) return edge
+    if (stale === null) return { status: 'allowed' }
+    return { status: 'unknown', reason: `the architecture is stale: ${stale}. These rules come from the last version of architect.md that parsed. Fix architect.md and check again before relying on it.` }
+  }
+
   function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null) {
     verdicts.append(root, {
       id: randomUUID(),
       root,
       at: Date.now(),
-      from: req.from,
-      to: req.to,
+      ...(req.from === undefined ? {} : { from: req.from }),
+      ...(req.to === undefined ? {} : { to: req.to }),
+      ...(req.file === undefined ? {} : { file: req.file }),
       verdict,
       ...(stale === null ? {} : { stale: true as const }),
       ...(req.session ? { session: req.session } : {}),
@@ -798,7 +811,14 @@ export function createDaemon(options: DaemonOptions = {}) {
             logVerdict(root, req, { status: 'unknown', reason: error }, stale)
             return { id: req.id, ok: false, error }
           }
-          const verdict = verdictFor(state.architecture, stale, req.from, req.to)
+          let verdict: Verdict
+          try {
+            verdict = changeVerdict(root, state.architecture, stale, req)
+          } catch (err) {
+            const error = err instanceof Error ? err.message : String(err)
+            logVerdict(root, req, { status: 'unknown', reason: error }, stale)
+            return { id: req.id, ok: false, error }
+          }
           logVerdict(root, req, verdict, stale)
           return { id: req.id, ok: true, result: verdict }
         }
@@ -821,7 +841,7 @@ export function createDaemon(options: DaemonOptions = {}) {
         }
 
         if (req.op === 'session-event') {
-          return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file) }
+          return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file, req.digest) }
         }
 
         const root = resolveRoot(req.cwd)

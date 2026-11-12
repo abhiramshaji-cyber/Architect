@@ -1,9 +1,10 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ask, gateOutput, reviewEdit, sessionEvent } from './hook.js'
+import { ask, gateOutput, reviewEdit, sessionEvent, withDigest } from './hook.js'
 
 const input = (fields: Record<string, unknown>) =>
   JSON.stringify({ cwd: '/code/app', session_id: 's1', hook_event_name: 'PreToolUse', ...fields })
@@ -43,6 +44,17 @@ describe('sessionEvent', () => {
   it('never reports a PreToolUse as a session touch', () => {
     expect(sessionEvent(input({ tool_name: 'Edit', tool_input: { file_path: 'a' } }))).toBeNull()
     expect(sessionEvent(input({ hook_event_name: 'PostToolUse', tool_input: { file_path: 'a' } }))).toMatchObject({ file: 'a' })
+  })
+
+  it('carries the session id of a file touch', () => {
+    const event = sessionEvent(input({ hook_event_name: 'PostToolUse', tool_input: { file_path: '/code/app/a.ts' } }))
+    expect(event).toMatchObject({ op: 'session-event', cwd: '/code/app', event: 'PostToolUse', session: 's1', file: '/code/app/a.ts' })
+  })
+
+  it.each([[undefined], [''], [42], [null], [{ id: 's1' }]])('sends no session when session_id is %j', (session_id) => {
+    const event = sessionEvent(input({ hook_event_name: 'PostToolUse', session_id, tool_input: { file_path: 'a' } }))
+    expect(event?.file).toBe('a')
+    expect(JSON.parse(JSON.stringify(event))).not.toHaveProperty('session')
   })
 })
 
@@ -87,5 +99,23 @@ describe('ask', () => {
     server = createServer((socket) => socket.on('data', () => socket.write(`${JSON.stringify({ id: request.id, ok: true, result: null })}\n`)))
     await new Promise<void>((resolve) => server!.listen(socketPath, resolve))
     await expect(ask(request, socketPath)).resolves.toBeNull()
+  })
+})
+
+describe('withDigest', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'architect-digest-'))
+  afterEach(() => rmSync(path.join(dir, 'a.ts'), { force: true }))
+  const event = (file?: string) => ({ id: 'e', op: 'session-event' as const, cwd: dir, event: 'PostToolUse', session: 's1', file })
+
+  it('adds the sha256 of the file text, resolved against the cwd', async () => {
+    writeFileSync(path.join(dir, 'a.ts'), 'export const a = 1\n')
+    const expected = createHash('sha256').update('export const a = 1\n').digest('hex')
+
+    expect(await withDigest(event('a.ts'))).toEqual({ ...event('a.ts'), digest: expected })
+    expect(await withDigest(event(path.join(dir, 'a.ts')))).toMatchObject({ digest: expected })
+  })
+
+  it.each([['a missing file', 'gone.ts'], ['a folder', '.'], ['no file', undefined]])('sends no digest for %s', async (_name, file) => {
+    expect(await withDigest(event(file))).toEqual(event(file))
   })
 })
