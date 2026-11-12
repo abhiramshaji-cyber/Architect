@@ -1,8 +1,8 @@
 import picomatch from 'picomatch'
 
 import { findCycle } from '../../shared/cycle'
-import { parseRules } from '../rules/syntax'
-import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Ownership, type Proposal, type Pt, type RuleEntry, type Verdict } from '../../shared/types'
+import { parseRules, ruleLine } from '../rules/syntax'
+import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Ownership, type Proposal, type Pt, type Verdict } from '../../shared/types'
 
 const LAYOUT_OPEN = '<!-- architect:layout'
 const LAYOUT_CLOSE = '-->'
@@ -254,13 +254,6 @@ export function serialize(architecture: Architecture): string {
   }
 
   return lines.join('\n')
-}
-
-function ruleLine(entry: RuleEntry): string {
-  const globs = entry.globs.map((glob) => `\`${glob}\``).join(', ')
-  if (entry.rule === 'skip') return `- skip: ${globs || 'off'}`
-  const value = entry.rule === 'names' ? (entry.banned === 'off' ? 'off' : entry.banned.join(', ')) : String(entry.limit)
-  return `- ${entry.rule}: ${value}${globs ? ` ${globs}` : ''}`
 }
 
 export function check(architecture: Architecture, from: string, to: string): Verdict {

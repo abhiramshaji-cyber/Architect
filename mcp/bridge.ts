@@ -155,6 +155,8 @@ export const awaitProposal = (proposalId: string, socketPath = SOCKET_PATH) =>
 
 export const listEdits = (socketPath = SOCKET_PATH) => callTool({ op: 'list_edits' }, socketPath)
 
+export const writeAgents = (socketPath = SOCKET_PATH) => callTool({ op: 'write_agents' }, socketPath)
+
 export const getEdit = (editId: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'get_edit', editId }, socketPath)
 
@@ -228,6 +230,15 @@ function main() {
       inputSchema: { editId: z.string() },
     },
     ({ editId }) => getEdit(editId),
+  )
+
+  server.registerTool(
+    'write_agents',
+    {
+      description:
+        'Write an AGENTS.md into the folder each component\'s globs share, copied from architect.md: what the component owns, what it may call, what it must never call and the rules that apply there. Files are rewritten only when their content changes, a hand written AGENTS.md is never overwritten, generated files for removed components are deleted, and once any exist Architect keeps them in step with architect.md. Returns the files written, unchanged, removed and kept, and each component that has no folder of its own with the reason.',
+    },
+    () => writeAgents(),
   )
 
   const transport = new StdioServerTransport()

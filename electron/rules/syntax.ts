@@ -59,3 +59,10 @@ export function parseRules(lines: Line[], note: Note): RuleEntry[] {
 
   return entries
 }
+
+export function ruleLine(entry: RuleEntry): string {
+  const globs = entry.globs.map((glob) => `\`${glob}\``).join(', ')
+  if (entry.rule === 'skip') return `- skip: ${globs || 'off'}`
+  const value = entry.rule === 'names' ? (entry.banned === 'off' ? 'off' : entry.banned.join(', ')) : String(entry.limit)
+  return `- ${entry.rule}: ${value}${globs ? ` ${globs}` : ''}`
+}

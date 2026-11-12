@@ -2505,3 +2505,46 @@ describe("check_change rules outside the scan", () => {
     c.close();
   });
 });
+
+describe("write_agents", () => {
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")));
+    fs.mkdirSync(path.join(tmpRoot, "api"));
+    fs.mkdirSync(path.join(tmpRoot, "db"));
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+  });
+
+  const agents = (folder: string) => path.join(tmpRoot, folder, "AGENTS.md");
+
+  it("writes AGENTS.md on request and keeps them in step with every contract change", async () => {
+    const c = await client(socketPath);
+    const res = await c.request({ op: "write_agents", cwd: tmpRoot });
+    expect(res.ok && res.result).toMatchObject({ written: ["api/AGENTS.md", "db/AGENTS.md"] });
+
+    await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+    expect(fs.readFileSync(agents("api"), "utf8")).toContain("## May call\n\n- db\n");
+
+    writeArchitect(tmpRoot, fixture(component("api")));
+    await vi.waitFor(() => expect(fs.existsSync(agents("db"))).toBe(false), { timeout: 3000 });
+    c.close();
+  });
+
+  it("writes nothing on a contract change until AGENTS.md has been asked for", async () => {
+    const c = await client(socketPath);
+    await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
+    expect(fs.existsSync(agents("api"))).toBe(false);
+    c.close();
+  });
+
+  it("refuses while architect.md does not parse", async () => {
+    const c = await client(socketPath);
+    await c.request({ op: "get_architecture", cwd: tmpRoot });
+    writeArchitect(tmpRoot, fixture(component("api")).replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const res = await c.request({ op: "write_agents", cwd: tmpRoot });
+    expect(res).toMatchObject({ ok: false, error: expect.stringContaining("malformed dependency") });
+    expect(fs.existsSync(agents("api"))).toBe(false);
+    c.close();
+  });
+});
