@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutOf } from '../functions/tree/layout'
-import { CARD_H } from '../functions/tree/layout'
+import { CARD_H, layoutOf } from '../functions/tree/layout'
 import { CENTER, SIDE_H, graphOf } from './graph'
 
 const heightOf = (id: string) => (id === CENTER ? CARD_H : SIDE_H)
