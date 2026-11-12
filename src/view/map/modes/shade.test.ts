@@ -40,6 +40,7 @@ const facts = (over: Partial<Facts> = {}): Facts => ({
   unreached: new Set([2]),
   churn: { days: 90, files: {}, functions: { 'a/one.ts:1:top': 7, 'b/two.ts:1:lone': 1 } },
   sessions: new Map([['b/two.ts', [{ session: 's', at: 1 }]]]),
+  recorded: 1,
   ...over,
 })
 
@@ -83,11 +84,19 @@ describe('leafValues', () => {
     expect(leafValues('churn', facts({ churn: null }))).toEqual([null, null, null])
     expect(leafValues('churn', facts({ churn: { days: 90, files: {}, functions: {} } }))).toEqual([0, 0, 0])
   })
+
+  it('scales churn for a very large project without overflowing the call stack', () => {
+    const many = Array.from({ length: 200_000 }, (_, at) => row({ file: `f${at}.ts`, line: 1, name: 'x' }))
+    const functions = Object.fromEntries(many.map((r, at) => [`${r.file}:1:x`, at % 50]))
+    const values = leafValues('churn', facts({ rows: many, churn: { days: 90, files: {}, functions } }))
+    expect(values[49]).toBe(1)
+    expect(values[0]).toBe(0)
+  })
 })
 
 describe('shade', () => {
   it('weights each group by the lines under it', () => {
-    const tree = nest(rows, null, 'demo')
+    const tree = nest(rows, [], null, 'demo')
     const values = shade(tree, 'importance', facts())
     const a = tree.children.find((c) => c.label === 'a')
     const b = tree.children.find((c) => c.label === 'b')
@@ -97,7 +106,7 @@ describe('shade', () => {
   })
 
   it('leaves every tile without a value while churn is unknown', () => {
-    const tree = nest(rows, null, 'demo')
+    const tree = nest(rows, [], null, 'demo')
     expect([...shade(tree, 'churn', facts({ churn: null })).values()].every((v) => v === null)).toBe(true)
   })
 })
@@ -111,6 +120,7 @@ describe('gather', () => {
     expect([...found.unreached]).toEqual([2])
     expect([...found.sessions.keys()]).toEqual(['b/two.ts'])
     expect(found.churn).toBeNull()
+    expect(found.recorded).toBe(1)
   })
 })
 

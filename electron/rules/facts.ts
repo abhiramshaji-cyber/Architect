@@ -25,11 +25,11 @@ const PARSED = new Map([
 
 const DECLARATION = /\.d\.[mc]?ts$/i
 
-function isCode(file: string): boolean {
+export function isCode(file: string): boolean {
   return CODE.has(path.extname(file).toLowerCase()) && !DECLARATION.test(file)
 }
 
-function lineCount(text: string): number {
+export function lineCount(text: string): number {
   if (text === '') return 0
   return text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
 }

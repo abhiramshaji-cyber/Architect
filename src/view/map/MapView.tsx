@@ -7,11 +7,11 @@ import type { MapNode } from './layout/nest'
 import { trail } from './layout/trail'
 import Legend from './modes/Legend'
 import { MODES } from './modes/palette'
-import { churnOf, type ModeId, shade } from './modes/shade'
+import { busiestOf, churnOf, type ModeId, shade } from './modes/shade'
 import { useMap } from './useMap'
 
 export default function MapView({ theme, show }: ViewProps) {
-  const { currentRoot, codeMap } = useProject()
+  const { currentRoot, codeMap, codeError } = useProject()
   const { tree, facts, error, churnError, grouped } = useMap()
   const [modeId, setModeId] = useState<ModeId>('importance')
   const [focusId, setFocusId] = useState('')
@@ -42,12 +42,16 @@ export default function MapView({ theme, show }: ViewProps) {
   )
   const busiest = useMemo(() => {
     const churn = facts?.churn
-    return churn ? Math.max(0, ...facts.rows.map((row) => churnOf(row, churn))) : null
+    return churn ? busiestOf(facts.rows.map((row) => churnOf(row, churn))) : null
   }, [facts])
 
   const pick = useCallback(
     (node: MapNode) => {
       const row = node.fn === undefined ? undefined : facts?.rows[node.fn]
+      if (node.kind === 'rest') {
+        openFile(node.path)
+        return show('code')
+      }
       if (!row) return setFocusId(node.id)
       openFile(row.file, row.line)
       show('code')
@@ -56,6 +60,7 @@ export default function MapView({ theme, show }: ViewProps) {
   )
 
   const notice =
+    codeError ??
     error ??
     (modeId !== 'churn'
       ? null

@@ -32,9 +32,10 @@ const facts: Facts = {
     functions: { 'a/one.ts:1:main': 3 },
   },
   sessions: new Map([['a/one.ts', [{ session: 's1', at: 0 }]]]),
+  recorded: 12,
 }
 
-const tree = nest(rows, null, 'demo')
+const tree = nest(rows, [], null, 'demo')
 const find = (label: string) => {
   const stack = [tree]
   while (stack.length) {
@@ -61,16 +62,26 @@ describe('factsFor', () => {
     const lines = Object.fromEntries(factsFor(find('dead'), { ...facts, churn: null }).lines)
     expect(lines.reached).toBe('unreached')
     expect(lines.churn).toBeUndefined()
-    expect(lines['AI touched']).toBe('no')
+    expect(lines['AI touched']).toBe('no session in the last 12 recorded changes')
   })
 
   it('sums a file and a group', () => {
     const file = Object.fromEntries(factsFor(find('one.ts'), facts).lines)
-    expect(file.lines).toBe('20 in 2 functions')
+    expect(file.lines).toBe('20, 2 functions')
     expect(file.churn).toBe('4 commits, +10 -2 in 90 days')
     const group = factsFor(find('a'), facts)
     expect(group.kind).toBe('top level folder')
     expect(Object.fromEntries(group.lines).unreached).toBe('1 function, 33%')
     expect(Object.fromEntries(group.lines).files).toBe('2')
+  })
+
+  it('describes the lines outside every function', () => {
+    const sized = nest(rows, [{ path: 'a/one.ts', lines: 26 }], null, 'demo')
+    const rest = sized.children[0]?.children[0]?.children
+      .find((c) => c.kind === 'file' && c.path === 'a/one.ts')
+      ?.children.find((c) => c.kind === 'rest')
+    const told = rest ? factsFor(rest, facts) : null
+    expect(told?.kind).toBe('lines outside functions')
+    expect(Object.fromEntries(told?.lines ?? []).lines).toBe('6 in a/one.ts not inside any function')
   })
 })

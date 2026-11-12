@@ -40,7 +40,7 @@ describe('ownLines', () => {
     expect(ownLines(rows).reduce((a, b) => a + b, 0)).toBe(20 + 3 + 7)
   })
 
-  it('gives an identical span to the later one and never goes below zero', () => {
+  it('counts two identical spans once and never goes below zero', () => {
     expect(ownLines([row({ line: 2, lines: 4 }), row({ line: 2, lines: 4 })])).toEqual([0, 4])
     expect(ownLines([row({ line: 1, lines: 0 })])).toEqual([0])
   })
@@ -78,7 +78,7 @@ describe('nest', () => {
   ]
 
   it('nests component, folder, file and function with weights that add up', () => {
-    const tree = nest(rows, ownership, 'demo')
+    const tree = nest(rows, [], ownership, 'demo')
     expect(tree.weight).toBe(30 + 10 + 50 + 5)
     expect(tree.children.map((c) => [c.label, c.weight])).toEqual([
       ['canvas', 50],
@@ -95,20 +95,44 @@ describe('nest', () => {
   })
 
   it('drops functions with no lines of their own', () => {
-    const tree = nest(rows, ownership, 'demo')
+    const tree = nest(rows, [], ownership, 'demo')
     const file = tree.children[0]?.children[0]?.children[0]
     expect(file?.children.map((c) => c.label)).toEqual(['empty'])
   })
 
   it('returns an empty root for no functions', () => {
-    expect(nest([], null, 'demo')).toMatchObject({ kind: 'root', weight: 0, children: [] })
+    expect(nest([], [], null, 'demo')).toMatchObject({ kind: 'root', weight: 0, children: [] })
   })
 
   it('finds the trail to a node and nothing for an unknown id', () => {
-    const tree = nest(rows, null, 'demo')
+    const tree = nest(rows, [], null, 'demo')
     const file = tree.children[0]?.children[0]?.children[0]
     expect(trail(tree, file?.id ?? '').map((n) => n.kind)).toEqual(['root', 'top', 'folder', 'file'])
     expect(trail(tree, 'gone')).toEqual([])
     expect(folderOf('main.ts')).toBe('.')
+  })
+
+  it('sizes files by their scanned lines, keeping files with no functions', () => {
+    const tree = nest(
+      rows,
+      [
+        { path: 'electron/git/log.ts', lines: 70 },
+        { path: 'shared/types.ts', lines: 600 },
+        { path: 'README.md' },
+        { path: 'src/view/A.tsx', lines: 10 },
+      ],
+      ownership,
+      'demo',
+    )
+    const files = tree.children.flatMap((group) => group.children.flatMap((folder) => folder.children))
+    const byPath = Object.fromEntries(files.map((file) => [file.path, file]))
+    expect(byPath['electron/git/log.ts']?.weight).toBe(70)
+    expect(byPath['electron/git/log.ts']?.children.find((c) => c.kind === 'rest')?.weight).toBe(30)
+    expect(byPath['shared/types.ts']?.weight).toBe(600)
+    expect(byPath['shared/types.ts']?.children.map((c) => c.kind)).toEqual(['rest'])
+    expect(byPath['src/view/A.tsx']?.weight).toBe(50)
+    expect(byPath['README.md']).toBeUndefined()
+    expect(byPath['main.ts']?.weight).toBe(5)
+    expect(tree.weight).toBe(70 + 600 + 50 + 5)
   })
 })

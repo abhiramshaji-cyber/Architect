@@ -11,6 +11,11 @@ export type Facts = {
   unreached: Set<number>
   churn: Churn | null
   sessions: Sessions
+  recorded: number
+}
+
+export function busiestOf(counts: number[]): number {
+  return counts.reduce((top, count) => Math.max(top, count), 0)
 }
 
 export function churnOf(row: FunctionRow, churn: Churn): number {
@@ -24,7 +29,7 @@ export function leafValues(mode: ModeId, facts: Facts): (number | null)[] {
   if (mode === 'touched') return rows.map((row) => (facts.sessions.has(row.file) ? 1 : 0))
   if (!churn) return rows.map(() => null)
   const counts = rows.map((row) => churnOf(row, churn))
-  const top = Math.log1p(Math.max(0, ...counts))
+  const top = Math.log1p(busiestOf(counts))
   return counts.map((count) => (top > 0 ? Math.log1p(count) / top : 0))
 }
 

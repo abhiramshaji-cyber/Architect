@@ -265,7 +265,7 @@ export type StartKind = 'load' | 'exports' | StartReason
 
 export type FileStart = { kind: StartKind; calls: CallRef[] }
 
-export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[]; starts?: FileStart[] }
+export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[]; starts?: FileStart[]; lines?: number }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 

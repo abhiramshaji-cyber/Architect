@@ -10,6 +10,7 @@ const KINDS: Record<MapNode['kind'], string> = {
   folder: 'folder',
   file: 'file',
   function: 'function',
+  rest: 'lines outside functions',
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
@@ -24,13 +25,16 @@ function filesUnder(node: MapNode): string[] {
   return node.children.flatMap(filesUnder)
 }
 
+const largest = (values: number[]) => values.reduce((top, value) => Math.max(top, value), 0)
+
 const share = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '0%')
 
 function sessionLines(files: string[], facts: Facts): Line[] {
   const touches = files.flatMap((file) => facts.sessions.get(file) ?? [])
-  if (touches.length === 0) return [['AI touched', 'no']]
+  if (touches.length === 0)
+    return [['AI touched', `no session in the last ${plural(facts.recorded, 'recorded change')}`]]
   const sessions = new Set(touches.map((touch) => touch.session))
-  const latest = Math.max(...touches.map((touch) => touch.at))
+  const latest = largest(touches.map((touch) => touch.at))
   return [
     ['AI touched', plural(sessions.size, 'session')],
     ['last session edit', new Date(latest).toLocaleString()],
@@ -62,13 +66,15 @@ function functionLines(at: number, node: MapNode, facts: Facts): Line[] {
 function groupLines(node: MapNode, facts: Facts): Line[] {
   const ats = functionsUnder(node)
   const files = filesUnder(node)
+  if (node.kind === 'rest')
+    return [['lines', `${node.weight} in ${node.path} not inside any function`], ...sessionLines([node.path], facts)]
   const unreached = ats.filter((at) => facts.unreached.has(at))
   const lines: Line[] = [
-    ['lines', `${node.weight} in ${plural(ats.length, 'function')}`],
+    ['lines', `${node.weight}, ${plural(ats.length, 'function')}`],
     ['files', String(files.length)],
     ['unreached', `${plural(unreached.length, 'function')}, ${share(unreached.length, ats.length)}`],
   ]
-  const top = Math.max(0, ...ats.map((at) => facts.rows[at]?.importance ?? 0))
+  const top = largest(ats.map((at) => facts.rows[at]?.importance ?? 0))
   if (ats.length > 0) lines.push(['top importance', `${top} of 5`])
   if (node.kind === 'file' && facts.churn) {
     const file = facts.churn.files[node.path]

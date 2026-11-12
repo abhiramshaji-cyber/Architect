@@ -34,5 +34,11 @@ export function sessionsOf(history: HistoryEntry[]): Sessions {
 }
 
 export function gather(list: FunctionList, churn: Churn | null, history: HistoryEntry[]): Facts {
-  return { rows: list.rows, unreached: unreachedOf(list.tree), churn, sessions: sessionsOf(history) }
+  return {
+    rows: list.rows,
+    unreached: unreachedOf(list.tree),
+    churn,
+    sessions: sessionsOf(history),
+    recorded: history.length,
+  }
 }
