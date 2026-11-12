@@ -1,0 +1,99 @@
+.hotspots {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.hs-formula,
+.hs-readout {
+  margin: var(--sp-3) var(--sp-6) 0;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.hs-formula code {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.hs-readout {
+  min-height: 1.5em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+
+.hs-plot {
+  flex: none;
+  width: calc(100% - 2 * var(--sp-6));
+  max-height: 360px;
+  margin: var(--sp-3) var(--sp-6) 0;
+}
+
+.hs-tick line {
+  stroke: var(--line);
+}
+
+.hs-tick text,
+.hs-axis {
+  font-size: 11px;
+  fill: var(--text-faint);
+}
+
+.hs-dot {
+  fill: var(--ink);
+  fill-opacity: 0.55;
+  cursor: pointer;
+}
+
+.hs-dot.top {
+  fill: var(--age);
+  fill-opacity: 0.9;
+}
+
+.hs-dot.hovered {
+  fill: var(--live);
+  fill-opacity: 1;
+}
+
+.hs-list {
+  margin: var(--sp-4) var(--sp-6) var(--sp-6);
+  padding-left: var(--sp-5);
+  font-size: var(--fs-sm);
+}
+
+.hs-list button {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.hs-list li.hovered button,
+.hs-list button:hover {
+  background: var(--hover);
+}
+
+.hs-name {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.hs-where,
+.hs-numbers {
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}

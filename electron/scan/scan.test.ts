@@ -127,6 +127,13 @@ describe('scan', () => {
     expect(names(map, 'readme.md')).toEqual([])
   })
 
+  it('counts each file’s lines whether or not it ends in a newline', async () => {
+    const map = await scan(fixture({ 'empty.ts': '', 'one.ts': 'x', 'two.ts': 'a\nb\n', 'gap.ts': 'a\n\nb', 'blank.ts': '\n' }))
+    const lines = Object.fromEntries(folder(map, '').files.map((f) => [f.path, f.lines]))
+
+    expect(lines).toEqual({ 'blank.ts': 1, 'empty.ts': 0, 'gap.ts': 3, 'one.ts': 1, 'two.ts': 2 })
+  })
+
   it('finds function declarations including nested and default', async () => {
     const map = await scan(
       fixture({

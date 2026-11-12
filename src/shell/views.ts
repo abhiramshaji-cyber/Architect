@@ -5,11 +5,12 @@ import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
 import LayersView from '../view/layers/LayersView'
 import FunctionsView from '../view/functions/FunctionsView'
+import HotspotsView from '../view/hotspots/HotspotsView'
 import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'layers' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'functions' | 'layers' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
@@ -20,6 +21,7 @@ export const views: Record<ViewId, { label: string; component: ComponentType<Vie
   diff: { label: 'Diff', component: DiffView },
   review: { label: 'Review', component: ReviewView },
   files: { label: 'Files', component: FilesView },
+  hotspots: { label: 'Hotspots', component: HotspotsView },
   terminal: { label: 'Terminal', component: TerminalView },
   shell: { label: 'Shell', component: PlainShell },
   repos: { label: 'Repos', component: RepoPicker },

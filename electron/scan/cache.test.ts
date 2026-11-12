@@ -54,3 +54,18 @@ describe('stored starting point records', () => {
     }
   })
 })
+
+describe('stored line counts', () => {
+  const withLines = (lines: unknown): CodeMap | null => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-cache-'))
+    dirs.push(dir)
+    const map = { root: dir, scannedAt: 1, folders: [{ path: '', folders: [], files: [{ path: 'a.ts', lines, functions: [] }] }] }
+    writeStoredMap(dir, dir, { map: map as CodeMap, cache: {} })
+    return readStoredMap(dir, dir)?.map ?? null
+  }
+
+  it('keeps a whole non negative count and drops anything else', () => {
+    for (const good of [0, 12, undefined]) expect(withLines(good)).not.toBeNull()
+    for (const bad of [-1, 1.5, '3', Number.NaN, null]) expect(withLines(bad)).toBeNull()
+  })
+})
