@@ -18,9 +18,13 @@ export function sinceArgs(since: number): string[] {
   return Number.isFinite(seconds) && seconds > 0 ? [`--since=@${seconds}`] : []
 }
 
-export async function commitsSince(root: string, since: number): Promise<GitResult<Commit[]>> {
+export function countArgs(limit: number | undefined): string[] {
+  return limit !== undefined && Number.isSafeInteger(limit) && limit > 0 ? [`--max-count=${limit}`] : []
+}
+
+export async function commitsSince(root: string, since: number, limit?: number): Promise<GitResult<Commit[]>> {
   const format = '--format=%x1e%H%x1f%h%x1f%ct%x1f%s'
-  const out = await git(root, ['log', ...sinceArgs(since), '--relative', '--name-only', '-z', format, '--', '.'])
+  const out = await git(root, ['log', ...sinceArgs(since), ...countArgs(limit), '--relative', '--name-only', '-z', format, '--', '.'])
   if (out.ok) return { ok: true, value: parseLog(out.value) }
   return out.error.kind === 'no-commits' ? { ok: true, value: [] } : out
 }

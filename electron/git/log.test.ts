@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { commitsSince, parseLog, sinceArgs } from './log'
+import { commitsSince, countArgs, parseLog, sinceArgs } from './log'
 
 const dirs: string[] = []
 
@@ -49,6 +49,19 @@ describe('log', () => {
     execFileSync('git', ['commit', '-q', '-m', 'old'], { cwd: dir, env: { ...process.env, GIT_COMMITTER_DATE: '2001-01-01T00:00:00Z' } })
     const found = await commitsSince(dir, since)
     expect(found.ok && found.value.map((c) => c.subject)).toEqual(['old'])
+  })
+
+  it('reads only the newest commits up to a limit', async () => {
+    const dir = repo()
+    commitFile(dir, 'a.ts', 'one')
+    commitFile(dir, 'a.ts', 'two')
+    commitFile(dir, 'a.ts', 'three')
+    const found = await commitsSince(dir, 0, 2)
+    expect(found.ok && found.value.map((c) => c.subject)).toEqual(['three', 'two'])
+  })
+
+  it.each([[undefined], [0], [-2], [1.5], [Number.NaN], ['3' as unknown as number]])('reads no count limit for %s', (limit) => {
+    expect(countArgs(limit)).toEqual([])
   })
 
   it('passes a since of one second or more to git as a timestamp', () => {

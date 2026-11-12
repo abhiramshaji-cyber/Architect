@@ -49,7 +49,7 @@ function createTray() {
 app.whenReady().then(async () => {
   if (!primary) return
   if (process.platform !== 'win32') process.env.PATH = await loginPath(process.env)
-  wireIpc(daemon)
+  wireIpc(daemon, path.dirname(socketPath))
   createTray()
 
   daemon.onChange((root: string, architecture: Architecture) => {

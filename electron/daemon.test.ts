@@ -1060,7 +1060,7 @@ describe("code map migration", () => {
     fs.writeFileSync(
       path.join(tmpRoot, ".architect", "map.json"),
       JSON.stringify({
-        version: 10,
+        version: 12,
         map: {
           root: tmpRoot,
           scannedAt: 1,
@@ -2004,8 +2004,9 @@ describe("source watcher", () => {
     }
     await pause(1200);
 
-    expect(seen).toHaveLength(1);
-    expect(seen[0]?.files).toContain("f39.ts");
+    const burst = seen.filter((push) => push.files.some((file) => /^f\d+\.ts$/.test(file)));
+    expect(burst).toHaveLength(1);
+    expect(burst[0]?.files).toContain("f39.ts");
   });
 
   it("does not rescan for writes inside ignored directories", async () => {

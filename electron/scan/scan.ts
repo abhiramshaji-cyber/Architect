@@ -7,6 +7,7 @@ import { link, type Parsed, type Pending, type Raw } from './link'
 import { calleeName, isTestFile, lineOf, startsIn, type Call, type Site } from './starts'
 import { docOf, renderedTag, signatureOf } from './traits'
 import { usedIn } from './values'
+import { isCode, lineCount } from '../rules/facts'
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -578,7 +579,7 @@ async function walk(root: string, relative: string, { into, parsed, counter, dig
     const file = parseFile(source, child)
     parsed.set(child, file)
     digests.set(child, createHash('sha256').update(source).digest('hex'))
-    files.push({ path: child, lines: source.split('\n').length - (source === '' || source.endsWith('\n') ? 1 : 0), functions: file.functions })
+    files.push({ path: child, lines: lineCount(source), ...(isCode(child) ? { code: true as const } : {}), functions: file.functions })
   }
 
   folders.sort((a, b) => a.localeCompare(b))
@@ -592,15 +593,15 @@ export async function scan(root: string, digests = new Map<string, string>()): P
   const parsed = new Map<string, Parsed>()
 
   await walk(root, '', { into: folders, parsed, counter: { seen: 0 }, digests })
-  const { imports, typed } = link(root, parsed)
+  const links = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 
   for (const folder of folders) {
     for (const file of folder.files) {
-      const found = imports.get(file.path)
-      if (found !== undefined && found.length > 0) file.imports = found
-      const types = typed.get(file.path)
-      if (types !== undefined && types.length > 0) file.typeImports = types
+      const { imports = [], typeImports = [], reexports = [] } = links.get(file.path) ?? {}
+      if (imports.length > 0) file.imports = imports
+      if (typeImports.length > 0) file.typeImports = typeImports
+      if (reexports.length > 0) file.reexports = reexports
       const starts = parsed.get(file.path)?.starts
       if (starts !== undefined && starts.length > 0) file.starts = starts
     }

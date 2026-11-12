@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, FileStart, FunctionEntry } from '../../../shared/types'
-import { starred } from './exports'
+import { linked, type Links } from './exports'
 import { placeSites, type Raw } from './sites'
 import { globbed } from './glob'
 import { spreadOf } from './spread'
@@ -64,7 +64,7 @@ function realRoot(root: string): string {
   }
 }
 
-export function link(root: string, parsed: Map<string, Parsed>): { imports: Map<string, string[]>; typed: Map<string, string[]> } {
+export function link(root: string, parsed: Map<string, Parsed>): Map<string, Links> {
   const optionsOf = resolversOf(root, [...parsed.keys()])
   const caches = new Map<ts.CompilerOptions, ts.ModuleResolutionCache>()
   const bases = [...new Set([root, realRoot(root)])]
@@ -142,16 +142,5 @@ export function link(root: string, parsed: Map<string, Parsed>): { imports: Map<
     })
   }
 
-  starred(parsed, target)
-
-  const resolvedOf = (file: string, specs: Iterable<string>) =>
-    [...new Set([...specs].flatMap((spec) => target(file, spec) ?? []))].filter((to) => to !== file).sort()
-  const imports = new Map<string, string[]>()
-  const typed = new Map<string, string[]>()
-  for (const [file, at] of parsed) {
-    const loaded = resolvedOf(file, at.specs)
-    imports.set(file, [...new Set([...loaded, ...resolvedOf(file, at.typed)])].sort())
-    typed.set(file, resolvedOf(file, at.typed).filter((to) => !loaded.includes(to)))
-  }
-  return { imports, typed }
+  return linked(parsed, target)
 }

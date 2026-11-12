@@ -467,6 +467,12 @@ export function installMock() {
       return { functions: {}, components: {} }
     },
     churn: async () => ({ days: 90, files: {}, functions: {} }),
+    coupling: async (_root, ask) => ({ ok: true, value: { ask: { days: 90, minShared: 3, minConfidence: 0.5, maxFiles: 30, ...ask }, skipped: 0, historyFrom: null, commits: {}, sessions: {}, pairs: [] } }),
+    style: async () => [],
+    conventions: async () => ({ enabled: false }),
+    setConventions: async (_root, enabled) => (enabled ? { enabled: true, measured: [] } : { enabled: false }),
+    suggestConventions: async () => ({ ok: false, error: { kind: 'nothing-to-draft' } }),
+    promoteConvention: async () => {},
     async rescan(root) {
       const scanned = mockCodeMap(root)
       codeMaps[root] = scanned
@@ -502,8 +508,7 @@ export function installMock() {
             fanIn,
             fanOut: entry.calls.length,
             exported: true,
-            entry: null,
-            untraced: null,
+            entry: null, untraced: null,
             importance: Math.min(5, 1 + fanIn + (entry.description.length % 3)) as Importance,
             ...(entry.signature && { signature: entry.signature }),
             ...(entry.doc !== undefined && { doc: entry.doc })
