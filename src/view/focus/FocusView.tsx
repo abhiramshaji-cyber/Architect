@@ -6,7 +6,7 @@ import { callersOf, type Way } from '../functions/facts/calls'
 import { layoutOf, type Spot } from '../functions/tree/layout'
 import FocusCard, { type FocusNode } from './FocusCard'
 import { CENTER, graphOf, heightOf } from './graph'
-import { back, forward, go, keyOf, resolve, type Trail } from './history'
+import { back, forward, go, keyOf, placeOf, resolve, type Trail } from './history'
 import { FIRST, PAGE, byRank, sidesOf, type Limits } from './sides'
 
 type FocusProps = {
@@ -52,11 +52,18 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
   }, [rows])
   const shown = trail ?? first
   const at = useMemo(() => (shown ? resolve(rows, shown.now) : -1), [rows, shown])
-  const [limits, setLimits] = useState(START)
+  const place = shown ? placeOf(shown.now) : ''
+  const [expanded, setExpanded] = useState<{ place: string; limits: Limits } | null>(null)
+  const limits = expanded?.place === place ? expanded.limits : START
 
   useEffect(() => {
-    setLimits(START)
-  }, [shown?.now])
+    if (!trail) {
+      if (first) onTrail(first)
+      return
+    }
+    const row = rows[at]
+    if (row && keyOf(row) !== trail.now) onTrail({ ...trail, now: keyOf(row) })
+  }, [trail, first, rows, at, onTrail])
 
   const onGo = useCallback(
     (to: number) => {
@@ -65,7 +72,10 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
     },
     [rows, shown, onTrail],
   )
-  const onMore = useCallback((way: Way) => setLimits((prev) => ({ ...prev, [way]: prev[way] + PAGE })), [])
+  const onMore = useCallback(
+    (way: Way) => setExpanded({ place, limits: { ...limits, [way]: limits[way] + PAGE } }),
+    [place, limits],
+  )
   const onWiden = useCallback(() => onScope(''), [onScope])
 
   const sides = useMemo(() => sidesOf(list, callers, at, limits), [list, callers, at, limits])
@@ -115,7 +125,7 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
       <div className="fn-empty focus-gone">
         {steps}
         <p>
-          <code>{name}</code> in {file} is not {list.scope === '' ? 'in this project' : `in ${list.scope}`} any more.
+          <code>{name}</code> in {file} is not {list.scope === '' ? 'in this project' : `in ${list.scope}`}.
         </p>
         {list.scope !== '' && (
           <button className="mode" onClick={onWiden}>
@@ -140,7 +150,7 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Fit now={`${shown.now}\0${list.scope}`} center={spots?.get(CENTER)} />
+        <Fit now={`${place}\0${list.scope}`} center={spots?.get(CENTER)} />
         <Panel position="top-left">
           {steps}
         </Panel>

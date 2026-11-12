@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FunctionRow } from '../../../shared/types'
-import { back, forward, go, keyOf, resolve } from './history'
+import { back, forward, go, keyOf, placeOf, resolve } from './history'
 
 const row = (name: string, file = 'a.ts', line = 1): FunctionRow => ({
   file,
@@ -30,6 +30,13 @@ describe('trail', () => {
     expect(back(a)).toBe(a)
     expect(forward(a)).toBe(a)
     expect(go(a, 'a')).toBe(a)
+  })
+})
+
+describe('placeOf', () => {
+  it('keeps the file and name and drops the line, so a moved function is the same place', () => {
+    expect(placeOf(keyOf(row('run', 'a.ts', 3)))).toBe(placeOf(keyOf(row('run', 'a.ts', 40))))
+    expect(placeOf(keyOf(row('run', 'a.ts')))).not.toBe(placeOf(keyOf(row('run', 'b.ts'))))
   })
 })
 

@@ -6,11 +6,16 @@ export function keyOf(row: FunctionRow): string {
   return `${row.file}\0${row.line}\0${row.name}`
 }
 
+export function placeOf(key: string): string {
+  const [file, , name] = key.split('\0')
+  return `${file}\0${name}`
+}
+
 export function resolve(rows: FunctionRow[], key: string): number {
   const exact = rows.findIndex((row) => keyOf(row) === key)
   if (exact >= 0) return exact
-  const [file, , name] = key.split('\0')
-  const same = rows.flatMap((row, at) => (row.file === file && row.name === name ? [at] : []))
+  const place = placeOf(key)
+  const same = rows.flatMap((row, at) => (placeOf(keyOf(row)) === place ? [at] : []))
   return same.length === 1 ? (same[0] ?? -1) : -1
 }
 

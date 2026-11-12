@@ -62,6 +62,14 @@ export default function FunctionsView({ show }: ViewProps) {
     [currentRoot],
   )
 
+  const onTrail = useCallback(
+    (next: Trail) => {
+      setTrail(next)
+      related.close()
+    },
+    [related.close],
+  )
+
   const onFocus = useCallback(
     (at: number) => {
       const row = rows?.[at]
@@ -120,7 +128,7 @@ export default function FunctionsView({ show }: ViewProps) {
           {shownScope === '' ? 'No functions found in this project.' : `No functions found in ${shownScope}.`}
         </p>
       ) : list && mode === 'focus' ? (
-        <FocusView list={list} trail={trail} onTrail={setTrail} onOpen={onOpen} onRelated={related.ask} onScope={pickScope} />
+        <FocusView list={list} trail={trail} onTrail={onTrail} onOpen={onOpen} onRelated={related.ask} onScope={pickScope} />
       ) : list && mode === 'tree' ? (
         <FunctionTree
           key={shownScope}
