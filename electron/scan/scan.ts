@@ -6,6 +6,7 @@ import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry
 import { link, type Parsed, type Pending, type Raw } from './link'
 import { calleeName, lineOf, startsIn, type Call, type Site } from './starts'
 import { docOf, renderedTag, signatureOf } from './traits'
+import { isCode, lineCount } from '../rules/facts'
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -523,7 +524,7 @@ async function walk(root: string, relative: string, { into, parsed, counter, dig
     const file = parseFile(source, child)
     parsed.set(child, file)
     digests.set(child, createHash('sha256').update(source).digest('hex'))
-    files.push({ path: child, lines: source.split('\n').length - (source === '' || source.endsWith('\n') ? 1 : 0), functions: file.functions })
+    files.push({ path: child, lines: lineCount(source), ...(isCode(child) ? { code: true as const } : {}), functions: file.functions })
   }
 
   folders.sort((a, b) => a.localeCompare(b))
