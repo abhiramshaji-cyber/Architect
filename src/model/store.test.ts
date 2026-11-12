@@ -28,6 +28,7 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     releaseRoot: vi.fn().mockResolvedValue(undefined),
     focusRoot: vi.fn().mockResolvedValue(true),
     history: vi.fn().mockResolvedValue([]),
+    verdicts: vi.fn().mockResolvedValue([]),
     createContract: vi.fn(),
     draftContract: vi.fn(),
     edits: vi.fn().mockResolvedValue([]),
