@@ -13,8 +13,14 @@ export type Resolved = {
 }
 
 function real(target: string): string {
+  const rest: string[] = []
+  let dir = target
+  while (!fs.existsSync(dir) && path.dirname(dir) !== dir) {
+    rest.unshift(path.basename(dir))
+    dir = path.dirname(dir)
+  }
   try {
-    return fs.realpathSync.native(target)
+    return path.join(fs.realpathSync.native(dir), ...rest)
   } catch {
     return target
   }
@@ -25,6 +31,8 @@ export function projectPath(root: string, cwd: string, file: string): string {
 }
 
 const at = (fn: Fn) => `${fn.file}:${fn.line}`
+
+const calledBy = (fn: Fn, name: string) => fn.name === name || fn.name.endsWith(`.${name}`)
 
 function named(fns: Fn[], indexes: number[], ref: string): Resolved {
   const files = [...new Set(indexes.map((i) => fns[i]?.file ?? ''))]
@@ -49,11 +57,10 @@ function resolveOne(fns: Fn[], known: Set<string>, root: string, cwd: string, re
   const file = colon > 0 ? knownPath(known, root, cwd, ref.slice(0, colon)) : undefined
   if (file !== undefined) {
     const name = ref.slice(colon + 1)
-    return named(fns, fns.flatMap((fn, i) => (fn.file === file && fn.name === name ? [i] : [])), ref)
+    return named(fns, fns.flatMap((fn, i) => (fn.file === file && calledBy(fn, name) ? [i] : [])), ref)
   }
 
-  const bySuffix = (fn: Fn) => fn.name === ref || fn.name.endsWith(`.${ref}`)
-  return named(fns, fns.flatMap((fn, i) => (!fn.test && bySuffix(fn) ? [i] : [])), ref)
+  return named(fns, fns.flatMap((fn, i) => (!fn.test && calledBy(fn, ref) ? [i] : [])), ref)
 }
 
 export function resolveRefs(fns: Fn[], map: CodeMap, root: string, cwd: string, refs: string[]): Resolved[] {

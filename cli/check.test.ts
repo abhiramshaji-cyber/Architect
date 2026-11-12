@@ -339,6 +339,16 @@ describe('where', () => {
     expect(answered.code).toBe(OK)
     expect(JSON.parse(answered.out)).toMatchObject({ component: { status: 'found', id: 'store' }, folder: { path: 'store' } })
 
+    const blocked = await outcome(drawn, ['where', '--calls', 'handle', '--callers', path.join(drawn, 'store/db.ts'), '--name', 'go', '--file', path.join(drawn, 'api/new.ts')])
+    expect(blocked.out).toContain('component  (blocked)')
+    expect(blocked.out).toContain('needs store -> api, cycle, for')
+    expect(blocked.out).toContain('go starts with go, which leads 0 names there')
+    expect(blocked.out).toContain('file       api/new.ts  owned by api, breaks no rule')
+
+    const placed = await outcome(drawn, ['where', '--calls', 'load', '--file', path.join(drawn, 'store')])
+    expect(placed.out).toContain('new file: fits the files rule')
+    expect(placed.out).toContain('could not check')
+
     const bare = await outcome(fixture(files), ['where', '--calls', 'load'])
     expect(bare.code).toBe(OK)
     expect(bare.out).toContain('component  (no-contract)')

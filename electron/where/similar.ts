@@ -12,8 +12,10 @@ export function similarOf(fns: Fn[], edges: number[][], calls: Resolved[], calle
   const wanted = calls.filter(counted)
   const calling = callers.filter(counted)
 
+  const given = new Set([...wanted, ...calling].flatMap((ref) => ref.fns))
+
   const scored = fns.flatMap((fn, i): Match[] => {
-    if (fn.test) return []
+    if (fn.test || given.has(i)) return []
     const callees = wanted.flatMap((ref) => {
       const hit = ref.fns.find((target) => out[i]?.has(target))
       return hit === undefined ? [] : [`${ref.ref} at ${at(fns[hit])}`]

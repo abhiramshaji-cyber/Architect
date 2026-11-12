@@ -94,6 +94,13 @@ describe('references', () => {
     expect(found.calls[0]).not.toHaveProperty('fns')
   })
 
+  it('picks a method by file:name with its bare name, and counts one function named twice once', async () => {
+    const found = await ask({ calls: ['store/repo.ts:fetch', 'load', 'store/db.ts:load'], callers: ['handleGet'] })
+    expect(found.calls[0]).toMatchObject({ status: 'function', matches: ['store/repo.ts:4 Repo.fetch'] })
+    expect(found.component.reason).toBe('owns 2 of 3 matched neighbours and every call to and from it is allowed')
+    expect(found.similar.matches.map((m) => m.name)).not.toContain('handleGet')
+  })
+
   it('reports a name in several files and a name nobody has, and counts neither', async () => {
     const found = await ask({ calls: ['render', 'nope', ' '] })
     expect(found.calls.map((ref) => ref.status)).toEqual(['ambiguous', 'none'])
@@ -109,7 +116,7 @@ describe('references', () => {
 
 describe('component and folder', () => {
   it('picks the component owning most neighbours, its folder, the leading word and the closest function', async () => {
-    const found = await ask({ calls: ['load', 'save'], callers: ['api/handler.ts'], name: 'loadMany' })
+    const found = await ask({ calls: ['load', 'save'], callers: ['jobs/nightly.ts'], name: 'loadMany' })
     expect(found.component).toMatchObject({ status: 'found', id: 'store', reason: 'owns 2 of 3 matched neighbours and every call to and from it is allowed' })
     expect(found.folder).toMatchObject({ status: 'found', path: 'store', newFile: { fits: false } })
     expect(found.folder.newFile?.violations[0]?.message).toBe('4 code files, the limit is 3: cache.ts, db.ts, new.ts, repo.ts')
@@ -169,6 +176,14 @@ describe('proposed file', () => {
     const outside = await ask({ calls: ['load'], file: '../elsewhere.ts' })
     expect(outside.file).toMatchObject({ fits: false })
     expect(outside.file?.error).toContain('is outside the project')
+
+    const { root, map } = await project()
+    const away = whereOf({ calls: ['load'], callers: [], file: 'store/fresh.ts' }, { root, cwd: os.tmpdir(), map, architecture: parse(CONTRACT), stale: null })
+    expect(away.file).toMatchObject({ file: 'store/fresh.ts', owners: ['store'] })
+    expect(away.file?.error).toBeUndefined()
+
+    const whole = await ask({ calls: ['store/cache.ts'], file: 'store/cache.ts' })
+    expect(whole.notes.at(-1)).toContain('store/cache.ts names the whole proposed file')
 
     const folder = await ask({ calls: ['load'], file: 'store' })
     expect(folder.file?.error).toContain('is not a file')
