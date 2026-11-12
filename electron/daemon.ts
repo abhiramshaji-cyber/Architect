@@ -54,7 +54,6 @@ import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
-import { splitsIn } from './rules/split'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
 
@@ -1010,8 +1009,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     rescan: rescanProject,
     listFunctions: async (root: string, scope?: unknown): Promise<FunctionList> => {
       const { architecture } = loadProject(root)
-      const map = await mapOf(root)
-      return { ...listFunctions(root, map, scope, architecture), splits: splitsIn(root, map, architecture) }
+      return listFunctions(root, await mapOf(root), scope, architecture)
     },
     recency: async (root: string): Promise<Recency> => {
       loadProject(root)
