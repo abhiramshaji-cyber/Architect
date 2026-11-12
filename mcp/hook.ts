@@ -3,8 +3,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { readSettings } from '../shared/settings.js'
-import { SETTINGS_PATH, SOCKET_PATH } from '../shared/socket.js'
-import { EDIT_TIMEOUT_MS, HOOK_DEADLINE_MS, type CodeChange, type Decision, type Request } from '../shared/types.js'
+import { HOOK_DEADLINE_MS, SETTINGS_PATH, SOCKET_PATH } from '../shared/socket.js'
+import { EDIT_TIMEOUT_MS, type CodeChange, type Decision, type Request } from '../shared/types.js'
 
 const GATE_GRACE_MS = 15_000
 
