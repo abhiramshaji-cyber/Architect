@@ -226,8 +226,8 @@ describe('scan', () => {
 
     const entry = folder(map, '').files[0]
     expect(entry?.functions).toEqual([
-      { name: 'third', line: 3, endLine: 3, description: '', calls: [], exported: true },
-      { name: 'fifth', line: 5, endLine: 5, description: '', calls: [] },
+      { name: 'third', line: 3, endLine: 3, description: '', calls: [], exported: true, signature: { params: [] } },
+      { name: 'fifth', line: 5, endLine: 5, description: '', calls: [], signature: { params: [] } },
     ])
   })
 
@@ -329,7 +329,7 @@ describe('function spans', () => {
     const map = await scan(fixture({ 'a.ts': 'export function a() { return 1 }\n' }))
 
     expect(entries(map, 'a.ts')).toEqual([
-      { name: 'a', line: 1, endLine: 1, description: '', calls: [], exported: true },
+      { name: 'a', line: 1, endLine: 1, description: '', calls: [], exported: true, signature: { params: [] } },
     ])
   })
 

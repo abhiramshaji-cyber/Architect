@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FolderEntry, FunctionEntry } from '../../shared/types'
-import { docOf, kindOf, renderedTag } from './traits'
+import { docOf, renderedTag, signatureOf } from './traits'
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -380,9 +380,9 @@ function parseFile(source: string, file: string): Parsed {
     const nested = new Set(found.map((f) => f.node))
     for (const f of found) {
       const doc = docOf(f.node, sourceFile)
-      const kind = kindOf(f.node, nested)
+      const signature = signatureOf(f.node, sourceFile)
       if (doc !== undefined) f.entry.doc = doc
-      if (kind !== undefined) f.entry.kind = kind
+      if (signature !== undefined) f.entry.signature = signature
     }
     const byScope = bindingsOf(found)
     const shadows = shadowsOf(sourceFile)

@@ -12,7 +12,6 @@ const row = (name: string, over: Partial<FunctionRow> = {}): FunctionRow => ({
   exported: false,
   entry: false,
   importance: 1,
-  summary: '',
   ...over,
 })
 

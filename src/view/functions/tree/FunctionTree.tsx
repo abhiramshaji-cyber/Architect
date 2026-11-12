@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { Background, Controls, ReactFlow, useReactFlow, useStore, type Edge } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { FunctionList, FunctionRow } from '../../../../shared/types'
+import type { Way } from '../facts/calls'
 import { plural } from '../Mark'
 import Card, { type CardNode } from './Card'
 import { CARD_W, layoutOf, type Spot } from './layout'
@@ -14,6 +15,7 @@ type TreeProps = {
   query: string
   project: string
   onOpen: (row: FunctionRow) => void
+  onRelated: (at: number, way: Way) => void
 }
 
 const nodeTypes = { card: Card }
@@ -69,7 +71,7 @@ function Keep({
   return null
 }
 
-export default function FunctionTree({ list, query, project, onOpen }: TreeProps) {
+export default function FunctionTree({ list, query, project, onOpen, onRelated }: TreeProps) {
   const { rows, tree } = list
   const outline = useMemo(() => outlineOf(tree), [tree])
   const [overrides, setOverrides] = useState(() => new Map<string, boolean>())
@@ -132,6 +134,7 @@ export default function FunctionTree({ list, query, project, onOpen }: TreeProps
           data: {
             ...group,
             row,
+            at,
             count: kids,
             open: kids > 0 && isOpen(outline, id, overrides, forced),
             also: tree.also[at] ?? 0,
@@ -139,10 +142,11 @@ export default function FunctionTree({ list, query, project, onOpen }: TreeProps
             focused: id === focus,
             onToggle,
             onOpen,
+            onRelated,
           },
         }
       }),
-    [shown, spots, rows, tree, outline, overrides, forced, hits, focus, project, onToggle, onOpen],
+    [shown, spots, rows, tree, outline, overrides, forced, hits, focus, project, onToggle, onOpen, onRelated],
   )
 
   const edges = useMemo<Edge[]>(
