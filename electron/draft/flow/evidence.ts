@@ -1,6 +1,6 @@
 import { topsOf } from '../../../shared/folders'
 import type { CodeMap, Component, FunctionRow } from '../../../shared/types'
-import { indexOf } from '../../functions'
+import { indexOf, type EntryFiles } from '../../functions'
 import { within } from '../../functions/scope'
 
 const MAX_FUNCTIONS = 300
@@ -25,7 +25,7 @@ function shownOf(rows: FunctionRow[]): number[] {
     .sort((a, b) => a - b)
 }
 
-export function evidence(map: CodeMap, scope = '', declared = new Set<string>()): Evidence {
+export function evidence(map: CodeMap, scope = '', declared: EntryFiles = new Map()): Evidence {
   const { rows, calls } = indexOf(map, declared, scope)
   const shown = shownOf(rows)
   const local = new Map(shown.map((at, i) => [at, i]))

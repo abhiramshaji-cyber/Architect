@@ -2,7 +2,7 @@ import path from 'node:path'
 import { folderShaped } from '../../shared/folders'
 import type { CodeMap, DraftResult } from '../../shared/types'
 import { parse } from '../contract/graph'
-import { manifestEntries } from '../functions'
+import { entryFiles } from '../functions'
 import { validate } from './flow/build'
 import { evidence } from './flow/evidence'
 import { promptFor } from './flow/prompt'
@@ -42,7 +42,7 @@ export async function draft(
   model?: string,
   scope = '',
 ): Promise<DraftResult<string>> {
-  const found = evidence(map, scope, manifestEntries(root))
+  const found = evidence(map, scope, entryFiles(root, map))
   if (found.functions.length === 0 && scope !== '') return draft(root, map, run, model)
   if (found.functions.length === 0) return { ok: false, error: { kind: 'nothing-to-draft' } }
 

@@ -261,7 +261,13 @@ export type Param = { name: string; type?: string; value?: string; optional?: tr
 
 export type Signature = { generics?: string; params: Param[]; returns?: string }
 
-export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[] }
+export type StartReason = 'mcpTool' | 'ipcHandler' | 'bridge' | 'cliCommand'
+
+export type StartKind = 'load' | 'exports' | StartReason
+
+export type FileStart = { kind: StartKind; calls: CallRef[] }
+
+export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[]; starts?: FileStart[] }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 
@@ -517,8 +523,12 @@ export type FunctionFacts = {
   fanIn: number
   fanOut: number
   exported: boolean
-  entry: boolean
+  entry: Entry | null
 }
+
+export type EntryReason = StartReason | 'electronMain' | 'preload' | 'renderer' | 'page' | 'bin' | 'main' | 'script'
+
+export type Entry = { reason: EntryReason; file: string }
 
 export type Importance = 1 | 2 | 3 | 4 | 5
 
@@ -530,7 +540,9 @@ export type FunctionRow = FunctionFacts & {
   outsideCallees?: number
 }
 
-export type FunctionTree = { starts: number[]; unreached: number[]; children: number[][]; also: number[] }
+export type EntryGroup = { file: string; reason: EntryReason; members: number[] }
+
+export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unreached: number[]; children: number[][]; also: number[] }
 
 export type ScopeFolder = { path: string; functions: number }
 
