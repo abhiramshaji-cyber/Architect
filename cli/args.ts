@@ -1,9 +1,9 @@
 import path from 'node:path'
 
-export type Args = { command: 'check' | 'agents'; root: string; json: boolean; help: boolean; history: boolean }
+export type Args = { command: 'check' | 'agents'; root: string; json: boolean; help: boolean; history: boolean; suggest: boolean }
 
 export const USAGE_TEXT = [
-  'architect check [path] [--json] [--history]',
+  'architect check [path] [--json] [--history] [--suggest]',
   'architect agents [path] [--json]',
   '',
   '  check      check the code against the drawing and the Rules section',
@@ -11,6 +11,7 @@ export const USAGE_TEXT = [
   '  path       directory holding architect.md (default: the working directory)',
   '  --json     emit the report as JSON',
   '  --history  list the stored pass and fail runs of each rule instead of checking',
+  '  --suggest  also list split suggestions for long or many job files and for long functions with many callers',
   '',
   'exit 0 the architecture and its rules are satisfied',
   'exit 1 the code violates the drawing or a rule',
@@ -25,9 +26,10 @@ export function parseArgs(argv: string[]): Args | string {
   let root: string | undefined
   let json = false
   let history = false
+  let suggest = false
 
   for (const arg of rest) {
-    if (arg === '--help' || arg === '-h') return { command, root: process.cwd(), json: false, help: true, history: false }
+    if (arg === '--help' || arg === '-h') return { command, root: process.cwd(), json: false, help: true, history: false, suggest: false }
     if (arg === '--json') {
       json = true
       continue
@@ -36,10 +38,14 @@ export function parseArgs(argv: string[]): Args | string {
       history = true
       continue
     }
+    if (arg === '--suggest' && command === 'check') {
+      suggest = true
+      continue
+    }
     if (arg.startsWith('-')) return `unknown option: ${arg}`
     if (root !== undefined) return `unexpected extra argument: ${arg}`
     root = arg
   }
 
-  return { command, root: path.resolve(root ?? process.cwd()), json, help: false, history }
+  return { command, root: path.resolve(root ?? process.cwd()), json, help: false, history, suggest }
 }

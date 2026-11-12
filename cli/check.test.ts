@@ -67,23 +67,23 @@ afterEach(() => {
 
 describe('parseArgs', () => {
   it('defaults to the working directory', () => {
-    expect(parseArgs([])).toEqual({ command: 'check', root: process.cwd(), json: false, help: false, history: false })
+    expect(parseArgs([])).toEqual({ command: 'check', root: process.cwd(), json: false, help: false, history: false, suggest: false })
   })
 
   it('consumes a leading check subcommand', () => {
-    expect(parseArgs(['check', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: false })
+    expect(parseArgs(['check', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: false, suggest: false })
   })
 
   it('reads the json flag in any position', () => {
-    expect(parseArgs(['--json', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: true, help: false, history: false })
+    expect(parseArgs(['--json', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: true, help: false, history: false, suggest: false })
   })
 
   it('reads the history flag', () => {
-    expect(parseArgs(['--history', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: true })
+    expect(parseArgs(['--history', '/tmp'])).toEqual({ command: 'check', root: path.resolve('/tmp'), json: false, help: false, history: true, suggest: false })
   })
 
   it('reads the agents command and refuses history with it', () => {
-    expect(parseArgs(['agents', '/tmp', '--json'])).toEqual({ command: 'agents', root: path.resolve('/tmp'), json: true, help: false, history: false })
+    expect(parseArgs(['agents', '/tmp', '--json'])).toEqual({ command: 'agents', root: path.resolve('/tmp'), json: true, help: false, history: false, suggest: false })
     expect(parseArgs(['agents', '--history'])).toBe('unknown option: --history')
   })
 
@@ -96,7 +96,7 @@ describe('parseArgs', () => {
   })
 
   it('treats help as a flag', () => {
-    expect(parseArgs(['-h'])).toEqual({ command: 'check', root: process.cwd(), json: false, help: true, history: false })
+    expect(parseArgs(['-h'])).toEqual({ command: 'check', root: process.cwd(), json: false, help: true, history: false, suggest: false })
   })
 })
 
@@ -289,6 +289,41 @@ describe('rules', () => {
 
     const shown = lines.join('\n')
     expect(shown).toMatch(/check\s+lines fail 1, files pass, names pass, jobs pass$/)
+  })
+
+  it('lists split suggestions with their evidence only when asked, without changing the exit code', async () => {
+    const big = `export function big() {\n  if (Math.random()) {\n    return 1\n  }\n${'  void 0\n'.repeat(50)}}\n`
+    const callers = "import { big } from './big'\nexport function a() {\n  big()\n}\nexport function b() {\n  big()\n}\nexport function c() {\n  big()\n}\n"
+    const rules = '\n## Rules\n\n- jobs: 3 `api/callers.ts`\n'
+    const root = fixture({ 'architect.md': contract() + rules, 'api/big.ts': big, 'api/callers.ts': callers, 'store/db.ts': STORE })
+
+    expect((await outcome(root)).out).not.toContain('split suggestion')
+    const shown = await outcome(root, ['--suggest'])
+    expect(shown.code).toBe(OK)
+    expect(shown.out).toContain(
+      [
+        '2 split suggestions',
+        '',
+        '  api/big.ts:1  big  55 lines, 3 callers, over 50 lines with 3 or more callers',
+        '    extract if  2-4, 3 lines',
+        '',
+        '  api/callers.ts  3 job groups, limit 3 here and 1 project wide',
+        '    into api/callers/ behind api/callers.ts, 3 of 5 code files there',
+        '    api/callers/a.ts  3 lines',
+        '      a:2',
+      ].join('\n'),
+    )
+    expect(shown.out).toContain('    stays in the entry: 1 line')
+
+    const parsed = JSON.parse((await outcome(root, ['--suggest', '--json'])).out)
+    expect(parsed.suggestions.map((split: { kind: string; path: string }) => `${split.kind} ${split.path}`)).toEqual(['function api/big.ts', 'file api/callers.ts'])
+    expect(JSON.parse((await outcome(root, ['--json'])).out).suggestions).toBeUndefined()
+  })
+
+  it('says so when there is nothing to split, and refuses --suggest on agents', async () => {
+    const root = fixture({ 'architect.md': contract(), 'store/db.ts': STORE })
+    expect((await outcome(root, ['--suggest'])).out).toBe('architect: Demo satisfied, no violations\n\nno split suggestions')
+    expect(parseArgs(['agents', '--suggest'])).toBe('unknown option: --suggest')
   })
 
   it('says so when no run is recorded', async () => {

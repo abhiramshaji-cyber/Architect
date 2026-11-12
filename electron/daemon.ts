@@ -52,6 +52,7 @@ import { recencyOf } from './recency'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
+import { splitsIn } from './rules/split'
 import { hasAgents, writeAgents } from './agents/write'
 
 const HISTORY_LIMIT = 200
@@ -1005,8 +1006,10 @@ export function createDaemon(options: DaemonOptions = {}) {
     readTree,
     rescan: rescanProject,
     listFunctions: async (root: string, scope?: unknown): Promise<FunctionList> => {
-      loadProject(root)
-      return listFunctions(root, await mapOf(root), scope)
+      const { architecture } = loadProject(root)
+      const map = await mapOf(root)
+      const list = listFunctions(root, map, scope)
+      return { ...list, splits: splitsIn(root, map, architecture, list.scope) }
     },
     recency: async (root: string): Promise<Recency> => {
       loadProject(root)
