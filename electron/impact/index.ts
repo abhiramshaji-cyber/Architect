@@ -17,7 +17,7 @@ export type ImpactInput = { cwd: string; from?: string; to?: string; file?: stri
 
 type Spot = { file: string; line: number; name: string }
 
-type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; whole?: string; users?: number[]; file: string | null; notes: string[] }
+type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; whole?: { file: string; names: string[] | 'all' }; users?: number[]; file: string | null; notes: string[] }
 
 const SETTLE_MS = 2000
 
@@ -79,12 +79,12 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   if (unseen.length > 0) notes.push(`${unseen.length} changed functions are not in the scan (${listed(unseen)}); the scan skips this path or the file changed after the scan, so their callers are not counted`)
   const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? ('proposed' as const) : ('disk' as const) }))
   const added = changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name }))
-  return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide && wide.users.length > 0 ? { whole: file, users: wide.users } : {}) }
+  return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide ? { whole: { file, names: wide.names }, users: wide.users } : {}) }
 }
 
 const listed = (names: string[]) => names.slice(0, NAMED).join(', ') + (names.length > NAMED ? ', ...' : '')
 
-function outsideSeeds(root: string, file: string, outside: Outside, uses: (names: string[]) => string[], scanned: string[], offset: number, files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; note: string } {
+function outsideSeeds(root: string, file: string, outside: Outside, uses: (names: string[]) => string[], scanned: string[], offset: number, files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; names: string[] | 'all'; note: string } {
   const all = outside === 'all'
   const changed = all ? [] : [...outside.names, ...outside.locals]
   const keys = new Set(all ? scanned : uses(changed))
@@ -94,7 +94,7 @@ function outsideSeeds(root: string, file: string, outside: Outside, uses: (names
   const using = fns.flatMap((fn, i) => (importers.has(fn.file) ? [i] : []))
   const what = [...(all ? ['a module load or a star re-export'] : []), ...(!all && outside.code ? ['code that runs when the file loads, such as a handler it registers'] : []), ...(changed.length > 0 ? [listed(changed)] : [])].join('; ')
   const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions in the ${importers.size} files that ${loads ? 'load it' : 'import those names'}, directly or through a re-export, count as its callers`
-  return { seeds: own, users: using, note }
+  return { seeds: own, users: using, names: loads ? 'all' : outside.names, note }
 }
 
 function edgeSeeds(from: string, to: string, architecture: Architecture, fns: Fn[]): Seeded {
@@ -130,7 +130,7 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
   const seeded = file !== undefined && content !== undefined ? fileSeeds({ ...input, file, content }, root, files, fns) : edgeSeeds(from ?? '', to ?? '', architecture, fns)
   const both = file !== undefined && content !== undefined && from !== undefined && to !== undefined ? [`impact is worked out from ${file}; the edge ${from} -> ${to} is answered by the verdict only`] : []
 
-  const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds, seeded.whole && seeded.users ? { file: seeded.whole, users: seeded.users } : undefined)
+  const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds, seeded.whole && seeded.users && seeded.users.length > 0 ? { file: seeded.whole.file, users: seeded.users } : undefined)
   const tests = testsOf(root, fns, files, reach, seeded.added, seeded.edited, seeded.whole)
   return {
     status: 'done',

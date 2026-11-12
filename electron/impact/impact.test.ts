@@ -393,6 +393,24 @@ describe('renamed re-exports and test callbacks', () => {
     expect(impact.callers.listed.map((caller) => caller.name)).toEqual(['useCap'])
   })
 
+  it('counts the declaration around an arrow function, and reaches a test that alone imports a changed value', async () => {
+    const { root, map, architecture } = await project({
+      'src/h.ts': 'export const helper = (n: number) => n + 1\n\nexport const wrapped =\n  (n: number) => n * 2\n\nexport class K {\n  private go = () => 1\n}\n',
+      'src/use.ts': "import { helper } from './h'\n\nexport function useIt() {\n  return helper(1)\n}\n",
+      'src/lib.ts': 'export const LIMIT = 3\n',
+      'src/lib.test.ts': "import { LIMIT } from './lib'\n",
+    })
+    const name = (from: string, to: string) => changesOf('src/h.ts', fs.readFileSync(path.join(root, 'src/h.ts'), 'utf8'), fs.readFileSync(path.join(root, 'src/h.ts'), 'utf8').replace(from, to)).changes.map((change) => change.name)
+    expect(name('export const helper', 'const helper')).toEqual(['helper'])
+    expect(name('const helper = ', 'const helper: (n: number) => number = ')).toEqual(['helper'])
+    expect(name('private go', 'public go')).toEqual(['K.go'])
+    expect(name('(n: number) => n * 2', '(n: number)  =>  n * 2')).toEqual([])
+    const unexported = impactOf(edit(root, 'src/h.ts', 'export const helper', 'const helper'), root, architecture, map)
+    expect(unexported.callers.listed.map((caller) => caller.name)).toEqual(['useIt'])
+    const constant = impactOf(edit(root, 'src/lib.ts', 'LIMIT = 3', 'LIMIT = 4'), root, architecture, map)
+    expect(constant.tests.listed).toEqual([{ file: 'src/lib.test.ts', via: 'import', at: 'src/lib.test.ts:1', reaches: 'src/lib.ts' }])
+  })
+
   it('caps the notes and names a few functions per note', async () => {
     const many = Array.from({ length: 30 }, (_, i) => `export function f${i}() { return ${i} }`).join('\n')
     const { root, architecture } = await project({ 'lib/many.ts': `${many}\n` })

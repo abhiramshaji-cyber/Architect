@@ -29,10 +29,20 @@ const lineOf = (node: ts.Node, source: ts.SourceFile) => source.getLineAndCharac
 
 const bodyOf = (node: ts.Node) => (ts.isFunctionLike(node) ? (node as { body?: ts.Node }).body : undefined)
 
+function holderOf(node: ts.Node): ts.Node {
+  const parent = node.parent
+  if (parent && ts.isVariableDeclaration(parent) && parent.initializer === node) return ts.isVariableStatement(parent.parent.parent) ? parent.parent.parent : parent
+  return parent && (ts.isPropertyDeclaration(parent) || ts.isPropertyAssignment(parent)) && parent.initializer === node ? parent : node
+}
+
 function nodesByLine(source: ts.SourceFile): Map<number, ts.Node[]> {
   const found = new Map<number, ts.Node[]>()
+  const add = (line: number, node: ts.Node) => found.get(line)?.includes(node) || found.set(line, [...(found.get(line) ?? []), node])
   const visit = (node: ts.Node): void => {
-    if (bodyOf(node)) found.set(lineOf(node, source), [...(found.get(lineOf(node, source)) ?? []), node])
+    if (bodyOf(node)) {
+      add(lineOf(node, source), holderOf(node))
+      add(lineOf(holderOf(node), source), holderOf(node))
+    }
     ts.forEachChild(node, visit)
   }
   visit(source)
@@ -49,7 +59,7 @@ function bodies(text: string, file: string): Map<string, Body> {
     fns.map((fn, i) => {
       const key = keys[i] ?? ''
       const own = nodes.get(fn.line) ?? []
-      const inner = (kid: ts.Node, parent: ts.Node) => kid === bodyOf(parent) && !own.includes(parent) && named.has(lineOf(parent, source))
+      const inner = (kid: ts.Node, parent: ts.Node) => kid === bodyOf(parent) && !own.includes(holderOf(parent)) && named.has(lineOf(parent, source))
       const words = new Set<string>()
       const shaped = own.length > 0 ? own.map((node) => shape(node, source, inner, words)).join(' | ') : text.split(/\r?\n/).slice(fn.line - 1, fn.endLine).join('\n')
       return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text: shaped, words }]

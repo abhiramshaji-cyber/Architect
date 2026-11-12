@@ -95,7 +95,7 @@ function exposedBy(fns: Fn[], files: FileEntry[]): Map<string, number[]> {
 
 type Hit = { via: 'touched' | 'call' | 'import'; at: string; reaches: string; unchecked?: string }
 
-export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[], edited?: { file: string; line: number }, whole?: string): { total: number; listed: TestReach[]; notes: string[] } {
+export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[], edited?: { file: string; line: number }, whole?: { file: string; names: string[] | 'all' }): { total: number; listed: TestReach[]; notes: string[] } {
   const found = new Map<string, Hit>()
 
   for (const node of [...reach.depth.keys()].sort((a, b) => a - b)) {
@@ -124,7 +124,7 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
       return [one, ...forwarded.flatMap((file) => renamed(file).get(one) ?? [])]
     })
   }
-  const reachable = (target: string) => target === whole || added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
+  const reachable = (target: string) => target === whole?.file || added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
   for (const file of files) {
     if (!isTestFile(file.path) || found.has(file.path) || !(file.imports ?? []).some(reachable)) continue
     const loaded = importsOf(root, file.path)
@@ -136,7 +136,7 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
         const reached = index === undefined ? undefined : fns[index]
         const spot = added.find((one) => one.file === target && named(one, way.names))
         const fresh = spot ? `${spot.file}:${spot.line}` : undefined
-        const outside = target === whole && (way.names === null || way.names.length > 0) ? whole : undefined
+        const outside = whole && target === whole.file && (way.names === null || whole.names === 'all' || way.names.some((name) => whole.names.includes(name))) ? whole.file : undefined
         return reached || fresh || outside ? [{ way, reaches: reached ? at(reached) : (fresh ?? (outside as string)) }] : []
       })[0]
       if (hit === undefined) continue
