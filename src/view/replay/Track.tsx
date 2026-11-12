@@ -1,16 +1,16 @@
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { stepText, verdictText } from './Readout'
 import type { Step } from './timeline/steps'
-import type { Held } from './timeline/verdicts'
+import type { Filed, Held } from './timeline/verdicts'
 
 type Props = {
   steps: Step[]
   at: number
-  held: Held[]
+  filed: Filed
   onAt: (at: number) => void
 }
 
-export default function Track({ steps, at, held, onAt }: Props) {
+export default function Track({ steps, at, filed, onAt }: Props) {
   const last = steps.length - 1
   const place = (index: number) => (last <= 0 ? 50 : (index / last) * 100)
   const clamp = (index: number) => Math.min(last, Math.max(0, index))
@@ -33,25 +33,27 @@ export default function Track({ steps, at, held, onAt }: Props) {
     onAt(clamp(next))
   }
 
+  const marks = [
+    { ...filed.before, index: 0, where: 'before' },
+    ...filed.steps.map((held: Held, index) => ({ ...held, index, where: `${index}` })),
+  ].filter(({ rejected }) => rejected.length > 0)
+
   const step = steps[at]
   return (
     <div className="replay-track-box">
       <div className="replay-marks" aria-label="Rejected check_change verdicts">
-        {held.map(({ rejected }, index) => {
-          if (rejected.length === 0) return null
-          return (
-            <button
-              key={index}
-              className={index === at ? 'replay-mark on' : 'replay-mark'}
-              style={{ left: `${place(index)}%` }}
-              title={rejected.map(verdictText).join('\n')}
-              aria-label={`${rejected.length} rejected at step ${index + 1}`}
-              onClick={() => onAt(index)}
-            >
-              {rejected.length > 1 ? rejected.length : ''}
-            </button>
-          )
-        })}
+        {marks.map(({ index, rejected, where }) => (
+          <button
+            key={where}
+            className={index === at && where !== 'before' ? 'replay-mark on' : 'replay-mark'}
+            style={{ left: `${where === 'before' ? 0 : place(index)}%` }}
+            title={rejected.map(verdictText).join('\n')}
+            aria-label={`${rejected.length} rejected ${where === 'before' ? 'before step 1' : `at step ${index + 1}`}`}
+            onClick={() => onAt(index)}
+          >
+            {rejected.length > 1 ? rejected.length : ''}
+          </button>
+        ))}
       </div>
       <div
         className="replay-track"

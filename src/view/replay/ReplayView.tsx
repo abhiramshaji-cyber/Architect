@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { folderName } from '../../model/layout'
 import { loadCodeMap, openFile, useProject } from '../../model/store'
+import { HISTORY_LIMIT } from '../../../shared/types'
 import type { ViewProps } from '../../shell/views'
 import { Choice } from '../functions/bar/Bar'
 import { plural } from '../functions/Mark'
@@ -8,10 +9,11 @@ import Treemap from '../map/canvas/Treemap'
 import { factsFor } from '../map/facts'
 import type { MapNode } from '../map/layout/nest'
 import { useMap } from '../map/useMap'
-import Readout, { stepText, verdictText, when } from './Readout'
+import Readout, { Verdicts, when } from './Readout'
 import { light } from './timeline/light'
 import { stepsOf } from './timeline/steps'
-import { verdictsAt } from './timeline/verdicts'
+import { type Start, startOf } from './timeline/start'
+import { stepAt, verdictsAt } from './timeline/verdicts'
 import Track from './Track'
 import { LIMIT, useReplay } from './useReplay'
 
@@ -25,18 +27,31 @@ const WINDOWS: { key: Days; label: string }[] = [
 
 const PLAY_MS = 700
 
+const CUT: Record<Start['by'], string | null> = {
+  window: null,
+  commits: `Showing the newest ${LIMIT.toLocaleString()} commits of the window, so the timeline starts at`,
+  history: `The change history keeps only the newest ${HISTORY_LIMIT} entries, so the timeline starts at`,
+  verdicts: `The verdict record keeps only the newest ${HISTORY_LIMIT} verdicts, so the timeline starts at`,
+}
+
 export default function ReplayView({ theme, show }: ViewProps) {
   const { currentRoot, codeMap, history } = useProject()
   const { tree, facts, error } = useMap()
   const [days, setDays] = useState<Days>('90')
-  const [picked, setPicked] = useState<number | null>(null)
+  const [picked, setPicked] = useState<{ key: string; at: number } | null>(null)
   const [playing, setPlaying] = useState(false)
   const stored = useReplay(currentRoot, Number(days), history)
 
-  const steps = useMemo(() => (stored ? stepsOf(stored.commits, history, stored.since) : []), [stored, history])
-  const held = useMemo(() => (stored ? verdictsAt(steps, stored.verdicts, stored.since) : []), [steps, stored])
+  const start = useMemo(() => (stored ? startOf(stored.since, stored.capped, history, stored.verdicts) : null), [stored, history])
+  const steps = useMemo(() => (stored && start ? stepsOf(stored.commits, history, start.at) : []), [stored, start, history])
+  const filed = useMemo(() => verdictsAt(steps, stored?.verdicts ?? [], start?.at ?? Infinity), [steps, stored, start])
   const last = steps.length - 1
-  const at = picked === null ? last : Math.min(picked, last)
+  const found = picked ? steps.findIndex((item) => item.key === picked.key) : -1
+  const at = !picked ? last : found >= 0 ? found : stepAt(steps, picked.at)
+  const go = (index: number) => {
+    const target = steps[index]
+    if (target) setPicked({ key: target.key, at: target.at })
+  }
   const lit = useMemo(() => (tree ? light(tree, steps, at) : null), [tree, steps, at])
 
   useEffect(() => {
@@ -51,9 +66,10 @@ export default function ReplayView({ theme, show }: ViewProps) {
   useEffect(() => {
     if (!playing) return
     if (at >= last) return setPlaying(false)
-    const timer = setTimeout(() => setPicked(at + 1), PLAY_MS)
+    const next = steps[at + 1]
+    const timer = setTimeout(() => next && setPicked({ key: next.key, at: next.at }), PLAY_MS)
     return () => clearTimeout(timer)
-  }, [playing, at, last])
+  }, [playing, at, last, steps])
 
   const open = useCallback(
     (file: string, line?: number) => {
@@ -77,7 +93,7 @@ export default function ReplayView({ theme, show }: ViewProps) {
   if (!currentRoot) return null
 
   const count = (kind: string) => steps.filter((step) => step.kind === kind).length
-  const rejected = held.reduce((sum, { rejected }) => sum + rejected.length, 0)
+  const rejected = filed.steps.reduce((sum, { rejected }) => sum + rejected.length, filed.before.rejected.length)
   const step = steps[at]
 
   return (
@@ -94,7 +110,7 @@ export default function ReplayView({ theme, show }: ViewProps) {
             : `${plural(steps.length, 'step')}: ${plural(count('commit'), 'commit')}, ${plural(count('code'), 'code change')}, ${plural(count('contract'), 'contract change')}, ${plural(rejected, 'rejected verdict')}`}
         </p>
         <div className="fn-sort" role="group" aria-label="Play">
-          <button className="mode" disabled={at <= 0} onClick={() => setPicked(at - 1)}>
+          <button className="mode" disabled={at <= 0} onClick={() => go(at - 1)}>
             Back
           </button>
           <button
@@ -102,13 +118,13 @@ export default function ReplayView({ theme, show }: ViewProps) {
             aria-pressed={playing}
             disabled={steps.length < 2}
             onClick={() => {
-              if (!playing && at >= last) setPicked(0)
+              if (!playing && at >= last) go(0)
               setPlaying(!playing)
             }}
           >
             {playing ? 'Pause' : 'Play'}
           </button>
-          <button className="mode" disabled={at >= last} onClick={() => setPicked(at + 1)}>
+          <button className="mode" disabled={at >= last} onClick={() => go(at + 1)}>
             Next
           </button>
         </div>
@@ -117,14 +133,17 @@ export default function ReplayView({ theme, show }: ViewProps) {
 
       {stored?.error && <p className="fn-notice">{stored.error}</p>}
       {error && <p className="fn-notice">{error}</p>}
-      {stored?.capped && (
+      {start && CUT[start.by] && (
         <p className="fn-notice">
-          Showing the newest {LIMIT.toLocaleString()} commits of the window, back to {when(stored.since)}.
+          {CUT[start.by]} {when(start.at)}.
         </p>
       )}
 
       {stored && steps.length === 0 ? (
-        <p className="fn-empty">No commits or recorded changes in the last {days} days.</p>
+        <div className="replay-readout">
+          <p className="fn-empty">No commits or recorded changes in the last {days} days.</p>
+          <Verdicts title="check_change verdicts in the window" held={filed.before} />
+        </div>
       ) : (
         <>
           <div className="replay-body">
@@ -133,21 +152,29 @@ export default function ReplayView({ theme, show }: ViewProps) {
             ) : (
               <p className="fn-empty">Reading functions…</p>
             )}
-            {step && held[at] && (
-              <Readout step={step} index={at} total={steps.length} held={held[at]} found={lit?.found ?? 0} onOpen={open} />
+            {step && filed.steps[at] && (
+              <Readout
+                step={step}
+                index={at}
+                total={steps.length}
+                held={filed.steps[at]}
+                before={at === 0 ? filed.before : undefined}
+                found={lit?.found ?? 0}
+                onOpen={open}
+              />
             )}
           </div>
           <p className="map-grouped">
-            Strong tiles changed at this step, faint tiles changed earlier in the window. Red marks are rejected check_change
+            Strong tiles changed at this step, faint tiles at an earlier step of the timeline. Red marks are rejected check_change
             verdicts.
           </p>
           <Track
             steps={steps}
             at={at}
-            held={held}
+            filed={filed}
             onAt={(next) => {
               setPlaying(false)
-              setPicked(next)
+              go(next)
             }}
           />
         </>

@@ -23,8 +23,8 @@ describe('replay verdicts', () => {
     expect([stepAt(steps, 50), stepAt(steps, 100), stepAt(steps, 250), stepAt(steps, 900)]).toEqual([0, 0, 1, 2])
   })
 
-  it('files each verdict under the last step at or before it, oldest first', () => {
-    const held = verdictsAt(
+  it('files each verdict under the last step at or before it, and earlier ones before the first step', () => {
+    const { before, steps: held } = verdictsAt(
       steps,
       [
         verdict('late', 900, 'forbidden'),
@@ -34,11 +34,12 @@ describe('replay verdicts', () => {
       ],
       0,
     )
-    expect(held.map(({ all }) => ids(all))).toEqual([['first', 'early'], [], ['late']])
+    expect(ids(before.all)).toEqual(['first', 'early'])
+    expect(held.map(({ all }) => ids(all))).toEqual([[], [], ['late']])
   })
 
   it('marks every verdict but allowed and unknown as rejected', () => {
-    const held = verdictsAt(
+    const { steps: held } = verdictsAt(
       steps,
       [
         verdict('a', 100, 'allowed'),
@@ -51,7 +52,8 @@ describe('replay verdicts', () => {
     expect(ids(held[0]?.rejected ?? [])).toEqual(['f', 'd'])
   })
 
-  it('holds no verdicts when there are no steps', () => {
-    expect(verdictsAt([], [verdict('v', 1, 'forbidden')], 0)).toEqual([])
+  it('keeps every verdict in the window before the first step when there are no steps', () => {
+    const { before, steps: held } = verdictsAt([], [verdict('v', 1, 'forbidden'), verdict('old', -1, 'forbidden')], 0)
+    expect([ids(before.rejected), held]).toEqual([['v'], []])
   })
 })

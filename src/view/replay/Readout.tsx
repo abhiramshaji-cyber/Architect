@@ -38,16 +38,33 @@ export function verdictText({ from, to, file, verdict, stale }: VerdictRecord): 
   return `${asked} ${said}${stale ? ' (stale contract)' : ''}`
 }
 
+export function Verdicts({ title, held }: { title: string; held: Held }) {
+  if (held.all.length === 0) return null
+  return (
+    <>
+      <p className="replay-meta">{title}</p>
+      <ul className="replay-verdicts">
+        {held.all.map((record) => (
+          <li key={record.id} className={held.rejected.includes(record) ? 'rejected' : undefined}>
+            <span className="replay-at">{when(record.at)}</span> {verdictText(record)}
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
 type Props = {
   step: Step
   index: number
   total: number
   held: Held
+  before?: Held
   found: number
   onOpen: (file: string) => void
 }
 
-export default function Readout({ step, index, total, held, found, onOpen }: Props) {
+export default function Readout({ step, index, total, held, before, found, onOpen }: Props) {
   return (
     <aside className="replay-readout" aria-live="polite">
       <p className="replay-when">
@@ -73,18 +90,8 @@ export default function Readout({ step, index, total, held, found, onOpen }: Pro
           </ul>
         </>
       )}
-      {held.all.length > 0 && (
-        <>
-          <p className="replay-meta">check_change verdicts until the next step</p>
-          <ul className="replay-verdicts">
-            {held.all.map((record) => (
-              <li key={record.id} className={held.rejected.includes(record) ? 'rejected' : undefined}>
-                <span className="replay-at">{when(record.at)}</span> {verdictText(record)}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      {before && <Verdicts title="check_change verdicts before this step" held={before} />}
+      <Verdicts title="check_change verdicts until the next step" held={held} />
     </aside>
   )
 }

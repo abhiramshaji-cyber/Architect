@@ -17,6 +17,7 @@ import {
   type FunctionList,
   type Recency,
   type HistoryEntry,
+  HISTORY_LIMIT,
   historyEntrySchema,
   type VerdictRecord,
   verdictRecordSchema,
@@ -58,7 +59,6 @@ import { checkFile } from './rules/proposed'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
 
-const HISTORY_LIMIT = 200
 
 const MAX_SOURCE_LINES = 400
 

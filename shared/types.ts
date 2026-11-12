@@ -131,6 +131,8 @@ export type VerdictRecord = z.infer<typeof verdictRecordSchema>
 
 export type Decision = { status: 'approved' } | { status: 'rejected'; reason: string } | { status: 'pending'; id: string }
 
+export const HISTORY_LIMIT = 200
+
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
 
 export const EDIT_TIMEOUT_MS = 9 * 60 * 1000

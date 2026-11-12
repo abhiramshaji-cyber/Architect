@@ -53,6 +53,11 @@ describe('replay light', () => {
     expect(found).toBe(0)
   })
 
+  it('dims every tile of a component an earlier contract step changed', () => {
+    const { values } = light(tree, [step([], ['core']), step(['src/a.ts'])], 1)
+    expect([values.get('c1'), values.get('core'), values.get('a1'), values.get('b1')]).toEqual([EARLIER, EARLIER, 1, null])
+  })
+
   it('lights nothing past the last step', () => {
     const { values } = light(tree, [step(['src/a.ts'])], 5)
     expect(values.get('a1')).toBe(EARLIER)
