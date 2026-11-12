@@ -13,11 +13,19 @@ const RULE_SYNTAX = [
   '- jobs: N `glob`             at most N unrelated groups of exported functions per file under the glob',
 ]
 
-function filesBlock(map: CodeMap): string[] {
-  const found = evidence(map)
+function filesBlock(map: CodeMap, scope: string): string[] {
+  const found = evidence(map, scope)
   const names = new Map<string, string[]>()
   for (const { row } of found.functions) names.set(row.file, [...(names.get(row.file) ?? []), row.name])
-  return found.files.map((file) => (names.has(file) ? `${file}: ${names.get(file)?.join(', ')}` : file))
+
+  const folders = new Map<string, string[]>()
+  for (const file of found.files) {
+    const at = file.lastIndexOf('/')
+    const folder = at === -1 ? '.' : file.slice(0, at)
+    const shown = names.has(file) ? `${file.slice(at + 1)} (${names.get(file)?.join(', ')})` : file.slice(at + 1)
+    folders.set(folder, [...(folders.get(folder) ?? []), shown])
+  }
+  return [...folders].map(([folder, files]) => `${folder}: ${files.join('; ')}`)
 }
 
 export type Known = { architecture: Architecture | null; rules: string[]; measured: Convention[] }
@@ -27,7 +35,7 @@ function promptOf(map: CodeMap, { architecture, rules, measured }: Known): strin
   return [
     'Suggest the conventions this codebase already follows that a fixed size or naming rule does not capture, so new code can follow them too.',
     'A convention is a pattern most files of one area share: how files and functions are named, where a kind of code lives, how a folder is laid out.',
-    'Only suggest a convention that the files listed below show. Name the files that show it, copied exactly from the list.',
+    'Only suggest a convention that the files listed below show. Name the files that show it by their full path: the folder, a slash, then the file name.',
     '',
     'Reply with one JSON object and nothing else, no prose around it and no markdown fence:',
     '{"conventions": [{"title": "...", "detail": "...", "files": ["..."], "rule": "..."}]}',
@@ -53,9 +61,9 @@ function promptOf(map: CodeMap, { architecture, rules, measured }: Known): strin
     ...(components.length > 0 ? components : ['none drawn']),
     '</components>',
     '',
-    'Each line is a code file and the functions Architect parsed in it.',
+    'Each line is a folder, then its files, each with the functions Architect parsed in it.',
     '<files>',
-    ...filesBlock(map),
+    ...filesBlock(map, architecture?.scope ?? ''),
     '</files>',
   ].join('\n')
 }
@@ -64,7 +72,7 @@ function suggestion(row: unknown, known: Set<string>): Convention | null {
   if (typeof row !== 'object' || row === null) return null
   const item = row as Record<string, unknown>
   const text = (key: string) => (typeof item[key] === 'string' ? scrub(item[key] as string) : '')
-  const files = Array.isArray(item.files) ? [...new Set(item.files.filter((file): file is string => typeof file === 'string' && known.has(file)))] : []
+  const files = Array.isArray(item.files) ? [...new Set(item.files.flatMap((file) => (typeof file === 'string' && known.has(file.replace(/^\.\//, '')) ? [file.replace(/^\.\//, '')] : [])))] : []
   const title = text('title').split('\n')[0]?.trim() ?? ''
   if (title === '' || files.length === 0) return null
 
@@ -72,11 +80,11 @@ function suggestion(row: unknown, known: Set<string>): Convention | null {
   return { source: 'ai', title, detail: text('detail'), files, ...(rule === '' ? {} : { rule }) }
 }
 
-export async function suggestConventions(root: string, map: CodeMap, known: Known, run: ClaudeRun = runClaude): Promise<DraftResult<Convention[]>> {
+export async function suggestConventions(root: string, map: CodeMap, known: Known, run: ClaudeRun = runClaude, signal?: AbortSignal): Promise<DraftResult<Convention[]>> {
   const files = new Set(map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
   if (files.size === 0) return { ok: false, error: { kind: 'nothing-to-draft' } }
 
-  const out = await run(promptOf(map, known), root, TIMEOUT_MS)
+  const out = await run(promptOf(map, known), root, TIMEOUT_MS, undefined, signal)
   if (out.code === 'missing') return { ok: false, error: { kind: 'not-installed' } }
   if (out.code === 'timeout') return { ok: false, error: { kind: 'timed-out' } }
   if (out.code !== 0) return { ok: false, error: { kind: 'failed', code: out.code, stderr: out.stderr.trim().slice(0, MAX_STDERR) } }

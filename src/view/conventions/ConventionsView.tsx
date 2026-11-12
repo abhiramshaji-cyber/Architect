@@ -7,8 +7,8 @@ import Card from './Card'
 import { useConventions } from './useConventions'
 
 export default function ConventionsView({ show }: ViewProps) {
-  const { currentRoot, architecture, codeMap } = useProject()
-  const { state, error, ai, toggle, suggest, promote } = useConventions(currentRoot, architecture, codeMap)
+  const { currentRoot, architecture } = useProject()
+  const { state, error, ai, toggle, suggest, promote } = useConventions(currentRoot, architecture)
 
   const showLatest = useRef(show)
   showLatest.current = show

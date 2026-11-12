@@ -8,7 +8,7 @@ const idle: Ai = { busy: false, found: null, error: null }
 
 const text = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
-export function useConventions(root: string | null, architecture: unknown, codeMap: unknown) {
+export function useConventions(root: string | null, architecture: unknown) {
   const [state, setState] = useState<Conventions | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ai, setAi] = useState<Ai>(idle)
@@ -29,7 +29,7 @@ export function useConventions(root: string | null, architecture: unknown, codeM
     return () => {
       live = false
     }
-  }, [root, architecture, codeMap])
+  }, [root, architecture])
 
   const toggle = useCallback(() => {
     if (!root || !state) return

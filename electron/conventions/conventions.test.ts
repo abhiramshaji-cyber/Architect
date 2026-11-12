@@ -4,7 +4,6 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Architecture, CodeMap, FileEntry } from '../../shared/types'
 import type { ClaudeRun } from '../draft/draft'
-import { auditRules } from '../rules/audit'
 import type { SourceFacts } from '../rules/facts'
 import { conventionsOf, promoteConvention, suggestedConventions, switchConventions } from '.'
 import { impactOf } from './impact'
@@ -95,10 +94,9 @@ describe('promoted', () => {
 describe('impactOf', () => {
   it('lists the violations a rule adds and the ones it lifts', () => {
     const sources = [facts('a/x.ts', 300), facts('b/y.ts', 150)]
-    const before = auditRules(undefined, sources)
-    const tighter = impactOf(before, undefined, sources, undefined, { rule: 'lines', limit: 100, globs: ['b/**'] })
+    const tighter = impactOf(undefined, sources, undefined, { rule: 'lines', limit: 100, globs: ['b/**'] })
     expect(tighter.flags.map((v) => v.path)).toEqual(['b/y.ts'])
-    const looser = impactOf(before, undefined, sources, undefined, { rule: 'lines', limit: 400, globs: [] })
+    const looser = impactOf(undefined, sources, undefined, { rule: 'lines', limit: 400, globs: [] })
     expect(looser).toEqual({ flags: [], clears: [expect.objectContaining({ path: 'a/x.ts' })] })
   })
 })
@@ -148,7 +146,7 @@ describe('suggestedConventions', () => {
 
     const result = await suggestedConventions(dir, load, run)
     expect(run).toHaveBeenCalledOnce()
-    expect(run.mock.calls[0]?.[0]).toContain('a/x.ts')
+    expect(run.mock.calls[0]?.[0]).toContain('a: x.ts; y.ts')
     if (!result.ok) throw new Error('expected suggestions')
     expect(result.value.map((c) => c.title)).toEqual(['Small files', 'Odd rule', 'Plain'])
     expect(result.value[0]).toMatchObject({ source: 'ai', files: ['a/x.ts'], rule: '- lines: 100 `a/**`' })
@@ -163,6 +161,41 @@ describe('suggestedConventions', () => {
     const load = async () => ({ root: dir, map: mapOf('a/x.ts'), architecture: null })
     expect(await suggestedConventions(dir, load, async () => ({ code: 'missing', stdout: '', stderr: '' }))).toEqual({ ok: false, error: { kind: 'not-installed' } })
     expect(await suggestedConventions(dir, load, async () => ({ code: 0, stdout: 'sure!', stderr: '' }))).toMatchObject({ ok: false, error: { kind: 'unusable' } })
+  })
+})
+
+describe('stopping a running ask', () => {
+  it('kills the model call when switched off, and reports it stopped', async () => {
+    on()
+    write('a/x.ts', 1)
+    const load = async () => ({ root: dir, map: mapOf('a/x.ts'), architecture: null })
+    let seen: AbortSignal | undefined
+    const run: ClaudeRun = (_prompt, _cwd, _ms, _model, signal) =>
+      new Promise((resolve) => {
+        seen = signal
+        signal?.addEventListener('abort', () => resolve({ code: 1, stdout: '', stderr: '' }))
+      })
+
+    const asked = suggestedConventions(dir, load, run)
+    await vi.waitFor(() => expect(seen).toBeDefined())
+    await switchConventions(dir, false, load)
+    expect(seen?.aborted).toBe(true)
+    await expect(asked).rejects.toThrow(/stopped/)
+  })
+
+  it('groups the prompt by folder inside the contract scope and accepts a ./ path', async () => {
+    on()
+    write('pkg/a/x.ts', 1)
+    write('other/y.ts', 1)
+    write('top.ts', 1)
+    const run = vi.fn<ClaudeRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify({ conventions: [{ title: 'T', detail: '', files: ['./top.ts'], rule: '' }] }), stderr: '' })
+    const architecture = { ...drawn([]), scope: 'pkg' }
+    await suggestedConventions(dir, async () => ({ root: dir, map: mapOf('pkg/a/x.ts', 'other/y.ts'), architecture }), run)
+    expect(run.mock.calls[0]?.[0]).toContain('pkg/a: x.ts')
+    expect(run.mock.calls[0]?.[0]).not.toContain('y.ts')
+
+    const loose = await suggestedConventions(dir, async () => ({ root: dir, map: mapOf('top.ts'), architecture: null }), run)
+    expect(loose.ok && loose.value[0]?.files).toEqual(['top.ts'])
   })
 })
 

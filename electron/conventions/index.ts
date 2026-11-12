@@ -4,7 +4,7 @@ import { readSettings, saveSettings } from '../../shared/settings'
 import type { Architecture, CodeMap, Convention, Conventions, DraftResult } from '../../shared/types'
 import { suggestConventions } from '../draft/conventions'
 import type { ClaudeRun } from '../draft/draft'
-import { auditRules, effective } from '../rules/audit'
+import { effective } from '../rules/audit'
 import { type SourceFacts, sourcesIn } from '../rules/facts'
 import { ruleLine } from '../rules/syntax'
 import { impactOf } from './impact'
@@ -14,6 +14,8 @@ import { promoted, ruleOf } from './promote'
 export type Project = { root: string; map: CodeMap; architecture: Architecture | null }
 
 const settingsIn = (dir: string) => path.join(dir, 'settings.json')
+
+let asking: AbortController | null = null
 
 function on(dir: string): boolean {
   return readSettings(settingsIn(dir)).conventions
@@ -25,12 +27,10 @@ function ensureOn(dir: string): void {
 
 function weighed(architecture: Architecture | null, sources: SourceFacts[], found: Convention[]): Convention[] {
   const { rules, scope } = architecture ?? {}
-  const before = auditRules(rules, sources, scope)
-
   return found.map((convention) => {
     if (convention.rule === undefined) return convention
     const entry = ruleOf(convention.rule)
-    if (typeof entry !== 'string') return { ...convention, rule: ruleLine(entry), impact: impactOf(before, rules, sources, scope, entry) }
+    if (typeof entry !== 'string') return { ...convention, rule: ruleLine(entry), impact: impactOf(rules, sources, scope, entry) }
 
     const { rule, ...rest } = convention
     return { ...rest, unusable: `${rule}: ${entry}` }
@@ -46,6 +46,7 @@ export async function conventionsOf(dir: string, load: () => Promise<Project>): 
 
 export function switchConventions(dir: string, enabled: boolean, load: () => Promise<Project>): Promise<Conventions> {
   saveSettings(settingsIn(dir), { conventions: enabled })
+  if (!enabled) asking?.abort()
   return conventionsOf(dir, load)
 }
 
@@ -55,7 +56,13 @@ export async function suggestedConventions(dir: string, load: () => Promise<Proj
   const sources = sourcesIn(root, map)
   const known = { architecture, rules: effective(architecture?.rules).map(ruleLine), measured: measured(architecture, sources) }
 
-  const result = await suggestConventions(root, map, known, run)
+  asking?.abort()
+  const ask = new AbortController()
+  asking = ask
+  const result = await suggestConventions(root, map, known, run, ask.signal).finally(() => {
+    if (asking === ask) asking = null
+  })
+  if (ask.signal.aborted) throw new Error('the request for suggestions was stopped before Claude Code replied')
   return result.ok ? { ok: true, value: weighed(architecture, sources, result.value) } : result
 }
 
