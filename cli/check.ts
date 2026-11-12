@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { writeAgents } from '../electron/agents/write'
-import { check, ownership, parse } from '../electron/contract/graph'
+import { check, parse } from '../electron/contract/graph'
+import { crossings } from '../electron/layers/crossings'
 import { auditRules } from '../electron/rules/audit'
 import { factsOf, type SourceFacts } from '../electron/rules/facts'
 import { readRuns, recordRuns } from '../electron/rules/runs'
@@ -18,43 +19,19 @@ export const OK = 0
 export const VIOLATED = 1
 export const USAGE = 2
 
-function ownersByPath(architecture: Architecture, files: string[]): Map<string, string[]> {
-  const { owned, multi } = ownership(files, architecture.components)
-  const map = new Map<string, string[]>()
-
-  for (const entry of owned) map.set(entry.path, [entry.owner])
-  for (const entry of multi) map.set(entry.path, entry.owners)
-
-  return map
-}
-
 export function audit(architecture: Architecture, map: CodeMap): Violation[] {
-  const files = map.folders.flatMap((folder) => folder.files)
-  const owners = ownersByPath(architecture, files.map((file) => file.path))
   const found = new Map<string, Violation>()
 
-  for (const file of files) {
-    const from = owners.get(file.path) ?? []
+  for (const { from, to, call } of crossings(map, architecture)) {
+    const verdict = check(architecture, from, to)
+    if (verdict.status === 'allowed') continue
 
-    for (const call of file.functions.flatMap((fn) => fn.calls)) {
-      if (call.file === file.path) continue
-      const to = owners.get(call.file) ?? []
-
-      for (const a of from) {
-        for (const b of to) {
-          if (a === b) continue
-          const verdict = check(architecture, a, b)
-          if (verdict.status === 'allowed') continue
-
-          const key = `${a} -> ${b}`
-          const existing = found.get(key) ?? { from: a, to: b, verdict, evidence: [] }
-          if (!existing.evidence.some((e) => e.from === file.path && e.to === call.file)) {
-            existing.evidence.push({ from: file.path, to: call.file })
-          }
-          found.set(key, existing)
-        }
-      }
+    const key = `${from} -> ${to}`
+    const existing = found.get(key) ?? { from, to, verdict, evidence: [] }
+    if (!existing.evidence.some((e) => e.from === call.file && e.to === call.target)) {
+      existing.evidence.push({ from: call.file, to: call.target })
     }
+    found.set(key, existing)
   }
 
   return [...found.values()].sort((a, b) => `${a.from} -> ${a.to}`.localeCompare(`${b.from} -> ${b.to}`))

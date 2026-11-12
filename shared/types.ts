@@ -68,12 +68,7 @@ export type AgentsReport = { written: string[]; unchanged: string[]; removed: st
 
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
-export type SourceWindow = {
-  from: number
-  lines: string[]
-  total: number
-  error: SourceError | null
-}
+export type SourceWindow = { from: number; lines: string[]; total: number; error: SourceError | null }
 
 export type SourceFile = { text: string; hash: string; error: SourceError | null }
 
@@ -93,6 +88,12 @@ export type Ownership = {
   multi: { path: string; owners: string[] }[]
   dead: { component: string; pattern: string }[]
 }
+
+export type LayerStatus = 'allowed' | 'forbidden' | 'undrawn' | 'stale' | 'free'
+export type LayerCall = { file: string; line: number; fn: string; target: string; targetLine: number; targetFn: string }
+export type LayerCell = { from: string; to: string; status: LayerStatus; verdict?: Verdict; calls: LayerCall[] }
+export type LayerRow = { id: string; level: number; block: number }
+export type Layers = { contract: boolean; rows: LayerRow[]; cells: LayerCell[] }
 
 export const proposalSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
@@ -151,10 +152,7 @@ export const verdictRecordSchema = z.object({
 
 export type VerdictRecord = z.infer<typeof verdictRecordSchema>
 
-export type Decision =
-  | { status: 'approved' }
-  | { status: 'rejected'; reason: string }
-  | { status: 'pending'; id: string }
+export type Decision = { status: 'approved' } | { status: 'rejected'; reason: string } | { status: 'pending'; id: string }
 
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -584,6 +582,7 @@ export type ArchitectApi = {
   getCodeMap(root: string): Promise<CodeMap | null>
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
+  layers(root: string): Promise<Layers>
   recency(root: string): Promise<Recency>
   churn(root: string, days?: number): Promise<import('./recency').Churn>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
