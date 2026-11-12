@@ -12,7 +12,7 @@ import { useMap } from '../map/useMap'
 import Readout, { Verdicts, when } from './Readout'
 import { light } from './timeline/light'
 import { stepsOf } from './timeline/steps'
-import { type Start, startOf } from './timeline/start'
+import { type Recorded, recordedFrom } from './timeline/recorded'
 import { stepAt, verdictsAt } from './timeline/verdicts'
 import Track from './Track'
 import { LIMIT, useReplay } from './useReplay'
@@ -27,11 +27,9 @@ const WINDOWS: { key: Days; label: string }[] = [
 
 const PLAY_MS = 700
 
-const CUT: Record<Start['by'], string | null> = {
-  window: null,
-  commits: `Showing the newest ${LIMIT.toLocaleString()} commits of the window, so the timeline starts at`,
-  history: `The change history keeps only the newest ${HISTORY_LIMIT} entries, so the timeline starts at`,
-  verdicts: `The verdict record keeps only the newest ${HISTORY_LIMIT} verdicts, so the timeline starts at`,
+const KEPT: Record<Recorded['by'], string> = {
+  history: `The change history is at its limit of ${HISTORY_LIMIT} entries, so code and contract changes before`,
+  verdicts: `The verdict record is at its limit of ${HISTORY_LIMIT} verdicts, so check_change verdicts before`,
 }
 
 export default function ReplayView({ theme, show }: ViewProps) {
@@ -42,9 +40,9 @@ export default function ReplayView({ theme, show }: ViewProps) {
   const [playing, setPlaying] = useState(false)
   const stored = useReplay(currentRoot, Number(days))
 
-  const start = useMemo(() => (stored ? startOf(stored.since, stored.capped, history, stored.verdicts) : null), [stored, history])
-  const steps = useMemo(() => (stored && start ? stepsOf(stored.commits, history, start.at) : []), [stored, start, history])
-  const filed = useMemo(() => verdictsAt(steps, stored?.verdicts ?? [], start?.at ?? Infinity), [steps, stored, start])
+  const recorded = useMemo(() => (stored ? recordedFrom(history, stored.verdicts) : null), [stored, history])
+  const steps = useMemo(() => (stored ? stepsOf(stored.commits, history, stored.since) : []), [stored, history])
+  const filed = useMemo(() => verdictsAt(steps, stored?.verdicts ?? [], stored?.since ?? Infinity), [steps, stored])
   const last = steps.length - 1
   const found = picked ? steps.findIndex((item) => item.key === picked.key) : -1
   const at = !picked ? last : found >= 0 ? found : stepAt(steps, picked.at)
@@ -133,9 +131,14 @@ export default function ReplayView({ theme, show }: ViewProps) {
 
       {stored?.error && <p className="fn-notice">{stored.error}</p>}
       {error && <p className="fn-notice">{error}</p>}
-      {start && CUT[start.by] && (
+      {stored?.capped && (
         <p className="fn-notice">
-          {CUT[start.by]} {when(start.at)}.
+          Showing the newest {LIMIT.toLocaleString()} commits of the window, back to {when(stored.since)}.
+        </p>
+      )}
+      {recorded && (
+        <p className="fn-notice">
+          {KEPT[recorded.by]} {when(recorded.at)} may be missing; the shaded part of the timeline is before it.
         </p>
       )}
 
@@ -172,6 +175,7 @@ export default function ReplayView({ theme, show }: ViewProps) {
             steps={steps}
             at={at}
             filed={filed}
+            recorded={recorded?.at ?? null}
             onAt={(next) => {
               setPlaying(false)
               go(next)

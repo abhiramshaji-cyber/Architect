@@ -47,20 +47,26 @@ export function useReplay(root: string | null, days: number): Stored | null {
   useEffect(() => {
     if (!root) return
     let live = true
+    let busy = false
     const keep = (found: Stored) => live && setStored((held) => (sameAs(held, found) ? held : found))
     const refresh = () => {
-      if (document.visibilityState === 'hidden') return
-      read(root, days).then(keep, (err: unknown) =>
-        keep({
-          root,
-          days,
-          since: Date.now() - days * DAY_MS,
-          commits: [],
-          capped: false,
-          verdicts: [],
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      )
+      if (busy || document.visibilityState === 'hidden') return
+      busy = true
+      read(root, days)
+        .then(keep, (err: unknown) =>
+          keep({
+            root,
+            days,
+            since: Date.now() - days * DAY_MS,
+            commits: [],
+            capped: false,
+            verdicts: [],
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        )
+        .finally(() => {
+          busy = false
+        })
     }
 
     refresh()

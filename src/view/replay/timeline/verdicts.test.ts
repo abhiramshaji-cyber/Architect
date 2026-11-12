@@ -3,7 +3,15 @@ import type { VerdictRecord } from '../../../../shared/types'
 import type { Step } from './steps'
 import { stepAt, verdictsAt } from './verdicts'
 
-const step = (at: number): Step => ({ key: `s${at}`, at, kind: 'commit', files: ['a.ts'], components: [], contract: [], title: '' })
+const step = (at: number): Step => ({
+  key: `s${at}`,
+  at,
+  kind: 'commit',
+  files: ['a.ts'],
+  components: [],
+  contract: [],
+  title: '',
+})
 
 const verdict = (id: string, at: number, status: 'allowed' | 'forbidden' | 'unknown' | 'undrawn-edge'): VerdictRecord => ({
   id,

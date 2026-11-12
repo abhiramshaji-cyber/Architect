@@ -7,10 +7,11 @@ type Props = {
   steps: Step[]
   at: number
   filed: Filed
+  recorded: number | null
   onAt: (at: number) => void
 }
 
-export default function Track({ steps, at, filed, onAt }: Props) {
+export default function Track({ steps, at, filed, recorded, onAt }: Props) {
   const last = steps.length - 1
   const place = (index: number) => (last <= 0 ? 50 : (index / last) * 100)
   const clamp = (index: number) => Math.min(last, Math.max(0, index))
@@ -37,6 +38,9 @@ export default function Track({ steps, at, filed, onAt }: Props) {
     { ...filed.before, index: 0, where: 'before' },
     ...filed.steps.map((held: Held, index) => ({ ...held, index, where: `${index}` })),
   ].filter(({ rejected }) => rejected.length > 0)
+
+  const kept = recorded === null ? 0 : steps.findIndex((item) => item.at >= recorded)
+  const unrecorded = kept < 0 ? 100 : kept === 0 ? 0 : place(kept - 0.5)
 
   const step = steps[at]
   return (
@@ -72,6 +76,7 @@ export default function Track({ steps, at, filed, onAt }: Props) {
         onPointerMove={(event) => event.buttons === 1 && seek(event)}
       >
         <div className="replay-fill" style={{ width: `${place(at)}%` }} />
+        {recorded !== null && <div className="replay-unrecorded" style={{ width: `${unrecorded}%` }} />}
         <svg className="replay-ticks" preserveAspectRatio="none" viewBox="0 0 100 10">
           {steps.map((item, index) => (
             <line key={item.key} className={`replay-tick ${item.kind}`} x1={place(index)} x2={place(index)} y1={2} y2={8} />
