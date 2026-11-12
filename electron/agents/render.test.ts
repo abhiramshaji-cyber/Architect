@@ -101,6 +101,7 @@ describe('renderAgents content', () => {
         '- files: 5',
         '- names: Manager, Helper, Service, Factory, Base',
         '- jobs: 1',
+        '- split: 50 lines, 3 callers',
         '- skip: `**/*.test.*`, `**/*.spec.*`',
         '- lines: 300',
         '- lines: 900 `src/api/big.ts`',

@@ -2,9 +2,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Architecture, RuleEntry, RuleViolation } from '../../shared/types'
 import { functionsIn, IGNORED_DIRS } from '../scan/scan'
-import { auditRules, folderOf } from './audit'
+import { auditRules, effective, folderOf } from './audit'
 import { factsOf, type SourceFacts } from './facts'
 import { recordRuns } from './runs'
+import { fileSplit } from './split/files'
+
+const SPLITTABLE = new Set(['lines', 'jobs'])
 
 export function proposedViolations(
   declared: RuleEntry[] | undefined,
@@ -30,8 +33,7 @@ function readText(file: string): string | undefined {
   }
 }
 
-function filesBeside(root: string, file: string): string[] {
-  const folder = folderOf(file)
+function filesIn(root: string, folder: string): string[] {
   try {
     return fs
       .readdirSync(path.join(root, folder), { withFileTypes: true })
@@ -40,6 +42,10 @@ function filesBeside(root: string, file: string): string[] {
   } catch {
     return []
   }
+}
+
+function codeIn(root: string, folder: string): string[] {
+  return filesIn(root, folder).filter((file) => factsOf(file, () => '', () => []) !== null)
 }
 
 function onDisk(target: string): string {
@@ -72,7 +78,10 @@ export function proposedFile(
   const before = factsOf(relative, () => readText(path.join(root, relative)), parse)
   const scanned = relative.split('/').slice(0, -1).every((part) => !IGNORED_DIRS.has(part) && !part.startsWith('.'))
   const after = scanned ? factsOf(relative, () => content, parse) : null
-  return { relative, violations: after ? proposedViolations(rules, scope, filesBeside(root, relative), before, after) : [] }
+  const found = after ? proposedViolations(rules, scope, filesIn(root, folderOf(relative)), before, after) : []
+  const splittable = (violation: RuleViolation) => violation.path === relative && SPLITTABLE.has(violation.rule)
+  const split = after && found.some(splittable) ? fileSplit(effective(rules), after, (folder) => codeIn(root, folder)) : null
+  return { relative, violations: found.map((violation) => (split && splittable(violation) ? { ...violation, split } : violation)) }
 }
 
 export function checkFile(cacheDir: string, root: string, architecture: Architecture, file: string, content: string): RuleViolation[] {
