@@ -12,6 +12,7 @@ import {
   type PtySpec,
   type PullDraft,
 } from '../../shared/types'
+import { couplingOf } from '../coupling'
 import type { createDaemon } from '../daemon'
 import * as message from '../draft/message'
 import * as diff from '../git/diff'
@@ -69,6 +70,9 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>) {
   handle('architect:layers', (root: string) => daemon.layers(root))
   handle('architect:recency', (root: string) => daemon.recency(root))
   handle('architect:churn', (root: string, days?: unknown) => daemon.churn(root, days))
+  handle('architect:coupling', async (root: string, ask?: unknown) =>
+    couplingOf(root, daemon.codeMap(root) ?? (await daemon.rescan(root)), daemon.history(root), ask),
+  )
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
   )
