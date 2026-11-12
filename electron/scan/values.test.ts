@@ -90,6 +90,13 @@ describe('value references', () => {
     expect(valuesOf(map, 'src/main.tsx')).toEqual(['src/main.tsx:Boundary.render', 'src/pages/a.ts:page'])
   })
 
+  it('records the members of a class passed as a value or registered by a decorator', async () => {
+    const map = await mapOf({
+      'a.ts': "customElements.define('x-y', class { connected() {} })\n@register('x')\nexport class Lit { paint() {} }\nfunction register(_: string) { return (c: unknown) => c }\n",
+    })
+    expect(valuesOf(map, 'a.ts')).toEqual(['a.ts:Lit.paint', 'a.ts:connected'])
+  })
+
   it('records nothing for a test file', async () => {
     const map = await mapOf({ 'a.test.ts': 'function cb() {}\n[1].map(cb)\n' })
     expect(valuesOf(map, 'a.test.ts')).toEqual([])

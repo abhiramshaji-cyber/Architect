@@ -149,6 +149,19 @@ describe('a library published through package.json exports', () => {
     expect(list.tree.groups.map((group) => group.reason)).toEqual(['exports'])
   })
 
+  it('links an import from a bracketed folder and clouds a package with Vue files', async () => {
+    const { unreached, unknown } = await listOf({
+      'package.json': JSON.stringify({ exports: './src/main.ts' }),
+      'src/main.ts': "import { helper } from './[slug]/utils'\nexport function app() { return helper() }\n",
+      'src/[slug]/utils.ts': 'export function helper() { return inner() }\nfunction inner() { return 1 }\n',
+      'web/package.json': JSON.stringify({ name: 'web' }),
+      'web/src/App.vue': '<script setup>\nimport { formatDate } from "./util"\n</script>\n',
+      'web/src/util.ts': 'export function formatDate() {}\n',
+    })
+    expect(unreached).toEqual([])
+    expect(unknown).toEqual(['formatDate'])
+  })
+
   it('counts the members of an anonymous default class as library API', async () => {
     const { unreached, list } = await listOf({
       'package.json': JSON.stringify({ exports: { '.': './src/index.ts' } }),

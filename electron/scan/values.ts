@@ -103,8 +103,10 @@ function valuesIn(node: ts.Node, self: string, nested: Set<ts.Node>, lookup: Loo
   const visit = (child: ts.Node): void => {
     if ((child !== node && nested.has(child)) || isSkipped(child)) return
     for (const spec of loaded(child)) add({ spec })
-    if (ts.isObjectLiteralExpression(child) && !isNamedObject(child)) {
-      for (const property of child.properties) {
+    const passedClass = ts.isClassExpression(child) && !ts.isVariableDeclaration(child.parent)
+    const decorated = ts.isClassLike(child) && (ts.getDecorators(child)?.length ?? 0) > 0
+    if ((ts.isObjectLiteralExpression(child) && !isNamedObject(child)) || passedClass || decorated) {
+      for (const property of ts.isObjectLiteralExpression(child) ? child.properties : (child as ts.ClassLikeDeclaration).members) {
         const fn = lookup.local(property)
         if (fn !== undefined) add(fn)
       }

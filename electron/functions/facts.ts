@@ -80,6 +80,8 @@ export function entriesOf(map: CodeMap, entries: EntryFiles): Map<string, Entry>
   return best
 }
 
+const UNPARSED = /\.(vue|svelte|astro|mdx)$/
+
 function packageOf(file: string, packages: string[]): string {
   return packages.filter((dir) => within(file, dir)).reduce((deepest, dir) => (dir.length > deepest.length ? dir : deepest), '')
 }
@@ -93,11 +95,13 @@ function untracedOf(files: FileEntry[], entries: EntryFiles): Map<string, Untrac
   const imported = new Set(live.flatMap((file) => (file.imports ?? []).filter((to) => !file.typeImports?.includes(to))))
   const packages = entries.packages ?? ['']
   const computed = new Set(live.filter((file) => file.computed).map((file) => packageOf(file.path, packages)))
+  const unparsed = new Set(files.filter((file) => UNPARSED.test(file.path)).map((file) => packageOf(file.path, packages)))
   for (const file of live) {
     const orphan = !imported.has(file.path) && !entries.has(file.path)
-    const loadable = computed.has(packageOf(file.path, packages))
+    const home = packageOf(file.path, packages)
+    const reason = computed.has(home) ? 'computed' : unparsed.has(home) ? 'unparsed' : orphan ? 'orphan' : null
     file.functions.forEach((fn, at) => {
-      if (fn.exported && (orphan || loadable)) marks.set(`${file.path}\0${at}`, loadable ? 'computed' : 'orphan')
+      if (fn.exported && reason !== null) marks.set(`${file.path}\0${at}`, reason)
     })
     if (entries.opaque?.includes(packageOf(file.path, entries.packages ?? ['']))) {
       file.functions.forEach((fn, at) => {

@@ -492,7 +492,7 @@ export type DraftFailure =
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
 
-export type Untraced = 'value' | 'load' | 'export' | 'orphan' | 'computed' | 'test'
+export type Untraced = 'value' | 'load' | 'export' | 'orphan' | 'computed' | 'unparsed' | 'test'
 
 export type FunctionFacts = {
   file: string

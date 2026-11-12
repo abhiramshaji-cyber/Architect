@@ -9,6 +9,7 @@ const UNTRACED: Record<Untraced, string> = {
   export: 'exported by a package entry not mapped to source',
   orphan: 'no file outside tests imports its file',
   computed: 'its package loads modules by a computed path',
+  unparsed: 'its package has .vue, .svelte, .astro or .mdx files the scan does not parse',
   test: 'in a test file',
 }
 

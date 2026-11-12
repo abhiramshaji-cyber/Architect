@@ -124,7 +124,8 @@ export function link(root: string, parsed: Map<string, Parsed>): Map<string, Lin
       const entry = at.functions[from] ?? at.starts[from - at.functions.length]
       if (entry === undefined) continue
       const spreads = 'kind' in entry && (entry.kind === 'value' || entry.kind === 'exports')
-      const targets = /[*?[{]/.test(spec) ? globbed(file, spec, keys) : [target(file, spec)]
+      const direct = target(file, spec)
+      const targets = direct !== undefined ? [direct] : /[*?[{]/.test(spec) ? globbed(file, spec, keys) : []
       for (const to of targets) {
         if (to === undefined) continue
         const exact = find(to, key, new Set())

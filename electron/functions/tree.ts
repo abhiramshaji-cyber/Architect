@@ -36,7 +36,7 @@ function signaturesOf(rows: FunctionRow[]): number[][] {
   const signatures = rows.map((): number[] => [])
   rows.forEach((row, at) => {
     if (!row.twin) return
-    const after = (bodies.get(`${row.file}\0${row.name}`) ?? []).filter((to) => (rows[to]?.line ?? 0) > row.line)
+    const after = (bodies.get(`${row.file}\0${row.name}`) ?? []).filter((to) => to !== at && (rows[to]?.line ?? 0) >= row.line)
     const body = after.sort((a, b) => (rows[a]?.line ?? 0) - (rows[b]?.line ?? 0))[0]
     if (body !== undefined) signatures[body]?.push(at)
   })
