@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import { handled, unwrapped, type Code } from './refs'
+import { handled, unwrapped, type Call, type Code } from './refs'
 
 const EXPOSE = new Set(['exposeInMainWorld', 'exposeInIsolatedWorld'])
 
@@ -17,7 +17,7 @@ function objectNamed(source: ts.SourceFile, name: string): ts.ObjectLiteralExpre
   return hit
 }
 
-function membersOf<T>(source: ts.SourceFile, api: ts.Node, code: Code<T>, seen: Set<ts.Node>): T[] {
+function membersOf(source: ts.SourceFile, api: ts.Node, code: Code, seen: Set<ts.Node>): Call[] {
   const value = ts.isExpression(api) ? unwrapped(api) : api
   const object = ts.isIdentifier(value) ? (objectNamed(source, value.text) ?? value) : value
   if (seen.has(object)) return []
@@ -32,8 +32,8 @@ function membersOf<T>(source: ts.SourceFile, api: ts.Node, code: Code<T>, seen: 
   })
 }
 
-export function bridgedIn<T>(source: ts.SourceFile, code: Code<T>): T[] {
-  const found: T[] = []
+export function bridgedIn(source: ts.SourceFile, code: Code): Call[] {
+  const found: Call[] = []
   const visit = (node: ts.Node): void => {
     const callee = ts.isCallExpression(node) ? node.expression : undefined
     const api = ts.isCallExpression(node) ? node.arguments[node.arguments.length - 1] : undefined

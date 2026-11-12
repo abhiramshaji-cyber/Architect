@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry } from '../../shared/types'
-import { starred, startsIn } from './starts'
+import { calleeName, startsIn, type Call } from './starts'
+import { starred } from './exports'
 import { docOf, renderedTag, signatureOf } from './traits'
 
 export const IGNORED_DIRS = new Set([
@@ -23,6 +24,8 @@ const YIELD_EVERY = 50
 
 const SCRIPT_KINDS = new Map<string, ts.ScriptKind>([
   ['.ts', ts.ScriptKind.TS],
+  ['.mts', ts.ScriptKind.TS],
+  ['.cts', ts.ScriptKind.TS],
   ['.tsx', ts.ScriptKind.TSX],
   ['.js', ts.ScriptKind.JSX],
   ['.jsx', ts.ScriptKind.JSX],
@@ -88,19 +91,6 @@ function ownerFor(node: ts.Node, owner: string): string {
   }
 
   return ''
-}
-
-function calleeName(expression: ts.Expression, self: string): string | undefined {
-  if (ts.isIdentifier(expression)) return expression.text
-  if (expression.kind === ts.SyntaxKind.ThisKeyword) return self === '' ? undefined : self
-  if (ts.isParenthesizedExpression(expression)) return calleeName(expression.expression, self)
-
-  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
-    const base = calleeName(expression.expression, self)
-    return base === undefined ? undefined : `${base}.${expression.name.text}`
-  }
-
-  return undefined
 }
 
 type Found = { entry: FunctionEntry; node: ts.Node; owner: string }
@@ -278,8 +268,6 @@ function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
   return byScope
 }
 
-type Call = number | { name: string; root: string }
-
 function resolveCall(
   name: string,
   at: ts.Node,
@@ -389,23 +377,9 @@ function parseFile(source: string, file: string): Parsed {
     const byScope = bindingsOf(found)
     const shadows = shadowsOf(sourceFile)
     const imported = importBindings(sourceFile)
-    const calls = found.map((f) =>
-      callsIn(f.node, f.owner, nested, (name, at) => resolveCall(name, at, byScope, shadows, imported)),
-    )
-    const index = new Map(found.map((f, i) => [f.node, i]))
-    const opened = startsIn(
-      sourceFile,
-      found.map((f) => f.node),
-      {
-        nested,
-        local: (node) => index.get(node),
-        resolve: (expression, at) => {
-          const name = calleeName(expression, '')
-          return name === undefined ? undefined : resolveCall(name, at, byScope, shadows, imported)
-        },
-      },
-      new Map([...imported].map(([name, binding]) => [name, binding?.spec ?? ''])),
-    )
+    const resolve = (name: string, at: ts.Node) => resolveCall(name, at, byScope, shadows, imported)
+    const calls = found.map((f) => callsIn(f.node, f.owner, nested, resolve))
+    const opened = startsIn(sourceFile, found.map((f) => f.node), nested, resolve, imported)
 
     const order = found
       .map((f, i) => ({ f, i }))
@@ -447,16 +421,12 @@ function parseFile(source: string, file: string): Parsed {
     }
 
     const functions = order.map(({ f, i }, from) => ({ ...f.entry, calls: refsOf(calls[i] ?? [], from) }))
-    const starts: FileStart[] = opened.map((start, k) => ({
-      kind: start.kind,
-      calls: refsOf(start.calls, functions.length + k),
-    }))
+    const starts: FileStart[] = opened.map(({ kind, calls }, k) => ({ kind, calls: refsOf(calls, functions.length + k) }))
 
     // reexports
     if (reexports.size > 0 || stars.length > 0) {
-      const from = functions.length + starts.length
+      for (const { spec, name } of reexports.values()) if (name !== '*') pending.push({ from: functions.length + starts.length, spec, key: name })
       starts.push({ kind: 'exports', calls: [] })
-      for (const { spec, name } of reexports.values()) if (name !== '*') pending.push({ from, spec, key: name })
     }
 
     const exportedLocals = new Set(exports.values())
@@ -565,11 +535,6 @@ function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> 
 
   starred(parsed, target)
 
-  for (const at of parsed.values()) {
-    for (const start of at.starts) start.calls.sort((a, b) => a.file.localeCompare(b.file) || a.fn - b.fn)
-    at.starts = at.starts.filter((start) => start.calls.length > 0)
-  }
-
   const imports = new Map<string, string[]>()
   for (const [file, at] of parsed) {
     const resolved = [...at.specs].map((spec) => target(file, spec)).filter((to) => to !== undefined && to !== file)
@@ -656,8 +621,8 @@ export async function scan(root: string): Promise<CodeMap> {
     for (const file of folder.files) {
       const found = imports.get(file.path)
       if (found !== undefined && found.length > 0) file.imports = found
-      const starts = parsed.get(file.path)?.starts ?? []
-      if (starts.length > 0) file.starts = starts
+      const starts = parsed.get(file.path)?.starts
+      if (starts !== undefined && starts.length > 0) file.starts = starts
     }
   }
 

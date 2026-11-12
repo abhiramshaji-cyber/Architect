@@ -1,4 +1,4 @@
-import { isTestFile } from '../../shared/tests'
+import { isTestFile } from '../scan/starts'
 import type { CodeMap, Entry, EntryReason, FileEntry, FunctionFacts } from '../../shared/types'
 import type { EntryFiles } from './entries'
 

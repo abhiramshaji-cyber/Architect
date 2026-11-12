@@ -1,9 +1,19 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import type { CodeMap, EntryReason } from '../../../shared/types'
 import { builtIn, type Built } from './build'
-import { compiledFrom, declaredIn, manifestOf, type Declared } from './manifest'
+import { compiledFrom } from './compiled'
+import { declaredIn, type Declared } from './manifest'
 
 export type EntryFiles = Map<string, EntryReason[]>
+
+function manifestOf(root: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
 
 const stem = (file: string) => path.posix.basename(file, path.posix.extname(file))
 

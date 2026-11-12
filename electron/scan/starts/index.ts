@@ -1,26 +1,51 @@
 import ts from 'typescript'
-import { isTestFile } from '../../../shared/tests'
-import type { CallRef, FileStart, StartKind } from '../../../shared/types'
+import type { StartKind } from '../../../shared/types'
 import { bridgedIn } from './bridge'
 import { commandsIn } from './argv'
-import { handled, refsIn, type Code } from './refs'
+import { handled, refsIn, type Call, type Code } from './refs'
 import { registrationsIn } from './register'
 
-export type { Code } from './refs'
+export type { Call } from './refs'
 
 const REGISTERS = ['ipcMain', 'registerTool', 'McpServer', 'CallToolRequestSchema', 'command', 'action']
 
-export type Start<T> = { kind: StartKind; calls: T[] }
+export type Start = { kind: StartKind; calls: Call[] }
 
-export function startsIn<T>(
+const TEST_FILE = /(^|\/)(__tests__|__mocks__)\/|\.(test|spec)\.[cm]?[jt]sx?$/
+
+export const isTestFile = (file: string): boolean => TEST_FILE.test(file)
+
+export function calleeName(expression: ts.Expression, self: string): string | undefined {
+  if (ts.isIdentifier(expression)) return expression.text
+  if (expression.kind === ts.SyntaxKind.ThisKeyword) return self === '' ? undefined : self
+  if (ts.isParenthesizedExpression(expression)) return calleeName(expression.expression, self)
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
+    const base = calleeName(expression.expression, self)
+    return base === undefined ? undefined : `${base}.${expression.name.text}`
+  }
+  return undefined
+}
+
+export function startsIn(
   source: ts.SourceFile,
   functions: ts.Node[],
-  code: Code<T>,
-  imports: ReadonlyMap<string, string>,
-): Start<T>[] {
+  nested: Set<ts.Node>,
+  resolveName: (name: string, at: ts.Node) => Call | undefined,
+  bindings: ReadonlyMap<string, { spec: string } | null>,
+): Start[] {
   if (isTestFile(source.fileName)) return []
-  const byKind = new Map<StartKind, T[]>()
-  const add = (kind: StartKind, calls: T[]) => {
+  const index = new Map(functions.map((node, at) => [node, at]))
+  const code: Code = {
+    nested,
+    local: (node) => index.get(node),
+    resolve: (expression, at) => {
+      const name = calleeName(expression, '')
+      return name === undefined ? undefined : resolveName(name, at)
+    },
+  }
+  const imports = new Map([...bindings].map(([name, binding]) => [name, binding?.spec ?? '']))
+  const byKind = new Map<StartKind, Call[]>()
+  const add = (kind: StartKind, calls: Call[]) => {
     const into = byKind.get(kind) ?? []
     for (const call of calls) if (!into.includes(call)) into.push(call)
     byKind.set(kind, into)
@@ -35,29 +60,4 @@ export function startsIn<T>(
   if (text.includes('exposeIn')) add('bridge', bridgedIn(source, code))
 
   return [...byKind].flatMap(([kind, calls]) => (calls.length > 0 ? [{ kind, calls }] : []))
-}
-
-type Linked = { functions: { exported?: true }[]; starts: FileStart[]; stars: string[] }
-
-export function starred(parsed: Map<string, Linked>, target: (file: string, spec: string) => string | undefined): void {
-  const api = (file: string, seen: Set<string>): CallRef[] => {
-    const at = parsed.get(file)
-    if (at === undefined || seen.has(file)) return []
-    seen.add(file)
-    const own = at.functions.flatMap((fn, i) => (fn.exported === true ? [{ file, fn: i }] : []))
-    const named = at.starts.find((start) => start.kind === 'exports')?.calls ?? []
-    const deeper = at.stars.flatMap((spec) => {
-      const to = target(file, spec)
-      return to === undefined ? [] : api(to, seen)
-    })
-    return [...own, ...named, ...deeper]
-  }
-
-  for (const [file, at] of parsed) {
-    const into = at.starts.find((start) => start.kind === 'exports')
-    if (into === undefined) continue
-    for (const ref of api(file, new Set()).filter((ref) => ref.file !== file)) {
-      if (!into.calls.some((c) => c.file === ref.file && c.fn === ref.fn)) into.calls.push(ref)
-    }
-  }
 }

@@ -1,9 +1,11 @@
 import ts from 'typescript'
 import { renderedTag } from '../traits'
 
-export type Resolve<T> = (expression: ts.Expression, at: ts.Node) => T | undefined
+export type Call = number | { name: string; root: string }
 
-export type Code<T> = { nested: Set<ts.Node>; resolve: Resolve<T>; local: (node: ts.Node) => T | undefined }
+export type Resolve = (expression: ts.Expression, at: ts.Node) => Call | undefined
+
+export type Code = { nested: Set<ts.Node>; resolve: Resolve; local: (node: ts.Node) => Call | undefined }
 
 export function unwrapped(node: ts.Expression): ts.Expression {
   let at = node
@@ -27,8 +29,8 @@ function isReference(node: ts.Expression): boolean {
   return ts.isIdentifier(node) || ts.isPropertyAccessExpression(node)
 }
 
-export function refsIn<T>(node: ts.Node, code: Code<T>): T[] {
-  const found: T[] = []
+export function refsIn(node: ts.Node, code: Code): Call[] {
+  const found: Call[] = []
   const add = (expression: ts.Expression, at: ts.Node) => {
     const hit = code.resolve(expression, at)
     if (hit !== undefined && !found.includes(hit)) found.push(hit)
@@ -57,7 +59,7 @@ export function refsIn<T>(node: ts.Node, code: Code<T>): T[] {
   return found
 }
 
-export function handled<T>(handler: ts.Node, code: Code<T>): T[] {
+export function handled(handler: ts.Node, code: Code): Call[] {
   if (code.nested.has(handler)) {
     const self = code.local(handler)
     return self === undefined ? [] : [self]

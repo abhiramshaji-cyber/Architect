@@ -1,6 +1,6 @@
 import ts from 'typescript'
 import type { StartKind } from '../../../shared/types'
-import { isInline, unwrapped, type Code } from './refs'
+import { isInline, unwrapped, type Call, type Code } from './refs'
 
 export type Registration = { kind: StartKind; handler: ts.Node }
 
@@ -129,15 +129,15 @@ function wrapperBody(fn: ts.Node): ts.Node | undefined {
   return undefined
 }
 
-export function registrationsIn<T>(
+export function registrationsIn(
   source: ts.SourceFile,
   functions: ts.Node[],
-  code: Code<T>,
+  code: Code,
   imports: ReadonlyMap<string, string>,
 ): Registration[] {
   const calls = callsOf(source)
-  const wrappers = new Map<T, Registrar>()
-  const owner = new Map<T, ts.Node>()
+  const wrappers = new Map<Call, Registrar>()
+  const owner = new Map<Call, ts.Node>()
   for (const fn of functions) {
     const body = wrapperBody(fn)
     const self = code.local(fn)
