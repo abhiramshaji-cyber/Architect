@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 
-export type Declared = { reason: 'main' | 'bin'; file: string }
+export type Declared = { reason: 'main' | 'bin' | 'script'; file: string }
 
 const EMITTED: Record<string, string[]> = {
   '.js': ['.ts', '.tsx', '.js', '.jsx'],
@@ -18,11 +18,15 @@ function clean(value: unknown): string | null {
 
 export function declaredIn(manifest: unknown): Declared[] {
   if (typeof manifest !== 'object' || manifest === null) return []
-  const { main, bin } = manifest as { main?: unknown; bin?: unknown }
+  const { main, bin, scripts } = manifest as { main?: unknown; bin?: unknown; scripts?: unknown }
   const bins = typeof bin === 'object' && bin !== null ? Object.values(bin) : [bin]
+  const words = (typeof scripts === 'object' && scripts !== null ? Object.values(scripts) : [])
+    .flatMap((command) => (typeof command === 'string' ? command.split(/[\s;&|()]+/) : []))
+    .map((word) => word.replace(/^["']|["']$/g, ''))
   return [
     ...[main].map((file) => ({ reason: 'main' as const, file: clean(file) })),
     ...bins.map((file) => ({ reason: 'bin' as const, file: clean(file) })),
+    ...words.map((file) => ({ reason: 'script' as const, file: clean(file) })),
   ].flatMap(({ reason, file }) => (file === null ? [] : [{ reason, file }]))
 }
 
@@ -32,6 +36,12 @@ export function manifestOf(root: string): unknown {
   } catch {
     return null
   }
+}
+
+function inPlace(file: string): string[] {
+  const ext = path.posix.extname(file)
+  const stem = file.slice(0, file.length - ext.length)
+  return (EMITTED[ext] ?? []).map((to) => `${stem}${to}`)
 }
 
 function commonDir(files: string[]): string {
@@ -45,10 +55,10 @@ function commonDir(files: string[]): string {
 export function compiledFrom(root: string): (file: string) => string[] {
   try {
     const read = ts.readConfigFile(path.join(root, 'tsconfig.json'), ts.sys.readFile)
-    if (read.error !== undefined) return () => []
+    if (read.error !== undefined) return inPlace
     const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root)
     const outDir = parsed.options.outDir
-    if (outDir === undefined) return () => []
+    if (outDir === undefined) return inPlace
     const out = path.relative(root, outDir).split(path.sep).join('/')
     const inputs = parsed.fileNames
       .filter((file) => !/\.d\.[cm]?ts$/.test(file))
@@ -64,6 +74,6 @@ export function compiledFrom(root: string): (file: string) => string[] {
       return (EMITTED[ext] ?? [ext]).map((to) => `${stem}${to}`)
     }
   } catch {
-    return () => []
+    return inPlace
   }
 }

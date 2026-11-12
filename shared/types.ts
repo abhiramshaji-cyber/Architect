@@ -497,6 +497,7 @@ export type EntryReason =
   | 'page'
   | 'bin'
   | 'main'
+  | 'script'
 
 export type Entry = { reason: EntryReason; file: string }
 

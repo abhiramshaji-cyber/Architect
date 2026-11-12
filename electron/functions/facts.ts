@@ -13,6 +13,7 @@ export const REASONS: EntryReason[] = [
   'page',
   'bin',
   'main',
+  'script',
 ]
 
 const HANDLERS = new Set<string>(['mcpTool', 'ipcHandler', 'bridge', 'cliCommand'])

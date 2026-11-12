@@ -16,20 +16,40 @@ function nameOf(node: ts.Expression): string | undefined {
   return ts.isPropertyAccessExpression(value) ? value.name.text : undefined
 }
 
-function chainCalls(node: ts.Expression, name: string): boolean {
-  for (let at = unwrapped(node); ; ) {
-    if (ts.isCallExpression(at)) {
-      if (nameOf(at.expression) === name) return true
-      at = unwrapped(at.expression)
-    } else if (ts.isPropertyAccessExpression(at)) {
-      at = unwrapped(at.expression)
-    } else {
-      return false
-    }
+function chainRoot(node: ts.Expression, seen: (call: ts.CallExpression) => void): ts.Expression {
+  let at = unwrapped(node)
+  while (ts.isCallExpression(at) || ts.isPropertyAccessExpression(at)) {
+    if (ts.isCallExpression(at)) seen(at)
+    at = unwrapped(at.expression)
   }
+  return at
 }
 
-function builtIn(call: ts.CallExpression, imports: ReadonlySet<string>): Registrar | undefined {
+function initializerOf(source: ts.SourceFile, name: string): ts.Expression | undefined {
+  let hit: ts.Expression | undefined
+  const visit = (node: ts.Node): void => {
+    if (hit !== undefined) return
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) hit = node.initializer
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return hit
+}
+
+function isCommander(node: ts.Expression, source: ts.SourceFile, imports: ReadonlyMap<string, string>, depth = 0): boolean {
+  let commands = false
+  const root = chainRoot(node, (call) => {
+    if (nameOf(call.expression) === 'command') commands = true
+  })
+  if (commands) return true
+  if (ts.isNewExpression(root)) return nameOf(root.expression) === 'Command'
+  if (!ts.isIdentifier(root)) return false
+  if (imports.get(root.text) === 'commander') return true
+  const init = depth < 4 ? initializerOf(source, root.text) : undefined
+  return init !== undefined && isCommander(init, source, imports, depth + 1)
+}
+
+function builtIn(call: ts.CallExpression, source: ts.SourceFile, imports: ReadonlyMap<string, string>): Registrar | undefined {
   if (!ts.isPropertyAccessExpression(call.expression)) return undefined
   const method = call.expression.name.text
   const receiver = nameOf(call.expression.expression)
@@ -43,7 +63,7 @@ function builtIn(call: ts.CallExpression, imports: ReadonlySet<string>): Registr
   if (method === 'setRequestHandler' && first && nameOf(first) === 'CallToolRequestSchema') {
     return { kind: 'mcpTool', at: 1 }
   }
-  if (method === 'action' && chainCalls(call.expression.expression, 'command')) {
+  if (method === 'action' && isCommander(call.expression.expression, source, imports)) {
     return { kind: 'cliCommand', at: LAST }
   }
   if (method === 'command' && call.arguments.length >= 4) return { kind: 'cliCommand', at: LAST }
@@ -109,7 +129,12 @@ function wrapperBody(fn: ts.Node): ts.Node | undefined {
   return undefined
 }
 
-export function registrationsIn<T>(source: ts.SourceFile, functions: ts.Node[], code: Code<T>, imports: ReadonlySet<string>): Registration[] {
+export function registrationsIn<T>(
+  source: ts.SourceFile,
+  functions: ts.Node[],
+  code: Code<T>,
+  imports: ReadonlyMap<string, string>,
+): Registration[] {
   const calls = callsOf(source)
   const wrappers = new Map<T, Registrar>()
   const owner = new Map<T, ts.Node>()
@@ -121,7 +146,7 @@ export function registrationsIn<T>(source: ts.SourceFile, functions: ts.Node[], 
 
   const registrarOf = (call: ts.CallExpression): Registrar | undefined => {
     const hit = code.resolve(call.expression, call)
-    return builtIn(call, imports) ?? (hit === undefined ? undefined : wrappers.get(hit))
+    return builtIn(call, source, imports) ?? (hit === undefined ? undefined : wrappers.get(hit))
   }
 
   // wrappers

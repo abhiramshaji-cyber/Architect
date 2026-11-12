@@ -52,7 +52,7 @@ function compares(node: ts.Expression, aliases: Set<string>): boolean {
   const value = unwrapped(node)
   if (!ts.isBinaryExpression(value)) return false
   const op = value.operatorToken.kind
-  if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
+  if (op === ts.SyntaxKind.AmpersandAmpersandToken || op === ts.SyntaxKind.BarBarToken) {
     return compares(value.left, aliases) || compares(value.right, aliases)
   }
   if (op !== ts.SyntaxKind.EqualsEqualsEqualsToken && op !== ts.SyntaxKind.EqualsEqualsToken) return false

@@ -80,7 +80,7 @@ describe('factsOf', () => {
   })
 
   it('names a file reason only for what its load time code runs, and the public api for main', () => {
-    const reasons: EntryReason[] = ['electronMain', 'preload', 'renderer', 'page', 'bin', 'main']
+    const reasons: EntryReason[] = ['electronMain', 'preload', 'renderer', 'page', 'bin', 'main', 'script']
     const files: FileEntry[] = reasons.map((reason) => ({
       path: `${reason}.ts`,
       functions: [fn('ran', 1, 1), fn('idle', 2, 2), { ...fn('api', 3, 3), exported: true }],

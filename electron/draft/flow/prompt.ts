@@ -29,7 +29,7 @@ export function promptFor(found: Evidence, title: string, scope = '', feedback =
     'A component is one runtime responsibility: where input arrives, the code that decides what to do with it, a model or agent loop, a tool, retrieval, a store, a background job, or an outside service the code talks to.',
     'A component is never a folder. Test, script, build and documentation code is not a runtime component.',
     '',
-    'Architect indexed every function without AI. Each line is: ref | file | name | importance 1 to 5 | used in N places | entry point or - | what it does.',
+    'Architect indexed every function without AI. Each line is: ref | file | name | importance 1 to 5 | used in N places | starting point reason or - | what it does.',
     '<functions>',
     ...functions,
     '</functions>',

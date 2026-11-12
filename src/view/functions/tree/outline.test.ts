@@ -105,6 +105,12 @@ describe('outline', () => {
     expect(forcedOf(grouped, new Set(['f2']))).toEqual(new Set(['f1', 'f0', id, PROJECT]))
   })
 
+  it('opens the unreached bucket when the project has no starting point at all', () => {
+    const lone = outlineOf({ ...tree, starts: [], groups: [] })
+    expect(shown(lone).ids).toEqual([PROJECT, UNREACHED, 'f3'])
+    expect(shown(outline).ids).not.toContain('f3')
+  })
+
   it('stays cheap with 1,500 functions fully expanded', () => {
     const big: FunctionTree = {
       starts: [0],

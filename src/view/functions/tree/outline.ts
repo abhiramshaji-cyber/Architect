@@ -64,7 +64,8 @@ export function forcedOf(outline: Outline, hits: Set<string> | null): Set<string
 }
 
 export function isOpen(outline: Outline, id: string, overrides: Map<string, boolean>, forced: Set<string>): boolean {
-  return overrides.get(id) ?? (forced.has(id) || id === PROJECT || outline.starts.has(id))
+  const alone = id === UNREACHED && outline.kids.get(PROJECT)?.length === 1
+  return overrides.get(id) ?? (forced.has(id) || id === PROJECT || alone || outline.starts.has(id))
 }
 
 export function shownOf(outline: Outline, open: (id: string) => boolean): Shown {

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Background, Controls, ReactFlow, useReactFlow, useStore, type Edge } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { EntryReason, FunctionList, FunctionRow } from '../../../../shared/types'
+import type { FunctionList, FunctionRow } from '../../../../shared/types'
 import { plural } from '../Mark'
 import Card, { type CardNode } from './Card'
 import { CARD_W, layoutOf, type Spot } from './layout'
+import { REASON } from './reasons'
 import { PROJECT, UNREACHED, forcedOf, hitsOf, indexOf, isOpen, lineageOf, outlineOf, shownOf } from './outline'
 
 type Anchor = { id: string; before: Spot } | null
@@ -17,19 +18,6 @@ type TreeProps = {
 }
 
 const nodeTypes = { card: Card }
-
-const REASON: Record<EntryReason, string> = {
-  mcpTool: 'MCP tool',
-  ipcHandler: 'IPC handler',
-  bridge: 'Preload bridge',
-  cliCommand: 'CLI command',
-  electronMain: 'Electron main',
-  preload: 'Electron preload',
-  renderer: 'Electron renderer',
-  page: 'Page script',
-  bin: 'package.json bin',
-  main: 'package.json main',
-}
 
 const FIT = { padding: 0.12, maxZoom: 1 }
 

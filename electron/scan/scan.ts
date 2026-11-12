@@ -404,7 +404,7 @@ function parseFile(source: string, file: string): Parsed {
           return name === undefined ? undefined : resolveCall(name, at, byScope, shadows, imported)
         },
       },
-      new Set(imported.keys()),
+      new Map([...imported].map(([name, binding]) => [name, binding?.spec ?? ''])),
     )
 
     const order = found

@@ -8,7 +8,7 @@ import { registrationsIn } from './register'
 
 export type { Code } from './refs'
 
-const REGISTERS = ['ipcMain', 'registerTool', 'McpServer', 'CallToolRequestSchema', 'command']
+const REGISTERS = ['ipcMain', 'registerTool', 'McpServer', 'CallToolRequestSchema', 'command', 'action']
 
 export type Start<T> = { kind: StartKind; calls: T[] }
 
@@ -16,7 +16,7 @@ export function startsIn<T>(
   source: ts.SourceFile,
   functions: ts.Node[],
   code: Code<T>,
-  imports: ReadonlySet<string>,
+  imports: ReadonlyMap<string, string>,
 ): Start<T>[] {
   if (isTestFile(source.fileName)) return []
   const byKind = new Map<StartKind, T[]>()

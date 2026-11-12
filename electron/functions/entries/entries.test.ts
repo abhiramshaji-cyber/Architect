@@ -102,6 +102,32 @@ describe('entriesIn', () => {
     })
   })
 
+  it('maps a compiled file emitted next to its source and names files run by package.json scripts', () => {
+    expect(
+      entriesOf({
+        'package.json': JSON.stringify({
+          main: 'main.js',
+          scripts: { shot: 'node scripts/shot.mjs && echo done', dev: "tsx 'src/dev.ts' --watch", lint: 'eslint .' },
+        }),
+        'main.ts': '',
+        'scripts/shot.mjs': '',
+        'src/dev.ts': '',
+      }),
+    ).toEqual({ 'main.ts': ['main'], 'scripts/shot.mjs': ['script'], 'src/dev.ts': ['script'] })
+  })
+
+  it('puts a plain vite outDir under its root, skips lib false and commented out scripts', () => {
+    expect(
+      entriesOf({
+        'package.json': JSON.stringify({ main: 'web/dist/app.js' }),
+        'vite.config.ts': "export default { root: 'web', build: { lib: false } }",
+        'web/index.html': '<!-- <script src="old.ts"></script> --><script type="module" src="app.ts"></script>',
+        'web/app.ts': '',
+        'web/old.ts': '',
+      }),
+    ).toEqual({ 'web/app.ts': ['page', 'main'] })
+  })
+
   it('takes a source path in package.json as is and survives broken configs', () => {
     expect(
       entriesOf({

@@ -23,7 +23,7 @@ function read(file: string): string | undefined {
 }
 
 function scriptsOf(root: string, html: string, base: string): string[] {
-  const text = read(path.join(root, html)) ?? ''
+  const text = (read(path.join(root, html)) ?? '').replace(/<!--[\s\S]*?-->/g, '')
   return [...text.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)].flatMap((match) => {
     const src = match[1] ?? ''
     if (/^[a-z]+:|^\/\//i.test(src)) return []
@@ -38,7 +38,10 @@ function sideOf(
   defaults: { reason: EntryReason | null; outDir: string; base: string; html: boolean },
 ): Built[] {
   const base = pathOf(source, field(source, options, 'root')) ?? defaults.base
-  const outDir = path.posix.normalize(pathOf(source, field(source, options, 'build', 'outDir')) ?? defaults.outDir)
+  const written = field(source, options, 'build', 'outDir')
+  const out = pathOf(source, written) ?? defaults.outDir
+  const relative = defaults.reason === null && (written === undefined || ts.isStringLiteralLike(written))
+  const outDir = path.posix.normalize(relative ? path.posix.join(base, out) : out)
   const lib = field(source, options, 'build', 'lib')
   const fileName = valueOf(source, field(source, lib, 'fileName'))
   const named = fileName && ts.isStringLiteralLike(fileName) ? fileName.text : null
@@ -81,7 +84,7 @@ export function builtIn(root: string): Built[] {
     const config = configOf(source)
     if (config === undefined) return []
     if (name.startsWith('electron.')) return electronSides(root, source, config)
-    const lib = field(source, config, 'build', 'lib') !== undefined
+    const lib = field(source, config, 'build', 'lib')?.kind === ts.SyntaxKind.ObjectLiteralExpression
     return sideOf(root, source, config, { reason: null, outDir: 'dist', base: '.', html: !lib })
   })
 }
