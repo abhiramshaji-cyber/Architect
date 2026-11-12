@@ -1,15 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { Background, Controls, ReactFlow, useReactFlow, useStore, type Edge } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Background, Controls, ReactFlow, type Edge } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { FunctionList, FunctionRow } from '../../../../shared/types'
 import type { Way } from '../facts/calls'
-import { plural } from '../Mark'
-import Card, { type CardNode } from './Card'
-import { layoutOf, type Spot } from './layout'
-import { labelOf } from './labels'
-import { PROJECT, forcedOf, hitsOf, indexOf, isOpen, lineageOf, outlineOf, shownOf, toggledOf } from './outline'
-
-type Anchor = { id: string; before: Spot } | null
+import Card, { type CardNode } from './card/Card'
+import { cardOf, elsewhereOf } from './card/data'
+import Keep, { FIT, type Anchor } from './Keep'
+import { layoutOf } from './layout'
+import {
+  PROJECT,
+  forcedOf,
+  hitsOf,
+  idOf,
+  isOpen,
+  lineageOf,
+  outlineOf,
+  revealedOf,
+  shownOf,
+  toggledOf,
+} from './outline'
 
 type TreeProps = {
   list: FunctionList
@@ -22,69 +31,20 @@ type TreeProps = {
 
 const nodeTypes = { card: Card }
 
-const FIT = { padding: 0.12, maxZoom: 1 }
-
-const START_ZOOM = 0.9
-
-const START_TOP = 24
-
-const START_LEFT = 24
-
-function Keep({
-  anchor,
-  spots,
-  hits,
-}: {
-  anchor: MutableRefObject<Anchor>
-  spots: Map<string, Spot>
-  hits: Set<string> | null
-}) {
-  const { getViewport, setViewport, fitView } = useReactFlow()
-  const width = useStore((state) => state.width)
-  const placed = useRef(false)
-
-  useEffect(() => {
-    const top = spots.get(PROJECT)
-    if (placed.current || !top || width <= 0) return
-    placed.current = true
-    setViewport({
-      x: START_LEFT - top.x * START_ZOOM,
-      y: START_TOP - top.y * START_ZOOM,
-      zoom: START_ZOOM,
-    })
-  }, [spots, width, setViewport])
-
-  useEffect(() => {
-    const held = anchor.current
-    anchor.current = null
-    const after = held ? spots.get(held.id) : undefined
-    if (!held || !after) return
-    const { x, y, zoom } = getViewport()
-    setViewport({
-      x: x - (after.x - held.before.x) * zoom,
-      y: y - (after.y - held.before.y) * zoom,
-      zoom,
-    })
-  }, [anchor, spots, getViewport, setViewport])
-
-  useEffect(() => {
-    if (hits && hits.size > 0)
-      requestAnimationFrame(() => fitView({ ...FIT, nodes: [...hits].map((id) => ({ id })), duration: 200 }))
-  }, [hits, fitView])
-
-  return null
-}
-
 export default function FunctionTree({ list, query, project, onOpen, onRelated, onFocus }: TreeProps) {
   const { rows, tree } = list
   const outline = useMemo(() => outlineOf(list), [list])
   const [overrides, setOverrides] = useState(() => new Map<string, boolean>())
   const [focus, setFocus] = useState<string | null>(null)
   const anchor = useRef<Anchor>(null)
+  const [jump, setJump] = useState<{ id: string } | null>(null)
+  const turns = useRef(new Map<number, number>())
 
   useEffect(() => {
     setOverrides(new Map())
     setFocus(null)
+    setJump(null)
+    turns.current = new Map()
   }, [tree])
 
   const hits = useMemo(() => hitsOf(rows, query), [rows, query])
@@ -116,33 +76,43 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated, 
     [outline, forced],
   )
 
+  const onJump = useCallback(
+    (at: number) => {
+      const targets = elsewhereOf(outline, list, at)
+      const turn = turns.current.get(at) ?? 0
+      const target = targets[turn % targets.length]
+      if (target === undefined) return
+      turns.current.set(at, turn + 1)
+      const id = idOf(target)
+      setFocus(id)
+      setOverrides((prev) => revealedOf(outline, prev, id, forced))
+      setJump({ id })
+    },
+    [outline, list, forced],
+  )
+
   const nodes = useMemo<CardNode[]>(
     () =>
       shown.ids.map((id) => {
-        const at = indexOf(id)
-        const row = rows[at] ?? null
-        const kids = outline.kids.get(id)?.length ?? 0
+        const card = cardOf(outline, id, list, project)
         return {
           id,
           type: 'card',
           position: spots.get(id) ?? { x: 0, y: 0 },
           data: {
-            ...labelOf(outline, id, rows, project),
-            row,
-            at,
-            count: kids,
-            open: kids > 0 && isOpen(outline, id, overrides, forced),
-            also: tree.also[at] ?? 0,
+            ...card,
+            open: card.count > 0 && isOpen(outline, id, overrides, forced),
             dim: hits !== null && id !== PROJECT && !hits.has(id) && !forced.has(id),
             focused: id === focus,
             onToggle,
+            onJump,
             onOpen,
             onRelated,
             onFocus,
           },
         }
       }),
-    [shown, spots, rows, tree, outline, overrides, forced, hits, focus, project, onToggle, onOpen, onRelated, onFocus],
+    [shown, spots, list, outline, overrides, forced, hits, focus, project, onToggle, onJump, onOpen, onRelated, onFocus],
   )
 
   const edges = useMemo<Edge[]>(
@@ -174,7 +144,7 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated, 
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Keep anchor={anchor} spots={spots} hits={hits} />
+        <Keep anchor={anchor} spots={spots} hits={hits} jump={jump} />
         <Background gap={26} size={1} />
         <Controls showInteractive={false} />
       </ReactFlow>

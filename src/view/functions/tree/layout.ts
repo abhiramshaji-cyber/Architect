@@ -13,9 +13,13 @@ const RANK_SEP = 56
 export type Spot = { x: number; y: number }
 
 function indentOf({ ids, links }: Shown): Map<string, Spot> {
-  const depth = new Map<string, number>()
-  for (const { from, to } of links) depth.set(to, (depth.get(from) ?? 0) + 1)
-  return new Map(ids.map((id, row) => [id, { x: (depth.get(id) ?? 0) * INDENT, y: row * ROW }]))
+  const up = new Map(links.map(({ from, to }) => [to, from]))
+  const depthOf = (id: string) => {
+    const seen = new Set<string>()
+    for (let at = up.get(id); at !== undefined && !seen.has(at); at = up.get(at)) seen.add(at)
+    return seen.size
+  }
+  return new Map(ids.map((id, row) => [id, { x: depthOf(id) * INDENT, y: row * ROW }]))
 }
 
 export function layoutOf(

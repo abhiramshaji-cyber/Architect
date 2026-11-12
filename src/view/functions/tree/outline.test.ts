@@ -2,7 +2,19 @@ import { describe, expect, it } from 'vitest'
 import type { FunctionRow, FunctionTree } from '../../../../shared/types'
 import { INDENT, ROW, layoutOf } from './layout'
 import { WIDE } from './buckets'
-import { PROJECT, UNREACHED, forcedOf, hitsOf, isOpen, lineageOf, outlineOf, shownOf, toggledOf, type Outline } from './outline'
+import {
+  PROJECT,
+  UNREACHED,
+  forcedOf,
+  hitsOf,
+  isOpen,
+  lineageOf,
+  outlineOf,
+  revealedOf,
+  shownOf,
+  toggledOf,
+  type Outline,
+} from './outline'
 
 const row = (name: string, doc?: string): FunctionRow => ({
   file: 'src/a.ts',
@@ -171,6 +183,12 @@ describe('outline', () => {
     expect(isOpen(outlined, core, toggledOf(outlined, second, core, none), none)).toBe(false)
     expect(toggledOf(outlined, new Map(), group, none).get(group)).toBe(true)
 
+    const shown = revealedOf(outlined, second, 'f1', none)
+    expect(isOpen(outlined, ui, shown, none)).toBe(true)
+    expect(isOpen(outlined, core, shown, none)).toBe(false)
+    expect(isOpen(outlined, group, shown, none)).toBe(true)
+    expect(shownOf(outlined, (id) => isOpen(outlined, id, shown, none)).ids).toContain('f1')
+
     const forced = new Set([group, ui])
     const searching = toggledOf(outlined, new Map(), core, forced)
     expect(isOpen(outlined, core, searching, forced)).toBe(true)
@@ -192,9 +210,14 @@ describe('outline', () => {
     expect(widthOf(12, 3).width).toBe(widthOf(5000, 3).width)
     expect(widthOf(5000, 3).height).toBe((5000 + 2) * ROW)
     expect(widthOf(5, 6).width).toBe(widthOf(5, 3).width + 3 * INDENT)
+
+    const reversed = layoutOf({ ids: ['a', 'b', 'c'], links: [{ from: 'b', to: 'c' }, { from: 'a', to: 'b' }] }, 'indent')
+    expect(reversed.get('c')).toEqual({ x: 2 * INDENT, y: 2 * ROW })
+    const looped = layoutOf({ ids: ['a', 'b'], links: [{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }] }, 'indent')
+    expect(looped.get('b')?.x).toBe(2 * INDENT)
   })
 
-  it('keeps every level of a wide tree within WIDE cards, so the outline never needs a long row', () => {
+  it('gives every card of a fully open wide tree its own row', () => {
     const count = 400
     const outlined = outlineOf({
       tree: {

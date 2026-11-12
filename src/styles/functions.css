@@ -298,6 +298,11 @@
 }
 
 .fn-card-also {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.fn-card-jump {
   flex-shrink: 0;
   align-self: flex-start;
   padding: 0;
@@ -309,8 +314,8 @@
   cursor: pointer;
 }
 
-.fn-card-also:hover,
-.fn-card-also:focus-visible {
+.fn-card-jump:hover,
+.fn-card-jump:focus-visible {
   color: var(--text);
   text-decoration: underline;
 }
