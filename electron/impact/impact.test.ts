@@ -252,7 +252,7 @@ describe('importsOf', () => {
       { target: 'a/t', line: 1, names: [], forwards: false },
       { target: 'a/b', line: 2, names: ['b', 'c'], forwards: false },
       { target: 'a/all', line: 3, names: null, forwards: false },
-      { target: 'a/side', line: 4, names: null, forwards: false },
+      { target: 'a/side', line: 4, names: ['default'], forwards: false },
       { target: 'a/star', line: 5, names: null, forwards: true },
       { target: 'a/bare', line: 6, names: [], forwards: false },
     ])
@@ -424,6 +424,24 @@ describe('renamed re-exports and test callbacks', () => {
     const { root, map, architecture } = await project({ 'src/c.ts': 'export const LIMIT = 1\n\nexport function f() {\n  return LIMIT\n}\n\nexport function g() {\n  return 2\n}\n' })
     const impact = impactOf(edit(root, 'src/c.ts', 'LIMIT = 1', 'LIMIT = 2'), root, architecture, map)
     expect(impact.touched.listed).toEqual([{ name: 'f', change: 'uses', at: 'src/c.ts:3', in: 'disk' }])
+  })
+
+  it('handles a default export arrow, a default import and an imported data file', async () => {
+    const { root, map, architecture } = await project({
+      'src/core.ts': "const LIMIT = 1\n\nexport const OTHER = 2\n\nexport default () => {\n  return LIMIT + 1\n}\n",
+      'src/main.ts': "import run from './core'\n\nexport function useMain() {\n  return run()\n}\n",
+      'src/other.ts': "import { OTHER } from './core'\n\nexport function useOther() {\n  return OTHER\n}\n",
+      'src/cfg.json': '{ "a": 1 }\n',
+      'src/read.ts': "import cfg from './cfg.json'\n\nexport function read() {\n  return cfg\n}\n",
+    })
+    const comment = fs.readFileSync(path.join(root, 'src/core.ts'), 'utf8')
+    expect(changesOf('src/core.ts', comment, comment.replace('return LIMIT', '// note\n  return LIMIT')).changes).toEqual([])
+    const limit = impactOf(edit(root, 'src/core.ts', 'LIMIT = 1', 'LIMIT = 2'), root, architecture, map)
+    expect(limit.touched.listed.map((touch) => `${touch.name} ${touch.change}`)).toEqual(['default uses'])
+    const other = impactOf(edit(root, 'src/core.ts', 'OTHER = 2', 'OTHER = 3'), root, architecture, map)
+    expect(other.callers.listed.map((caller) => caller.name)).toEqual(['useOther'])
+    const data = impactOf(edit(root, 'src/cfg.json', '1', '2'), root, architecture, map)
+    expect(data.callers.listed.map((caller) => caller.name)).toEqual(['read'])
   })
 
   it('caps the notes and names a few functions per note', async () => {

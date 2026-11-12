@@ -22,8 +22,8 @@ function namesOf(node: ts.Node, types: boolean): string[] | null {
   if (ts.isImportDeclaration(node)) {
     const clause = node.importClause
     if (!clause || (clause.isTypeOnly && !types)) return []
-    if (clause.name || (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings))) return null
-    return picked(clause.namedBindings?.elements ?? [], types || clause.isTypeOnly)
+    if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) return null
+    return [...(clause.name ? ['default'] : []), ...picked(clause.namedBindings && ts.isNamedImports(clause.namedBindings) ? clause.namedBindings.elements : [], types || clause.isTypeOnly)]
   }
   if (ts.isExportDeclaration(node)) {
     if (node.isTypeOnly && !types) return []
@@ -36,7 +36,7 @@ function localsOf(node: ts.Node): [string, string][] {
   const clause = ts.isImportDeclaration(node) ? node.importClause : undefined
   if (!clause) return []
   const bindings = clause.namedBindings
-  const whole: [string, string][] = [...(clause.name ? [clause.name.text] : []), ...(bindings && ts.isNamespaceImport(bindings) ? [bindings.name.text] : [])].map((local) => ['*', local])
+  const whole: [string, string][] = [...(clause.name ? [['default', clause.name.text] as [string, string]] : []), ...(bindings && ts.isNamespaceImport(bindings) ? [['*', bindings.name.text] as [string, string]] : [])]
   return [...whole, ...(bindings && ts.isNamedImports(bindings) ? bindings.elements.map((element): [string, string] => [(element.propertyName ?? element.name).text, element.name.text]) : [])]
 }
 
@@ -121,7 +121,7 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
   for (const spot of added) if (isTestFile(spot.file) && !found.has(spot.file)) found.set(spot.file, { via: 'touched', at: `${spot.file}:${spot.line}`, reaches: `${spot.file}:${spot.line}` })
 
   const exposed = exposedBy(fns, files)
-  const named = (fn: { name: string }, names: string[] | null) => names === null || names.includes(fn.name.split('.')[0] ?? '')
+  const named = (fn: { name: string }, names: string[] | null) => names === null || names.includes('default') || names.includes(fn.name.split('.')[0] ?? '')
   const memo = new Map<string, Map<string, string>>()
   const renamed = (file: string) => memo.get(file) ?? (memo.set(file, aliasesOf(root, file)).get(file) as Map<string, string>)
   const originals = (target: string, names: string[] | null) => {
@@ -165,8 +165,8 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
 
 type Loads = ReturnType<typeof importsOf>
 
-export function importersOf(root: string, file: string, names: string[] | 'all', files: FileEntry[]): Map<string, string[] | 'all'> {
-  const [found, seen, loads] = [new Map<string, string[] | 'all'>(), new Set<string>([file]), new Map<string, Loads>()]
+export function importersOf(root: string, file: string, names: string[] | 'all', files: FileEntry[]): Map<string, string[] | 'all' | 'unresolved'> {
+  const [found, seen, loads] = [new Map<string, string[] | 'all' | 'unresolved'>(), new Set<string>([file]), new Map<string, Loads>()]
   const queue = [{ target: file, wanted: names }]
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     const { target, wanted } = next
@@ -178,7 +178,7 @@ export function importersOf(root: string, file: string, names: string[] | 'all',
       if (hits.length === 0) continue
       const locals = hits.flatMap((hit) => hit.locals.filter(([original]) => original === '*' || wanted === 'all' || wanted.includes(original)).map(([, local]) => local))
       const held = found.get(entry.path) ?? []
-      found.set(entry.path, wanted === 'all' || ways.length === 0 || held === 'all' ? 'all' : [...new Set([...held, ...locals])])
+      found.set(entry.path, ways.length === 0 || held === 'unresolved' ? 'unresolved' : wanted === 'all' || held === 'all' ? 'all' : [...new Set([...held, ...locals])])
       const passed = exportsOf(root, entry.path).filter((one) => wanted === 'all' || wanted.includes(one.original))
       if ((!hits.some((hit) => hit.forwards) && !passed.some((one) => one.local)) || seen.has(entry.path)) continue
       seen.add(entry.path)

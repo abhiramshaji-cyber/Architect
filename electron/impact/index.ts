@@ -57,11 +57,12 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const { changes, parsed, outside, uses } = changesOf(file, current, input.content)
   const same = current.replaceAll('\r\n', '\n') === input.content.replaceAll('\r\n', '\n')
   const code = CODE.test(file)
-  const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 && !code ? [`${file} holds no function the scan parses, so no function is touched`] : []
+  const loaded = !code && files.some((entry) => (entry.imports ?? []).includes(file))
+  const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 && !code && !loaded ? [`${file} holds no function the scan parses, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
-  const moved = outside === 'all' || outside.code || outside.names.length > 0 || outside.locals.length > 0
-  const wide = !same && code && moved && fs.existsSync(path.join(root, file)) ? outsideSeeds(root, file, outside, uses, scanned, offset, files, fns) : null
+  const moved = loaded || outside === 'all' || outside.code || outside.names.length > 0 || outside.locals.length > 0
+  const wide = !same && (code || loaded) && moved && fs.existsSync(path.join(root, file)) ? outsideSeeds(root, file, loaded ? 'all' : outside, uses, scanned, offset, files, fns) : null
   if (wide) notes.push(wide.note)
   if (!same && code && !moved && changes.length === 0) notes.push(`the change to ${file} only touches formatting, quotes or comments, so nothing is counted`)
 
@@ -85,10 +86,10 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
 
 const listed = (names: string[]) => names.slice(0, NAMED).join(', ') + (names.length > NAMED ? ', ...' : '')
 
-function usingIn(root: string, file: string, locals: string[] | 'all', files: FileEntry[], fns: Fn[]): number[] {
+function usingIn(root: string, file: string, locals: string[] | 'all' | 'unresolved', files: FileEntry[], fns: Fn[]): number[] {
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
-  if (offset < 0 || locals === 'all') return offset < 0 ? [] : scanned.map((_, index) => offset + index)
+  if (offset < 0 || locals === 'all' || locals === 'unresolved') return offset < 0 ? [] : scanned.map((_, index) => offset + index)
   const text = before(root, file)
   const keys = new Set(typeof text === 'string' && locals.length > 0 ? usersOf(file, text, locals) : [])
   return scanned.flatMap((key, index) => (keys.has(key) ? [offset + index] : []))
@@ -102,8 +103,10 @@ function outsideSeeds(root: string, file: string, outside: Outside, uses: (names
   const loads = all || outside.code
   const importers = loads || outside.names.length > 0 ? importersOf(root, file, loads ? 'all' : outside.names, files) : new Map<string, string[] | 'all'>()
   const using = [...importers].flatMap(([path, locals]) => usingIn(root, path, locals, files, fns))
-  const what = [...(all ? ['a module load or a star re-export'] : []), ...(!all && outside.code ? ['code that runs when the file loads, such as a handler it registers'] : []), ...(changed.length > 0 ? [listed(changed)] : [])].join('; ')
-  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions ${loads ? 'in' : 'that use those names in'} the ${importers.size} files that ${loads ? 'load it' : 'import them'}, directly or through a re-export, count as its callers`
+  const what = [...(all ? [CODE.test(file) ? 'a module load or a star re-export' : 'its content, which code imports'] : []), ...(!all && outside.code ? ['code that runs when the file loads, such as a handler it registers'] : []), ...(changed.length > 0 ? [listed(changed)] : [])].join('; ')
+  const unresolved = [...importers].filter(([, locals]) => locals === 'unresolved').map(([path]) => path)
+  const loose = unresolved.length > 0 ? `; ${unresolved.length} of those files import it by a path that is not relative (${listed(unresolved)}), so all their functions count` : ''
+  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions ${loads ? 'in' : 'that use those names in'} the ${importers.size} files that ${loads ? 'load it' : 'import them'}, directly or through a re-export, count as its callers${loose}`
   return { seeds: own, users: using, names: loads ? 'all' : outside.names, note }
 }
 

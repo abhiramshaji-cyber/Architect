@@ -36,6 +36,7 @@ const isNamed = (node: ts.Node) => ts.isFunctionDeclaration(node) || ts.isMethod
 function holderOf(node: ts.Node): ts.Node {
   const parent = node.parent
   if (parent && ts.isVariableDeclaration(parent) && parent.initializer === node) return ts.isVariableStatement(parent.parent.parent) ? parent.parent.parent : parent
+  if (parent && ts.isExportAssignment(parent) && parent.expression === node) return parent
   return parent && (ts.isPropertyDeclaration(parent) || ts.isPropertyAssignment(parent)) && parent.initializer === node ? parent : node
 }
 
