@@ -80,6 +80,7 @@ export const historyEntrySchema = z.object({
   changed: z.array(z.string()),
   removed: z.array(z.string()),
   file: z.string().optional(),
+  session: z.string().optional(),
 })
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>

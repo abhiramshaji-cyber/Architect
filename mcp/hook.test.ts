@@ -44,6 +44,17 @@ describe('sessionEvent', () => {
     expect(sessionEvent(input({ tool_name: 'Edit', tool_input: { file_path: 'a' } }))).toBeNull()
     expect(sessionEvent(input({ hook_event_name: 'PostToolUse', tool_input: { file_path: 'a' } }))).toMatchObject({ file: 'a' })
   })
+
+  it('carries the session id of a file touch', () => {
+    const event = sessionEvent(input({ hook_event_name: 'PostToolUse', tool_input: { file_path: '/code/app/a.ts' } }))
+    expect(event).toMatchObject({ op: 'session-event', cwd: '/code/app', event: 'PostToolUse', session: 's1', file: '/code/app/a.ts' })
+  })
+
+  it.each([[undefined], [''], [42], [null], [{ id: 's1' }]])('sends no session when session_id is %j', (session_id) => {
+    const event = sessionEvent(input({ hook_event_name: 'PostToolUse', session_id, tool_input: { file_path: 'a' } }))
+    expect(event?.file).toBe('a')
+    expect(JSON.parse(JSON.stringify(event))).not.toHaveProperty('session')
+  })
 })
 
 describe('gateOutput', () => {

@@ -42,7 +42,7 @@ import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
 import { scopeOf } from './draft/scope'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
-import { codeDiff, contractDiff, type Diff, isEmpty } from './contract/history'
+import { attribute, type Attributed, codeDiff, contractDiff, isEmpty, type Touch } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
@@ -138,7 +138,7 @@ type ProjectState = {
   rescanTimer: ReturnType<typeof setTimeout> | null
   rescanning: boolean
   rescanAgain: boolean
-  touched: Set<string>
+  touched: Touch[]
   lastWrittenContent: string | null
 }
 
@@ -418,10 +418,10 @@ export function createDaemon(options: DaemonOptions = {}) {
     saveProjects()
   }
 
-  function record(root: string, source: HistoryEntry['source'], diff: Diff, file?: string, at = Date.now()) {
-    if (isEmpty(diff)) return
+  function record(root: string, source: HistoryEntry['source'], change: Attributed, at = Date.now()) {
+    if (isEmpty(change)) return
 
-    const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...diff, ...(file === undefined ? {} : { file }) }
+    const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...change }
     histories.append(root, entry)
     historyListener?.(entry)
   }
@@ -454,11 +454,12 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  async function rescanProject(root: string, touched: string[] = []): Promise<CodeMap> {
+  async function rescanProject(root: string, touched: Touch[] = []): Promise<CodeMap> {
     const seen = Date.now()
     const stored = readStoredMap(cacheDir, root)
     const described = await describe(await scan(root), root, stored?.cache)
-    if (stored?.map) record(root, 'code', codeDiff(stored.map, described.map, touched), touched.at(-1), seen)
+    const diff = stored?.map ? codeDiff(stored.map, described.map, touched.map((touch) => touch.file)) : null
+    for (const change of diff ? attribute(diff, touched) : []) record(root, 'code', change, seen)
 
     try {
       writeStoredMap(cacheDir, root, described)
@@ -484,8 +485,8 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
 
     state.rescanning = true
-    const touched = [...state.touched]
-    state.touched.clear()
+    const touched = state.touched
+    state.touched = []
     try {
       const map = await rescanProject(state.root, touched)
       if (projects.get(state.root) === state) codeMapListener?.(state.root, map)
@@ -511,7 +512,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     const state = loadProject(located.root)
     const relative = path.relative(located.root, located.file).split(path.sep).join('/')
-    state.touched.add(relative)
+    state.touched.push(session ? { file: relative, session } : { file: relative })
     if (state.rescanTimer) clearTimeout(state.rescanTimer)
     state.rescanTimer = null
     void runRescan(state)
@@ -554,7 +555,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       rescanTimer: null,
       rescanning: false,
       rescanAgain: false,
-      touched: new Set(),
+      touched: [],
     }
 
     function absorb(content: string) {
