@@ -50,7 +50,7 @@ export function codeDiff(before: CodeMap | null, after: CodeMap, touched: string
   return { ...diff, changed: [...diff.changed, ...folders] }
 }
 
-export type Touch = { file: string; session?: string; at?: number }
+export type Touch = { file: string; session?: string; at?: number; digest?: string }
 
 export type Attributed = Diff & { file?: string; session?: string }
 
@@ -97,11 +97,13 @@ export function reclaim(
   entries: HistoryEntry[],
   file: string,
   session: string,
-  recent: (entry: HistoryEntry) => boolean,
+  saw: (entry: HistoryEntry) => boolean,
 ): { found: HistoryEntry; parts: HistoryEntry[] } | null {
   const id = `codefile:${file}`
-  const found = entries.find((entry) => entry.source === 'code' && [...entry.added, ...entry.changed, ...entry.removed].includes(id))
-  if (!found || found.session !== undefined || !recent(found)) return null
+  const found = entries.find(
+    (entry) => entry.source === 'code' && [...entry.added, ...entry.changed, ...entry.removed].includes(id) && saw(entry),
+  )
+  if (!found || found.session !== undefined) return null
 
   const parts = attribute(found, [{ file, session }])
   const rest = parts.find((part) => part.session === undefined)

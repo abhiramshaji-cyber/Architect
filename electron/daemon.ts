@@ -214,7 +214,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   let reviewListener: ((state: ReviewState) => void) | null = null
   const review = createReview(cacheDir, (state) => reviewListener?.(state), options.reviewTimeouts)
   const sessionCwds = new Map<string, string>()
-  const recordedAt = new Map<string, number>()
+  const recorded = new Map<string, { at: number; digests: Map<string, string> }>()
   const drafting = new Map<string, Promise<DraftResult<string>>>()
   const draftFailures = new Map<string, DraftFailure>()
   let server: net.Server | null = null
@@ -420,12 +420,12 @@ export function createDaemon(options: DaemonOptions = {}) {
     saveProjects()
   }
 
-  function record(root: string, source: HistoryEntry['source'], change: Attributed, at = Date.now()) {
+  function record(root: string, source: HistoryEntry['source'], change: Attributed, at = Date.now(), digests = new Map<string, string>()) {
     if (isEmpty(change)) return
 
     const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...change }
     histories.append(root, entry)
-    if (source === 'code') remember(entry.id)
+    if (source === 'code') remember(entry.id, digests)
     historyListener?.(entry)
   }
 
@@ -457,21 +457,24 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  function remember(id: string) {
-    recordedAt.set(id, Date.now())
-    for (const known of recordedAt.keys()) {
-      if (recordedAt.size <= HISTORY_LIMIT) break
-      recordedAt.delete(known)
+  function remember(id: string, digests: Map<string, string>) {
+    recorded.set(id, { at: Date.now(), digests })
+    for (const known of recorded.keys()) {
+      if (recorded.size <= HISTORY_LIMIT) break
+      recorded.delete(known)
     }
   }
 
   function reclaimed(root: string, touch: Touch, touched: Touch[], moved: Diff): boolean {
-    const { file, session, at } = touch
-    if (!session || at === undefined) return false
+    const { file, session, at, digest } = touch
+    if (!session || at === undefined || !digest) return false
     if (touched.some((other) => other.file === file && other.session !== session)) return false
     if ([...moved.added, ...moved.changed, ...moved.removed].includes(`codefile:${file}`)) return false
 
-    const found = reclaim(histories.list(root), file, session, (entry) => (recordedAt.get(entry.id) ?? 0) >= at - HOOK_DEADLINE_MS)
+    const found = reclaim(histories.list(root), file, session, (entry) => {
+      const saved = recorded.get(entry.id)
+      return saved !== undefined && saved.at >= at - HOOK_DEADLINE_MS && saved.digests.get(file) === digest
+    })
     if (!found) return false
     histories.replace(root, found.found, found.parts)
     for (const part of [...found.parts].reverse()) historyListener?.(part)
@@ -481,12 +484,13 @@ export function createDaemon(options: DaemonOptions = {}) {
   async function rescanProject(root: string, touched: Touch[] = []): Promise<CodeMap> {
     const seen = Date.now()
     const stored = readStoredMap(cacheDir, root)
-    const described = await describe(await scan(root), root, stored?.cache)
+    const digests = new Map<string, string>()
+    const described = await describe(await scan(root, digests), root, stored?.cache)
     if (stored?.map) {
       const moved = codeDiff(stored.map, described.map)
       const fresh = touched.filter((touch) => !reclaimed(root, touch, touched, moved))
       const diff = codeDiff(stored.map, described.map, fresh.map((touch) => touch.file))
-      for (const change of attribute(diff, fresh)) record(root, 'code', change, seen)
+      for (const change of attribute(diff, fresh)) record(root, 'code', change, seen, digests)
     }
 
     try {
@@ -529,7 +533,12 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
-  async function touchSession(cwd: string, session: string | undefined, file: string | undefined): Promise<string | null> {
+  async function touchSession(
+    cwd: string,
+    session: string | undefined,
+    file: string | undefined,
+    digest: string | undefined,
+  ): Promise<string | null> {
     const at = Date.now()
     if (!file) {
       if (session) sessionCwds.set(session, cwd)
@@ -541,7 +550,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     const state = loadProject(located.root)
     const relative = path.relative(located.root, located.file).split(path.sep).join('/')
-    state.touched.push(session ? { file: relative, session, at } : { file: relative })
+    state.touched.push(session ? { file: relative, session, at, ...(digest ? { digest } : {}) } : { file: relative })
     if (state.rescanTimer) clearTimeout(state.rescanTimer)
     state.rescanTimer = null
     void runRescan(state)
@@ -851,7 +860,7 @@ export function createDaemon(options: DaemonOptions = {}) {
         }
 
         if (req.op === 'session-event') {
-          return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file) }
+          return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file, req.digest) }
         }
 
         const root = resolveRoot(req.cwd)

@@ -1,5 +1,6 @@
 import { createConnection } from 'node:net'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { readSettings } from '../shared/settings.js'
 import { SETTINGS_PATH, SOCKET_PATH } from '../shared/socket.js'
@@ -97,6 +98,16 @@ async function readStdin(): Promise<string> {
   return raw
 }
 
+export async function withDigest(event: SessionEvent): Promise<SessionEvent> {
+  if (!event.file) return event
+  try {
+    const text = (await readFile(path.resolve(event.cwd, event.file))).toString('utf8')
+    return { ...event, digest: createHash('sha256').update(text).digest('hex') }
+  } catch {
+    return event
+  }
+}
+
 function deliver(event: SessionEvent, socketPath: string): Promise<void> {
   return new Promise((resolve) => {
     const socket = createConnection(socketPath)
@@ -142,5 +153,5 @@ export async function runHook(socketPath = SOCKET_PATH, settingsPath = SETTINGS_
   }
 
   const event = sessionEvent(raw)
-  if (event) await deliver(event, socketPath)
+  if (event) await deliver(await withDigest(event), socketPath)
 }

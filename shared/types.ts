@@ -206,6 +206,7 @@ export const requestSchema = z.discriminatedUnion('op', [
     event: z.string(),
     session: z.string().optional(),
     file: z.string().optional(),
+    digest: z.string().optional(),
   }),
 ])
 

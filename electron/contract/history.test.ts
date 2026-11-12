@@ -253,14 +253,21 @@ describe('reclaim', () => {
     expect(reclaim(entries, 'x.ts', 's1', always)).toBeNull()
   })
 
-  it('claims nothing that was not recorded recently', () => {
+  it('claims nothing whose scan did not see the reported content', () => {
     expect(reclaim([entry({ changed: ['codefile:x.ts'] })], 'x.ts', 's1', () => false)).toBeNull()
   })
 
-  it('looks only at the newest entry naming the file', () => {
+  it('takes the newest entry that saw the reported content, past newer ones that did not', () => {
     const newest = entry({ id: 'new', changed: ['codefile:x.ts'] })
     const older = entry({ id: 'old', changed: ['codefile:x.ts'] })
 
-    expect(reclaim([newest, older], 'x.ts', 's1', (e) => e.id === 'old')).toBeNull()
+    expect(reclaim([newest, older], 'x.ts', 's1', (e) => e.id === 'old')?.found).toBe(older)
+  })
+
+  it('claims nothing when the entry that saw the content already has a session', () => {
+    const newest = entry({ id: 'new', changed: ['codefile:x.ts'] })
+    const owned = entry({ id: 'old', changed: ['codefile:x.ts'], session: 's0' })
+
+    expect(reclaim([newest, owned], 'x.ts', 's1', (e) => e.id === 'old')).toBeNull()
   })
 })
