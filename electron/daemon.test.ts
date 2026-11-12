@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Architecture,
   Decision,
+  HistoryEntry,
   ProjectSummary,
   Request,
   Response,
@@ -1824,6 +1825,36 @@ describe("history sessions", () => {
       { changed: ["codefile:api/a.ts", "folder:api"], file: "api/a.ts", session: "s-7" },
     ]);
     expect(code[0]).not.toHaveProperty("session");
+  });
+
+  it.each([50, 700])("saves one entry with the session when the hook arrives %ims after the write", async (delay) => {
+    const root = fs.realpathSync(tmpRoot);
+    writeArchitect(root, fixture(component("api")));
+    fs.mkdirSync(path.join(root, "api"));
+    fs.writeFileSync(path.join(root, "api", "a.ts"), "export function a() {}\n");
+    fs.writeFileSync(path.join(root, "api", "b.ts"), "export function b() {}\n");
+    daemon = createDaemon({ socketPath });
+    const arrived: HistoryEntry[] = [];
+    daemon.onHistory((entry) => arrived.push(entry));
+    await daemon.listen();
+    await daemon.open(root);
+    await daemon.rescan(root);
+
+    fs.writeFileSync(path.join(root, "api", "a.ts"), "export function a() {}\nexport function a2() {}\n");
+    fs.writeFileSync(path.join(root, "api", "b.ts"), "export function b() {}\nexport function b2() {}\n");
+    await pause(delay);
+    const c = await client(socketPath);
+    await c.request({ op: "session-event", cwd: root, event: "PostToolUse", session: "s-1", file: path.join(root, "api", "a.ts") });
+    c.close();
+    await pause(800);
+
+    const code = daemon.history(root).filter((entry) => entry.source === "code");
+    const mine = code.filter((entry) => entry.changed.includes("codefile:api/a.ts") || entry.added.includes("codefile:api/a.ts"));
+    expect(mine).toEqual([expect.objectContaining({ session: "s-1", file: "api/a.ts" })]);
+    expect(code.filter((entry) => entry.changed.includes("codefile:api/b.ts"))).toEqual([
+      expect.not.objectContaining({ session: expect.anything() }),
+    ]);
+    expect(arrived.at(-1)).toMatchObject({ file: "api/a.ts", session: "s-1" });
   });
 
   it("loads entries written before sessions were stored", () => {

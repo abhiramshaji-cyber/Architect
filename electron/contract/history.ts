@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Architecture, CodeMap, HistoryEntry } from '../../shared/types'
 
 export type Diff = Pick<HistoryEntry, 'added' | 'changed' | 'removed'>
@@ -49,7 +50,7 @@ export function codeDiff(before: CodeMap | null, after: CodeMap, touched: string
   return { ...diff, changed: [...diff.changed, ...folders] }
 }
 
-export type Touch = { file: string; session?: string }
+export type Touch = { file: string; session?: string; at?: number }
 
 export type Attributed = Diff & { file?: string; session?: string }
 
@@ -82,11 +83,33 @@ export function attribute(diff: Diff, touches: Touch[]): Attributed[] {
     }
   }
 
-  const order = new Set([undefined, ...touches.map((touch) => sessions.get(touch.file))])
-  return [...order].flatMap((session) => {
+  const latest = [...new Set(touches.map((touch) => sessions.get(touch.file)).reverse())].reverse()
+  const order = latest.includes(undefined) ? latest : [undefined, ...latest]
+  return order.flatMap((session) => {
     const group = groups.get(session)
     if (!group) return []
     const file = touches.filter((touch) => sessions.get(touch.file) === session).at(-1)?.file
     return { ...group, ...(file === undefined ? {} : { file }), ...(session === undefined ? {} : { session }) }
   })
+}
+
+export function reclaim(
+  entries: HistoryEntry[],
+  file: string,
+  session: string,
+  recent: (entry: HistoryEntry) => boolean,
+): { found: HistoryEntry; parts: HistoryEntry[] } | null {
+  const id = `codefile:${file}`
+  const found = entries.find((entry) => entry.source === 'code' && [...entry.added, ...entry.changed, ...entry.removed].includes(id))
+  if (!found || found.session !== undefined || !recent(found)) return null
+
+  const parts = attribute(found, [{ file, session }])
+  const rest = parts.find((part) => part.session === undefined)
+  const claimed = parts.find((part) => part.session === session)
+  if (!claimed) return null
+
+  const { file: _file, ...base } = found
+  const kept = found.file === undefined || found.file === file ? base : found
+  const own = { ...base, ...claimed, id: rest ? randomUUID() : found.id }
+  return { found, parts: rest ? [own, { ...kept, ...rest }] : [own] }
 }

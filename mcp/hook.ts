@@ -3,9 +3,7 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { readSettings } from '../shared/settings.js'
 import { SETTINGS_PATH, SOCKET_PATH } from '../shared/socket.js'
-import { EDIT_TIMEOUT_MS, type CodeChange, type Decision, type Request } from '../shared/types.js'
-
-const DEADLINE_MS = 1500
+import { EDIT_TIMEOUT_MS, HOOK_DEADLINE_MS, type CodeChange, type Decision, type Request } from '../shared/types.js'
 
 const GATE_GRACE_MS = 15_000
 
@@ -131,7 +129,7 @@ function emit(out: string): Promise<void> {
 }
 
 export async function runHook(socketPath = SOCKET_PATH, settingsPath = SETTINGS_PATH): Promise<void> {
-  const deadline = setTimeout(() => process.exit(0), DEADLINE_MS)
+  const deadline = setTimeout(() => process.exit(0), HOOK_DEADLINE_MS)
   deadline.unref()
   const raw = await readStdin()
 

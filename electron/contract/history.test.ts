@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Architecture, CodeMap, FunctionEntry } from '../../shared/types'
-import { attribute, codeDiff, contractDiff, isEmpty } from './history'
+import type { Architecture, CodeMap, FunctionEntry, HistoryEntry } from '../../shared/types'
+import { attribute, codeDiff, contractDiff, isEmpty, reclaim } from './history'
 
 const architecture = (components: [string, string][], edges: [string, string][] = []): Architecture => ({
   title: 't',
@@ -169,5 +169,98 @@ describe('attribute', () => {
 
   it('returns nothing for an empty diff', () => {
     expect(attribute(codeDiff(before, before), [{ file: 'a/x.ts', session: 's1' }])).toEqual([])
+  })
+})
+
+describe('attribute order', () => {
+  it('puts the session that touched last at the end so its file is the newest', () => {
+    const before = map({ 'a.ts': ['a'], 'b.ts': ['b'], 'c.ts': ['c'] })
+    const after = map({ 'a.ts': ['a', 'a2'], 'b.ts': ['b', 'b2'], 'c.ts': ['c', 'c2'] })
+    const touches = [
+      { file: 'a.ts', session: 's1' },
+      { file: 'b.ts', session: 's2' },
+      { file: 'c.ts', session: 's1' },
+    ]
+
+    expect(attribute(codeDiff(before, after, ['a.ts', 'b.ts', 'c.ts']), touches).map((g) => [g.session, g.file])).toEqual([
+      ['s2', 'b.ts'],
+      ['s1', 'c.ts'],
+    ])
+  })
+
+  it('puts an ambiguous file touched last at the end', () => {
+    const before = map({ 'a.ts': ['a'], 'b.ts': ['b'] })
+    const after = map({ 'a.ts': ['a', 'a2'], 'b.ts': ['b', 'b2'] })
+    const touches = [
+      { file: 'b.ts', session: 's1' },
+      { file: 'a.ts', session: 's1' },
+      { file: 'a.ts', session: 's2' },
+    ]
+
+    expect(attribute(codeDiff(before, after, ['a.ts', 'b.ts']), touches).map((g) => [g.session, g.file])).toEqual([
+      ['s1', 'b.ts'],
+      [undefined, 'a.ts'],
+    ])
+  })
+})
+
+describe('reclaim', () => {
+  const entry = (fields: Partial<HistoryEntry>): HistoryEntry => ({
+    id: 'e1',
+    root: '/r',
+    at: 10,
+    source: 'code',
+    added: [],
+    changed: [],
+    removed: [],
+    ...fields,
+  })
+  const always = () => true
+
+  it('gives a whole unreported entry to the session, keeping its id', () => {
+    const found = entry({ changed: ['codefile:a/x.ts', 'folder:a'] })
+
+    expect(reclaim([found], 'a/x.ts', 's1', always)).toEqual({
+      found,
+      parts: [{ ...found, file: 'a/x.ts', session: 's1' }],
+    })
+  })
+
+  it('splits out only the reported file and leaves the rest unreported', () => {
+    const found = entry({ changed: ['codefile:a/x.ts', 'codefile:b/y.ts', 'folder:a', 'folder:b'] })
+    const result = reclaim([found], 'a/x.ts', 's1', always)
+
+    expect(result?.parts).toEqual([
+      { ...found, id: expect.any(String), changed: ['codefile:a/x.ts', 'folder:a'], file: 'a/x.ts', session: 's1' },
+      { ...found, changed: ['codefile:b/y.ts', 'folder:b'] },
+    ])
+    expect(result?.parts[0]?.id).not.toBe('e1')
+  })
+
+  it('keeps the file of the remainder unless it was the reported one', () => {
+    const found = entry({ changed: ['codefile:x.ts', 'codefile:y.ts'], file: 'y.ts' })
+    expect(reclaim([found], 'x.ts', 's1', always)?.parts[1]).toMatchObject({ changed: ['codefile:y.ts'], file: 'y.ts' })
+
+    const same = entry({ changed: ['codefile:x.ts', 'codefile:y.ts'], file: 'x.ts' })
+    expect(reclaim([same], 'x.ts', 's1', always)?.parts[1]).not.toHaveProperty('file')
+  })
+
+  it.each([
+    ['no entry has the file', [entry({ changed: ['codefile:b.ts'] })]],
+    ['the newest entry with the file already has a session', [entry({ changed: ['codefile:x.ts'], session: 's0' }), entry({ id: 'e2', changed: ['codefile:x.ts'] })]],
+    ['only a contract entry names it', [entry({ source: 'contract', changed: ['codefile:x.ts'] })]],
+  ])('claims nothing when %s', (_name, entries) => {
+    expect(reclaim(entries, 'x.ts', 's1', always)).toBeNull()
+  })
+
+  it('claims nothing that was not recorded recently', () => {
+    expect(reclaim([entry({ changed: ['codefile:x.ts'] })], 'x.ts', 's1', () => false)).toBeNull()
+  })
+
+  it('looks only at the newest entry naming the file', () => {
+    const newest = entry({ id: 'new', changed: ['codefile:x.ts'] })
+    const older = entry({ id: 'old', changed: ['codefile:x.ts'] })
+
+    expect(reclaim([newest, older], 'x.ts', 's1', (e) => e.id === 'old')).toBeNull()
   })
 })

@@ -16,6 +16,7 @@ import {
   type EditSummary,
   type FunctionList,
   type Recency,
+  HOOK_DEADLINE_MS,
   type HistoryEntry,
   historyEntrySchema,
   type VerdictRecord,
@@ -42,7 +43,7 @@ import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
 import { scopeOf } from './draft/scope'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
-import { attribute, type Attributed, codeDiff, contractDiff, isEmpty, type Touch } from './contract/history'
+import { attribute, type Attributed, codeDiff, contractDiff, type Diff, isEmpty, reclaim, type Touch } from './contract/history'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
@@ -213,6 +214,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   let reviewListener: ((state: ReviewState) => void) | null = null
   const review = createReview(cacheDir, (state) => reviewListener?.(state), options.reviewTimeouts)
   const sessionCwds = new Map<string, string>()
+  const recordedAt = new Map<string, number>()
   const drafting = new Map<string, Promise<DraftResult<string>>>()
   const draftFailures = new Map<string, DraftFailure>()
   let server: net.Server | null = null
@@ -423,6 +425,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...change }
     histories.append(root, entry)
+    if (source === 'code') remember(entry.id)
     historyListener?.(entry)
   }
 
@@ -454,12 +457,37 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
   }
 
+  function remember(id: string) {
+    recordedAt.set(id, Date.now())
+    for (const known of recordedAt.keys()) {
+      if (recordedAt.size <= HISTORY_LIMIT) break
+      recordedAt.delete(known)
+    }
+  }
+
+  function reclaimed(root: string, touch: Touch, touched: Touch[], moved: Diff): boolean {
+    const { file, session, at } = touch
+    if (!session || at === undefined) return false
+    if (touched.some((other) => other.file === file && other.session !== session)) return false
+    if ([...moved.added, ...moved.changed, ...moved.removed].includes(`codefile:${file}`)) return false
+
+    const found = reclaim(histories.list(root), file, session, (entry) => (recordedAt.get(entry.id) ?? 0) >= at - HOOK_DEADLINE_MS)
+    if (!found) return false
+    histories.replace(root, found.found, found.parts)
+    for (const part of [...found.parts].reverse()) historyListener?.(part)
+    return true
+  }
+
   async function rescanProject(root: string, touched: Touch[] = []): Promise<CodeMap> {
     const seen = Date.now()
     const stored = readStoredMap(cacheDir, root)
     const described = await describe(await scan(root), root, stored?.cache)
-    const diff = stored?.map ? codeDiff(stored.map, described.map, touched.map((touch) => touch.file)) : null
-    for (const change of diff ? attribute(diff, touched) : []) record(root, 'code', change, seen)
+    if (stored?.map) {
+      const moved = codeDiff(stored.map, described.map)
+      const fresh = touched.filter((touch) => !reclaimed(root, touch, touched, moved))
+      const diff = codeDiff(stored.map, described.map, fresh.map((touch) => touch.file))
+      for (const change of attribute(diff, fresh)) record(root, 'code', change, seen)
+    }
 
     try {
       writeStoredMap(cacheDir, root, described)
@@ -502,6 +530,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   }
 
   async function touchSession(cwd: string, session: string | undefined, file: string | undefined): Promise<string | null> {
+    const at = Date.now()
     if (!file) {
       if (session) sessionCwds.set(session, cwd)
       return null
@@ -512,7 +541,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     const state = loadProject(located.root)
     const relative = path.relative(located.root, located.file).split(path.sep).join('/')
-    state.touched.push(session ? { file: relative, session } : { file: relative })
+    state.touched.push(session ? { file: relative, session, at } : { file: relative })
     if (state.rescanTimer) clearTimeout(state.rescanTimer)
     state.rescanTimer = null
     void runRescan(state)

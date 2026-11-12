@@ -124,6 +124,8 @@ export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
 
 export const EDIT_TIMEOUT_MS = 9 * 60 * 1000
 
+export const HOOK_DEADLINE_MS = 1500
+
 export const codeChangeSchema = z.union([
   z.object({ tool: z.literal('Write'), file: z.string(), content: z.string() }),
   z.object({
