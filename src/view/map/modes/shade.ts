@@ -18,6 +18,13 @@ export function busiestOf(counts: number[]): number {
   return counts.reduce((top, count) => Math.max(top, count), 0)
 }
 
+export function churnTop(facts: Facts): number {
+  const churn = facts.churn
+  if (!churn) return 0
+  const files = Object.values(churn.files).map((file) => file.commits)
+  return busiestOf([...facts.rows.map((row) => churnOf(row, churn)), ...files].filter(Number.isFinite))
+}
+
 export function churnOf(row: FunctionRow, churn: Churn): number {
   return churn.functions[changeKey(row.file, row.line, row.name)] ?? 0
 }
@@ -28,18 +35,25 @@ export function leafValues(mode: ModeId, facts: Facts): (number | null)[] {
   if (mode === 'unreached') return rows.map((_, at) => (facts.unreached.has(at) ? 1 : 0))
   if (mode === 'touched') return rows.map((row) => (facts.sessions.has(row.file) ? 1 : 0))
   if (!churn) return rows.map(() => null)
-  const counts = rows.map((row) => churnOf(row, churn))
-  const top = Math.log1p(busiestOf(counts))
-  return counts.map((count) => (top > 0 ? Math.log1p(count) / top : 0))
+  const top = Math.log1p(churnTop(facts))
+  return rows.map((row) => (top > 0 ? Math.log1p(churnOf(row, churn)) / top : 0))
 }
 
 export function shade(root: MapNode, mode: ModeId, facts: Facts): Map<string, number | null> {
   const leaves = leafValues(mode, facts)
   const values = new Map<string, number | null>()
+  const churn = facts.churn
+  const top = Math.log1p(churnTop(facts))
+
+  const rest = (file: string): number | null => {
+    if (mode === 'touched') return facts.sessions.has(file) ? 1 : 0
+    if (mode !== 'churn' || !churn) return null
+    return top > 0 ? Math.log1p(churn.files[file]?.commits ?? 0) / top : 0
+  }
 
   const visit = (node: MapNode): number | null => {
-    if (node.fn !== undefined) {
-      const value = leaves[node.fn] ?? null
+    if (node.fn !== undefined || node.kind === 'rest') {
+      const value = node.fn === undefined ? rest(node.path) : (leaves[node.fn] ?? null)
       values.set(node.id, value)
       return value
     }

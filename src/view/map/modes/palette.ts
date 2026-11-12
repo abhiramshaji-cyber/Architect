@@ -24,7 +24,8 @@ export const MODES: Mode[] = [
     token: '--age',
     low: '0',
     high: 'most',
-    title: 'Commits that changed each function, on a log scale up to the busiest one',
+    title:
+      'Commits that changed each function, or each file for its lines outside functions, on a log scale up to the busiest',
   },
   {
     id: 'touched',

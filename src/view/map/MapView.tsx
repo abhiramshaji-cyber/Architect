@@ -7,7 +7,7 @@ import type { MapNode } from './layout/nest'
 import { trail } from './layout/trail'
 import Legend from './modes/Legend'
 import { MODES } from './modes/palette'
-import { busiestOf, churnOf, type ModeId, shade } from './modes/shade'
+import { churnTop, type ModeId, shade } from './modes/shade'
 import { useMap } from './useMap'
 
 export default function MapView({ theme, show }: ViewProps) {
@@ -40,10 +40,7 @@ export default function MapView({ theme, show }: ViewProps) {
     (node: MapNode) => (facts ? factsFor(node, facts) : { kind: '', title: '', lines: [] }),
     [facts],
   )
-  const busiest = useMemo(() => {
-    const churn = facts?.churn
-    return churn ? busiestOf(facts.rows.map((row) => churnOf(row, churn))) : null
-  }, [facts])
+  const busiest = useMemo(() => (facts?.churn ? churnTop(facts) : null), [facts])
 
   const pick = useCallback(
     (node: MapNode) => {
@@ -93,7 +90,7 @@ export default function MapView({ theme, show }: ViewProps) {
       </div>
       {notice && <p className="fn-notice">{notice}</p>}
       {!tree ? (
-        <p className="fn-empty">Reading functions…</p>
+        !notice && <p className="fn-empty">Reading functions…</p>
       ) : !focus || focus.children.length === 0 ? (
         <p className="fn-empty">No functions found.</p>
       ) : (

@@ -52,18 +52,22 @@ export function useMap(): MapData {
   const churn = useAsked(currentRoot, codeMap !== undefined, askChurn, codeMap)
   const scanned = useAsked(currentRoot, list !== null, askMap, list)
   const project = currentRoot?.split(/[\\/]/).filter(Boolean).pop() ?? ''
-  const files = useMemo(() => scanned.value?.folders.flatMap((folder) => folder.files) ?? [], [scanned.value])
+  const map = codeMap ?? scanned.value
+  const files = useMemo(() => map?.folders.flatMap((folder) => folder.files) ?? [], [map])
 
   const tree = useMemo(
-    () => (list && scanned.answered ? nest(list.rows, files, architecture ? list.owners : null, project) : null),
-    [list, files, scanned.answered, architecture, project],
+    () => (list && map ? nest(list.rows, files, architecture ? list.owners : null, project) : null),
+    [list, map, files, architecture, project],
   )
   const facts = useMemo(() => (list ? gather(list, churn.value, history) : null), [list, churn.value, history])
 
   return {
     tree,
     facts,
-    error: asked.error,
+    error:
+      asked.error ??
+      scanned.error ??
+      (scanned.answered && !map ? 'The scan has no stored code map for this project.' : null),
     churnError: churn.error,
     grouped: architecture ? 'components' : 'folders',
   }

@@ -75,6 +75,15 @@ describe('scan', () => {
     expect(folder(map, '').files.map((f) => f.path)).toEqual(['a.ts'])
   })
 
+  it('counts the lines of code files only', async () => {
+    const map = await scan(
+      fixture({ 'a.ts': 'one\ntwo\n', 'b.tsx': 'one\ntwo\nthree', 'c.d.ts': 'x\n', 'd.md': '# x\n', 'e.ts': '' }),
+    )
+    const lines = Object.fromEntries(folder(map, '').files.map((f) => [f.path, f.lines]))
+
+    expect(lines).toEqual({ 'a.ts': 2, 'b.tsx': 3, 'c.d.ts': undefined, 'd.md': undefined, 'e.ts': 0 })
+  })
+
   it('flattens every folder for O(1) lookup', async () => {
     const map = await scan(fixture({ 'src/deep/nested/a.ts': '', 'src/b.ts': '' }))
 

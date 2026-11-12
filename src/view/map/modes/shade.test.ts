@@ -111,6 +111,44 @@ describe('shade', () => {
   })
 })
 
+describe('shade outside functions', () => {
+  const tree = nest(
+    [],
+    [
+      { path: 'a/types.ts', lines: 300 },
+      { path: 'b/two.ts', lines: 20 },
+    ],
+    null,
+    'demo',
+  )
+  const restOf = (file: string) => {
+    const group = tree.children.find((c) => c.label === file.split('/')[0])
+    return group?.children[0]?.children[0]?.children[0]?.id ?? ''
+  }
+
+  it('colours a file with no functions by its sessions and its file churn', () => {
+    const touched = shade(tree, 'touched', facts({ sessions: new Map([['a/types.ts', [{ session: 's', at: 1 }]]]) }))
+    expect(touched.get(restOf('a/types.ts'))).toBe(1)
+    expect(touched.get(restOf('b/two.ts'))).toBe(0)
+    const churned = facts({
+      churn: {
+        days: 90,
+        files: { 'a/types.ts': { commits: 99, added: 1, removed: 0 } },
+        functions: { 'a/one.ts:1:top': 7 },
+      },
+    })
+    const churn = shade(tree, 'churn', churned)
+    expect(churn.get(restOf('a/types.ts'))).toBe(1)
+    expect(churn.get(restOf('b/two.ts'))).toBe(0)
+    expect(shade(tree, 'churn', facts({ churn: null })).get(restOf('a/types.ts'))).toBeNull()
+  })
+
+  it('leaves it uncoloured for importance and unreached', () => {
+    expect(shade(tree, 'importance', facts()).get(restOf('a/types.ts'))).toBeNull()
+    expect(shade(tree, 'unreached', facts()).get(restOf('a/types.ts'))).toBeNull()
+  })
+})
+
 describe('gather', () => {
   it('collects the rows, the whole unreached bucket and the session files', () => {
     const tree: FunctionTree = { starts: [0], groups: [], unreached: [2], children: [[1], [], []], also: [] }
