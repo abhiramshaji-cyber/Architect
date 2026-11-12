@@ -5,6 +5,8 @@ import { reply, scrub } from './message'
 
 const TIMEOUT_MS = 3 * 60 * 1000
 const MAX_STDERR = 400
+const MAX_FOLDERS = 300
+const MAX_PLAIN = 8
 
 const RULE_SYNTAX = [
   '- names: Word, Word `glob`   bans those words in file, class and function names under the glob',
@@ -18,14 +20,22 @@ function filesBlock(map: CodeMap, scope: string): string[] {
   const names = new Map<string, string[]>()
   for (const { row } of found.functions) names.set(row.file, [...(names.get(row.file) ?? []), row.name])
 
-  const folders = new Map<string, string[]>()
+  const folders = new Map<string, { parsed: string[]; plain: string[] }>()
   for (const file of found.files) {
     const at = file.lastIndexOf('/')
     const folder = at === -1 ? '.' : file.slice(0, at)
-    const shown = names.has(file) ? `${file.slice(at + 1)} (${names.get(file)?.join(', ')})` : file.slice(at + 1)
-    folders.set(folder, [...(folders.get(folder) ?? []), shown])
+    const held = folders.get(folder) ?? { parsed: [], plain: [] }
+    if (names.has(file)) held.parsed.push(`${file.slice(at + 1)} (${names.get(file)?.join(', ')})`)
+    else held.plain.push(file.slice(at + 1))
+    folders.set(folder, held)
   }
-  return [...folders].map(([folder, files]) => `${folder}: ${files.join('; ')}`)
+
+  const shown = [...folders].sort(([, a], [, b]) => b.parsed.length - a.parsed.length || b.plain.length - a.plain.length).slice(0, MAX_FOLDERS)
+  const lines = shown.map(([folder, { parsed, plain }]) => {
+    const more = plain.length > MAX_PLAIN ? [`and ${plain.length - MAX_PLAIN} more files`] : []
+    return `${folder}: ${[...parsed, ...plain.slice(0, MAX_PLAIN), ...more].join('; ')}`
+  })
+  return folders.size > MAX_FOLDERS ? [...lines, `and ${folders.size - MAX_FOLDERS} more folders`] : lines
 }
 
 export type Known = { architecture: Architecture | null; rules: string[]; measured: Convention[] }

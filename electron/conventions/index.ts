@@ -15,7 +15,7 @@ export type Project = { root: string; map: CodeMap; architecture: Architecture |
 
 const settingsIn = (dir: string) => path.join(dir, 'settings.json')
 
-let asking: AbortController | null = null
+const asking = new Map<string, AbortController>()
 
 function on(dir: string): boolean {
   return readSettings(settingsIn(dir)).conventions
@@ -40,13 +40,14 @@ function weighed(architecture: Architecture | null, sources: SourceFacts[], foun
 export async function conventionsOf(dir: string, load: () => Promise<Project>): Promise<Conventions> {
   if (!on(dir)) return { enabled: false }
   const { root, map, architecture } = await load()
+  if (!on(dir)) return { enabled: false }
   const sources = sourcesIn(root, map)
   return { enabled: true, measured: weighed(architecture, sources, measured(architecture, sources)) }
 }
 
 export function switchConventions(dir: string, enabled: boolean, load: () => Promise<Project>): Promise<Conventions> {
   saveSettings(settingsIn(dir), { conventions: enabled })
-  if (!enabled) asking?.abort()
+  if (!enabled) for (const ask of asking.values()) ask.abort()
   return conventionsOf(dir, load)
 }
 
@@ -56,11 +57,12 @@ export async function suggestedConventions(dir: string, load: () => Promise<Proj
   const sources = sourcesIn(root, map)
   const known = { architecture, rules: effective(architecture?.rules).map(ruleLine), measured: measured(architecture, sources) }
 
-  asking?.abort()
+  ensureOn(dir)
+  asking.get(root)?.abort()
   const ask = new AbortController()
-  asking = ask
+  asking.set(root, ask)
   const result = await suggestConventions(root, map, known, run, ask.signal).finally(() => {
-    if (asking === ask) asking = null
+    if (asking.get(root) === ask) asking.delete(root)
   })
   if (ask.signal.aborted) throw new Error('the request for suggestions was stopped before Claude Code replied')
   return result.ok ? { ok: true, value: weighed(architecture, sources, result.value) } : result

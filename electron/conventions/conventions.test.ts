@@ -199,6 +199,46 @@ describe('stopping a running ask', () => {
   })
 })
 
+describe('switching off mid ask', () => {
+  it('starts no model call when switched off while the project loads', async () => {
+    on()
+    write('a/x.ts', 1)
+    const run = vi.fn<ClaudeRun>()
+    const load = async () => {
+      await switchConventions(dir, false, load)
+      return { root: dir, map: mapOf('a/x.ts'), architecture: null }
+    }
+    await expect(suggestedConventions(dir, load, run)).rejects.toThrow(/off/)
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('keeps asks for two projects apart', async () => {
+    on()
+    write('a/x.ts', 1)
+    const signals: AbortSignal[] = []
+    const run: ClaudeRun = (_p, _c, _m, _model, signal) =>
+      new Promise((resolve) => {
+        if (signal) signals.push(signal)
+        setTimeout(() => resolve({ code: 0, stdout: '{"conventions": []}', stderr: '' }), 20)
+      })
+    const load = (root: string) => async () => ({ root, map: mapOf('a/x.ts'), architecture: null })
+    const first = suggestedConventions(dir, load(dir), run)
+    const second = suggestedConventions(dir, load(`${dir}/.`), run)
+    expect(await first).toEqual({ ok: true, value: [] })
+    expect(await second).toEqual({ ok: true, value: [] })
+    expect(signals.some((signal) => signal.aborted)).toBe(false)
+  })
+
+  it('names only a sample of the files in a large folder', async () => {
+    on()
+    const many = Array.from({ length: 30 }, (_, i) => `big/f${i}.ts`)
+    const run = vi.fn<ClaudeRun>().mockResolvedValue({ code: 0, stdout: '{"conventions": []}', stderr: '' })
+    await suggestedConventions(dir, async () => ({ root: dir, map: mapOf(...many), architecture: null }), run)
+    expect(run.mock.calls[0]?.[0]).toContain('and 22 more files')
+    expect(run.mock.calls[0]?.[0]).not.toContain('f29.ts')
+  })
+})
+
 describe('promoteConvention', () => {
   it('writes the rule into architect.md when on, and refuses without a contract', () => {
     on()

@@ -13,6 +13,7 @@ export function useConventions(root: string | null, architecture: unknown) {
   const [error, setError] = useState<string | null>(null)
   const [ai, setAi] = useState<Ai>(idle)
   const asked = useRef(root)
+  const reads = useRef(0)
 
   useEffect(() => {
     asked.current = root
@@ -21,13 +22,13 @@ export function useConventions(root: string | null, architecture: unknown) {
 
   useEffect(() => {
     if (!root) return
-    let live = true
+    const read = ++reads.current
     window.architect.conventions(root).then(
-      (next) => live && (setState(next), setError(null)),
-      (err: unknown) => live && setError(text(err)),
+      (next) => read === reads.current && (setState(next), setError(null)),
+      (err: unknown) => read === reads.current && setError(text(err)),
     )
     return () => {
-      live = false
+      reads.current++
     }
   }, [root, architecture])
 
@@ -35,7 +36,11 @@ export function useConventions(root: string | null, architecture: unknown) {
     if (!root || !state) return
     asked.current = state.enabled ? null : root
     setAi(idle)
-    window.architect.setConventions(root, !state.enabled).then(setState, (err: unknown) => setError(text(err)))
+    const read = ++reads.current
+    window.architect.setConventions(root, !state.enabled).then(
+      (next) => read === reads.current && setState(next),
+      (err: unknown) => read === reads.current && setError(text(err)),
+    )
   }, [root, state])
 
   const suggest = useCallback(() => {
