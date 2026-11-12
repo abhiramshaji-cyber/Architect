@@ -6,9 +6,9 @@ export type Reach = { depth: Map<number, number>; parent: Map<number, number> }
 
 type Start = { file: string; kind: string; calls: number[] }
 
-const LIST_DEPTH = 3
+export const LIST_DEPTH = 3
 
-const LISTED = 25
+export const LISTED = 25
 
 const DEPTHS = 25
 

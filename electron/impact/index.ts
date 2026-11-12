@@ -6,7 +6,7 @@ import { edgesOf } from '../functions/facts'
 import { scan } from '../scan/scan'
 import { isTestFile } from '../scan/starts'
 import { projectPath, type Fn } from '../where/refs'
-import { callersOf, type Reach } from './callers'
+import { callersOf, LIST_DEPTH, LISTED, type Reach } from './callers'
 import type { Impact, Touch } from './schema'
 import { testsOf } from './tests'
 import { changesOf, keysOf } from './touched'
@@ -19,9 +19,9 @@ type Spot = { file: string; line: number }
 
 type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; file: string | null; notes: string[] }
 
-const LISTED = 25
-
 const SETTLE_MS = 2000
+
+const TIMEOUT_MS = 5000
 
 function before(root: string, file: string): string | Error {
   try {
@@ -41,9 +41,10 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   if (current instanceof Error) return { seeds: [], touched: [], added: [], file, notes: [`${file} could not be read (${current.message}), so no function is touched`] }
 
   const { changes, parsed } = changesOf(file, current, input.content)
-  const notes = current === input.content ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 ? [`${file} holds no function the scan parses, so no function is touched`] : changes.length === 0 ? [`the change to ${file} is outside every function, so no function is touched`] : []
+  const notes = current.replaceAll('\r\n', '\n') === input.content.replaceAll('\r\n', '\n') ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 ? [`${file} holds no function the scan parses, so no function is touched`] : changes.length === 0 ? [`the change to ${file} is outside every function, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
+  notes.push(...changes.filter((change) => change.change === 'changed' && change.shares.length > 0).map((change) => `${change.name} at ${file}:${change.line} shares a line with ${change.shares.join(', ')}; the scan gives lines, not columns, so an edit on that line counts as a change to each`))
   const seeds = changes.flatMap((change) => {
     if (change.change === 'added') return []
     const index = scanned.indexOf(change.key)
@@ -104,7 +105,7 @@ function current(root: string, map: CodeMap): boolean {
   const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path))]
   return paths.every((entry) => {
     const stat = fs.statSync(path.join(root, entry), { throwIfNoEntry: false })
-    return stat !== undefined && stat.mtimeMs < map.scannedAt - SETTLE_MS
+    return stat !== undefined && stat.ctimeMs < map.scannedAt - SETTLE_MS
   })
 }
 
@@ -121,11 +122,20 @@ async function mapOf(root: string): Promise<CodeMap> {
   return scans.get(root) as Promise<CodeMap>
 }
 
-export async function impactFor(input: ImpactInput, root: string, architecture: Architecture): Promise<Impact> {
+export async function impactFor(input: ImpactInput, root: string, architecture: Architecture, timeoutMs = TIMEOUT_MS): Promise<Impact> {
+  const empty = { total: 0, listed: [] }
+  const failed = (note: string): Impact => ({ touched: empty, callers: { ...empty, depths: [], listedThrough: LIST_DEPTH, unlisted: 0 }, entries: empty, components: [], tests: empty, notes: [note] })
+  let timer: NodeJS.Timeout | undefined
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs, null)
+  })
   try {
-    return impactOf(input, root, architecture, await mapOf(root))
+    const map = await Promise.race([mapOf(root), late])
+    if (map === null) return failed(`impact was not worked out: scanning ${root} took longer than ${timeoutMs} ms; the scan goes on and a later check uses it`)
+    return impactOf(input, root, architecture, map)
   } catch (err) {
-    const empty = { total: 0, listed: [] }
-    return { touched: empty, callers: { ...empty, depths: [], listedThrough: 3, unlisted: 0 }, entries: empty, components: [], tests: empty, notes: [`impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`] }
+    return failed(`impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    clearTimeout(timer)
   }
 }

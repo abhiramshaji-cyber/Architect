@@ -4,7 +4,7 @@ import ts from 'typescript'
 import type { FileEntry } from '../../shared/types'
 import { isTestFile } from '../scan/starts'
 import type { Fn } from '../where/refs'
-import type { Reach } from './callers'
+import { refIndex, type Reach } from './callers'
 import type { TestReach } from './schema'
 
 const LISTED = 10
@@ -50,13 +50,11 @@ function reachedOf(fns: Fn[], reach: Reach, node: number): number {
 }
 
 function exposedBy(fns: Fn[], files: FileEntry[]): Map<string, number[]> {
-  const offset = new Map<string, number>()
-  fns.forEach((fn, i) => offset.has(fn.file) || offset.set(fn.file, i))
-  const indexOf = (file: string, fn: number) => (offset.get(file) ?? Number.NaN) + fn
+  const index = refIndex(fns)
   return new Map(files.map((file) => {
-    const own = file.functions.map((_, fn) => indexOf(file.path, fn))
-    const forwarded = (file.starts ?? []).filter((start) => start.kind === 'exports').flatMap((start) => start.calls.map((call) => indexOf(call.file, call.fn)))
-    return [file.path, [...own, ...forwarded].filter((i) => Number.isInteger(i)).sort((a, b) => a - b)]
+    const own = file.functions.map((_, fn) => index({ file: file.path, fn }))
+    const forwarded = (file.starts ?? []).filter((start) => start.kind === 'exports').flatMap((start) => start.calls.map(index))
+    return [file.path, [...own, ...forwarded].filter((i): i is number => i !== undefined).sort((a, b) => a - b)]
   }))
 }
 

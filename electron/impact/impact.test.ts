@@ -47,9 +47,9 @@ describe('changesOf', () => {
     const after = 'function a() {\n  return 1\n}\nfunction a() {\n  return 3\n}\nfunction fresh() {}\n'
     expect(changesOf('x.ts', before, after)).toEqual({
       changes: [
-        { name: 'a', key: '/a#1', line: 4, change: 'changed' },
-        { name: 'gone', key: '/gone#0', line: 7, change: 'removed' },
-        { name: 'fresh', key: '/fresh#0', line: 7, change: 'added' },
+        { name: 'a', key: '/a#1', line: 4, change: 'changed', shares: [] },
+        { name: 'gone', key: '/gone#0', line: 7, change: 'removed', shares: [] },
+        { name: 'fresh', key: '/fresh#0', line: 7, change: 'added', shares: [] },
       ],
       parsed: 6,
     })
@@ -59,9 +59,18 @@ describe('changesOf', () => {
     const before = 'function a() {\n  const f = () => 0\n  return f()\n}\nfunction b() {\n  const f = () => 1\n  return f()\n}\n'
     const after = `function z() {\n  const f = () => 2\n  return f()\n}\n${before}`
     expect(changesOf('x.ts', before, after).changes).toEqual([
-      { name: 'z', key: '/z#0', line: 1, change: 'added' },
-      { name: 'f', key: '/z#0/f#0', line: 2, change: 'added' },
+      { name: 'z', key: '/z#0', line: 1, change: 'added', shares: [] },
+      { name: 'f', key: '/z#0/f#0', line: 2, change: 'added', shares: [] },
     ])
+  })
+
+  it('keeps siblings on one line apart and says an edit there counts for each', async () => {
+    const before = 'const o = { a() { return 1 }, b() { return 2 } }\n'
+    const after = 'const o = { a() { return 1 }, b() { return 3 } }\n'
+    const { changes } = changesOf('x.ts', before, after)
+    expect(changes.map((change) => `${change.key} ${change.change} ${change.shares.join(',')}`)).toEqual(['/o.a#0 changed o.b', '/o.b#0 changed o.a'])
+    const split = changesOf('x.ts', 'const a = () => 1; const b = () => 2\n', 'const a = () => 1\nconst b = () => 2\n').changes
+    expect(split.map((change) => `${change.key} ${change.change}`)).toEqual(['/a#0 changed', '/b#0 changed'])
   })
 
   it('touches nothing when only code outside every function changes', () => {
@@ -186,6 +195,10 @@ describe('impactFor', () => {
 
     fs.writeFileSync(path.join(root, 'lib/more.ts'), "import { load } from '../store/db'\n\nexport function more() {\n  return load()\n}\n")
     expect((await impactFor(input, root, architecture)).callers.total).toBe(5)
+
+    fs.mkdirSync(path.join(root, 'pad'))
+    for (let i = 0; i < 200; i += 1) fs.writeFileSync(path.join(root, 'pad', `p${i}.ts`), `export function p${i}() {}\n`)
+    expect((await impactFor(input, root, architecture, 0)).notes[0]).toMatch(/^impact was not worked out: scanning .* took longer than 0 ms/)
 
     const broken = await impactFor(input, root, {} as Architecture)
     expect(broken.notes[0]).toMatch(/^impact could not be worked out: /)
