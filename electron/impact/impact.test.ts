@@ -169,7 +169,7 @@ describe('impactOf', () => {
 
     expect(notes({ cwd: root, file: '../out.ts', content: 'x' })).toEqual([`../out.ts is outside ${root}, so no function is touched`])
     expect(notes({ cwd: root, file: 'notes.md', content: '# more\n' })).toEqual(['notes.md holds no function the scan parses, so no function is touched'])
-    expect(notes(edit(root, 'store/cache.ts', "'./db'", '"./db"'))).toEqual(['code outside every function in store/cache.ts changed (a top level value, an import, a type or a field), so callers are counted from all 1 functions in the file'])
+    expect(notes(edit(root, 'store/cache.ts', "'./db'", '"./db"'))).toEqual(['code outside every function in store/cache.ts changed (a top level value, an import, a type or a field), so callers are counted from its 1 functions, and the 1 functions in the 1 files that import it count as its callers'])
     expect(notes({ cwd: root, file: 'dir.ts', content: 'x' })).toEqual(['dir.ts could not be read (dir.ts is not a file), so no function is touched'])
     expect(notes({ cwd: path.join(root, 'api'), file: 'route.ts', content: fs.readFileSync(path.join(root, 'api/route.ts'), 'utf8') })).toEqual(['the proposed content of api/route.ts is the same as the file on disk, so no function is touched'])
   })
@@ -177,7 +177,7 @@ describe('impactOf', () => {
   it('notes a changed function the scan has not seen yet', async () => {
     const { root, architecture } = await project()
     const empty: CodeMap = { root, scannedAt: 0, folders: [] }
-    expect(impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, empty).notes).toEqual(['load at store/db.ts:1 is not in the scan (the scan skips this path, or the file changed after the scan), so its callers are not counted'])
+    expect(impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, empty).notes).toEqual(['1 changed functions are not in the scan (load at store/db.ts:1); the scan skips this path or the file changed after the scan, so their callers are not counted'])
   })
 
   it('starts an edge from every function the calling component owns', async () => {
@@ -301,11 +301,24 @@ describe('renamed re-exports and test callbacks', () => {
     expect(callback.tests.listed).toEqual([{ file: 'store/start.test.ts', via: 'touched', at: 'store/start.test.ts:3', reaches: 'store/start.test.ts:3' }])
   })
 
-  it('counts callers of every function in the file when code outside them changes', async () => {
-    const { root, map, architecture } = await project({ ...FILES, 'store/db.ts': `const K = 1\n\n${FILES['store/db.ts']}` })
+  it('counts callers of every function in the file and of the files importing it when code outside them changes', async () => {
+    const { root, map, architecture } = await project({ ...FILES, 'store/db.ts': `export const K = 1\n\n${FILES['store/db.ts']}`, 'store/limit.ts': 'export const LIMIT = 5\n', 'api/cap.ts': "import { LIMIT } from '../store/limit'\n\nexport function cap() {\n  return LIMIT\n}\n", 'api/cap.test.ts': "import { LIMIT } from '../store/limit'\n" })
     const impact = impactOf(edit(root, 'store/db.ts', 'const K = 1', 'const K = 2'), root, architecture, map)
     expect(impact.touched.total).toBe(0)
-    expect(impact.callers.total).toBe(6)
-    expect(impact.notes[0]).toBe('code outside every function in store/db.ts changed (a top level value, an import, a type or a field), so callers are counted from all 3 functions in the file')
+    expect(impact.callers.depths[0]).toEqual({ depth: 1, count: 3, first: 'lib/loop.ts:3 ping' })
+    expect(impact.notes[0]).toBe('code outside every function in store/db.ts changed (a top level value, an import, a type or a field), so callers are counted from its 3 functions, and the 3 functions in the 2 files that import it count as its callers')
+
+    const constant = impactOf(edit(root, 'store/limit.ts', 'LIMIT = 5', 'LIMIT = 6'), root, architecture, map)
+    expect(constant.callers.listed).toEqual([{ name: 'cap', at: 'api/cap.ts:3', depth: 1, calls: 'store/limit.ts top level code' }])
+    expect(constant.tests.listed).toEqual([{ file: 'api/cap.test.ts', via: 'import', at: 'api/cap.test.ts:1', reaches: 'store/limit.ts' }])
+  })
+
+  it('caps the notes and names a few functions per note', async () => {
+    const many = Array.from({ length: 30 }, (_, i) => `export function f${i}() { return ${i} }`).join('\n')
+    const { root, architecture } = await project({ 'lib/many.ts': `${many}\n` })
+    const empty: CodeMap = { root, scannedAt: 0, folders: [] }
+    const impact = impactOf({ cwd: root, file: 'lib/many.ts', content: `${many.replaceAll('return', 'return 1 +')}\n` }, root, architecture, empty)
+    expect(impact.notes.length).toBeLessThanOrEqual(20)
+    expect(impact.notes.some((note) => note.startsWith('30 changed functions are not in the scan (f0 at lib/many.ts:1, f1 at lib/many.ts:2,'))).toBe(true)
   })
 })

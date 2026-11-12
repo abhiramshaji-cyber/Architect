@@ -17,11 +17,15 @@ export type ImpactInput = { cwd: string; from?: string; to?: string; file?: stri
 
 type Spot = { file: string; line: number; name: string }
 
-type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; file: string | null; notes: string[] }
+type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; whole?: string; users?: number[]; file: string | null; notes: string[] }
 
 const SETTLE_MS = 2000
 
 const CODE = /\.[cm]?[jt]sx?$/
+
+const NAMED = 5
+
+const NOTES = 20
 
 const TIMEOUT_MS = 5000
 
@@ -35,6 +39,8 @@ function before(root: string, file: string): string | Error {
     return err instanceof Error ? err : new Error(String(err))
   }
 }
+
+const capped = (notes: string[]) => (notes.length > NOTES ? [...notes.slice(0, NOTES - 1), `${notes.length - NOTES + 1} more notes are left out`] : notes)
 
 function firstDiff(before: string, after: string): number {
   const [a, b] = [before.split(/\r?\n/), after.split(/\r?\n/)]
@@ -50,24 +56,36 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
 
   const { changes, parsed, outside } = changesOf(file, current, input.content)
   const same = current.replaceAll('\r\n', '\n') === input.content.replaceAll('\r\n', '\n')
-  const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 ? [`${file} holds no function the scan parses, so no function is touched`] : []
+  const code = CODE.test(file)
+  const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 && !code ? [`${file} holds no function the scan parses, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
-  const whole = !same && outside && parsed > 0 && offset >= 0 ? scanned.map((_, index) => offset + index) : []
-  if (!same && outside && parsed > 0 && offset < 0) notes.push(`code outside every function in ${file} changed, but the file is not in the scan, so its callers are not counted`)
-  if (whole.length > 0) notes.push(`code outside every function in ${file} changed (a top level value, an import, a type or a field), so callers are counted from all ${whole.length} functions in the file`)
-  notes.push(...changes.filter((change) => change.change === 'changed' && change.shares.length > 0).map((change) => `${change.name} at ${file}:${change.line} shares a line with ${change.shares.join(', ')}; the scan gives lines, not columns, so an edit on that line counts as a change to each`))
+  const wide = !same && outside && code ? outsideSeeds(file, files, fns) : null
+  if (wide) notes.push(wide.note)
+
+  const sharing = changes.filter((change) => change.change === 'changed' && change.shares.length > 0)
+  if (sharing.length > 0) notes.push(`${sharing.length} changed functions share a line with another function (${sharing.slice(0, NAMED).map((change) => `${change.name} at ${file}:${change.line}`).join(', ')}${sharing.length > NAMED ? ', ...' : ''}); the scan gives lines, not columns, so an edit on that line counts as a change to each`)
+  const unseen: string[] = []
   const seeds = changes.flatMap((change) => {
     if (change.change === 'added') return []
     const base = change.key.slice(0, change.key.lastIndexOf('#') + 1)
     const same = scanned.flatMap((key, index) => (key.startsWith(base) && !key.slice(base.length).includes('/') ? [index] : []))
     if (same.length > 0 && offset >= 0) return same.map((index) => offset + index)
-    notes.push(`${change.name} at ${file}:${change.line} is not in the scan (the scan skips this path, or the file changed after the scan), so its callers are not counted`)
+    unseen.push(`${change.name} at ${file}:${change.line}`)
     return []
   })
-  seeds.push(...whole)
+  if (unseen.length > 0) notes.push(`${unseen.length} changed functions are not in the scan (${unseen.slice(0, NAMED).join(', ')}${unseen.length > NAMED ? ', ...' : ''}); the scan skips this path or the file changed after the scan, so their callers are not counted`)
   const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? ('proposed' as const) : ('disk' as const) }))
-  return { seeds: [...new Set(seeds)], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added: changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name })), file, notes }
+  const added = changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name }))
+  return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide ? { whole: file, users: wide.users } : {}) }
+}
+
+function outsideSeeds(file: string, files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; note: string } {
+  const importers = new Set(files.filter((entry) => !isTestFile(entry.path) && (entry.imports ?? []).includes(file)).map((entry) => entry.path))
+  const own = fns.flatMap((fn, i) => (fn.file === file ? [i] : []))
+  const using = fns.flatMap((fn, i) => (importers.has(fn.file) ? [i] : []))
+  const note = `code outside every function in ${file} changed (a top level value, an import, a type or a field), so callers are counted from its ${own.length} functions, and the ${using.length} functions in the ${importers.size} files that import it count as its callers`
+  return { seeds: own, users: using, note }
 }
 
 function edgeSeeds(from: string, to: string, architecture: Architecture, fns: Fn[]): Seeded {
@@ -103,8 +121,8 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
   const seeded = file !== undefined && content !== undefined ? fileSeeds({ ...input, file, content }, root, files, fns) : edgeSeeds(from ?? '', to ?? '', architecture, fns)
   const both = file !== undefined && content !== undefined && from !== undefined && to !== undefined ? [`impact is worked out from ${file}; the edge ${from} -> ${to} is answered by the verdict only`] : []
 
-  const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds)
-  const tests = testsOf(root, fns, files, reach, seeded.added, seeded.edited)
+  const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds, seeded.whole && seeded.users ? { file: seeded.whole, users: seeded.users } : undefined)
+  const tests = testsOf(root, fns, files, reach, seeded.added, seeded.edited, seeded.whole)
   return {
     status: 'done',
     touched: { total: seeded.touched.length, listed: seeded.touched.slice(0, LISTED) },
@@ -112,15 +130,15 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
     entries,
     components: componentsOf(architecture, fns, reach, seeded.added, reached),
     tests: { total: tests.total, listed: tests.listed },
-    notes: [...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes],
+    notes: capped([...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes]),
   }
 }
 
 function current(root: string, map: CodeMap): boolean {
   const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path)).filter((file) => CODE.test(file))]
   const settled = (stat: fs.Stats | undefined) => stat !== undefined && stat.ctimeMs < map.scannedAt - SETTLE_MS
-  const manifest = fs.statSync(path.join(root, 'package.json'), { throwIfNoEntry: false })
-  return (manifest === undefined || settled(manifest)) && paths.every((entry) => settled(fs.statSync(path.join(root, entry), { throwIfNoEntry: false })))
+  const manifests = ['package.json', 'tsconfig.json'].map((name) => fs.statSync(path.join(root, name), { throwIfNoEntry: false }))
+  return manifests.every((stat) => stat === undefined || settled(stat)) && paths.every((entry) => settled(fs.statSync(path.join(root, entry), { throwIfNoEntry: false })))
 }
 
 const scans = new Map<string, Promise<CodeMap>>()

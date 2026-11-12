@@ -211,7 +211,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   const projects = new Map<string, ProjectState>()
   const histories = createJournal((root) => path.join(cacheDir, 'history', `${cacheKey(root)}.json`), historyEntrySchema, HISTORY_LIMIT)
-  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema.extend({ impact: impactSchema.optional() }), HISTORY_LIMIT)
+  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema.extend({ impact: impactSchema.optional().catch(undefined) }), HISTORY_LIMIT)
   let changeListener: ((root: string, architecture: Architecture) => void) | null = null
   let historyListener: ((entry: HistoryEntry) => void) | null = null
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null

@@ -90,7 +90,7 @@ function exposedBy(fns: Fn[], files: FileEntry[]): Map<string, number[]> {
 
 type Hit = { via: 'touched' | 'call' | 'import'; at: string; reaches: string; unchecked?: string }
 
-export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[], edited?: { file: string; line: number }): { total: number; listed: TestReach[]; notes: string[] } {
+export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[], edited?: { file: string; line: number }, whole?: string): { total: number; listed: TestReach[]; notes: string[] } {
   const found = new Map<string, Hit>()
 
   for (const node of [...reach.depth.keys()].sort((a, b) => a - b)) {
@@ -109,7 +109,7 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
 
   const exposed = exposedBy(fns, files)
   const named = (fn: { name: string }, names: string[] | null) => names === null || names.includes(fn.name.split('.')[0] ?? '')
-  const reachable = (target: string) => added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
+  const reachable = (target: string) => target === whole || added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
   for (const file of files) {
     if (!isTestFile(file.path) || found.has(file.path) || !(file.imports ?? []).some(reachable)) continue
     const loaded = importsOf(root, file.path)
@@ -122,7 +122,8 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
         const reached = index === undefined ? undefined : fns[index]
         const spot = added.find((one) => one.file === target && named(one, way.names))
         const fresh = spot ? `${spot.file}:${spot.line}` : undefined
-        return reached || fresh ? [{ way, reaches: reached ? at(reached) : (fresh as string) }] : []
+        const outside = target === whole && (way.names === null || way.names.length > 0) ? whole : undefined
+        return reached || fresh || outside ? [{ way, reaches: reached ? at(reached) : (fresh ?? (outside as string)) }] : []
       })[0]
       if (hit === undefined) continue
       const unchecked = loaded === 'unreadable' ? `${file.path} could not be read, so the names it imports are not checked` : entries.length === 0 ? `${file.path} imports ${target} by a path that is not relative, so its import line and names are not checked` : undefined

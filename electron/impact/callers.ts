@@ -55,12 +55,15 @@ function startsOf(fns: Fn[], files: FileEntry[]): Start[] {
   )
 }
 
-export function callersOf(fns: Fn[], files: FileEntry[], edges: number[][], seeds: number[]) {
+export function callersOf(fns: Fn[], files: FileEntry[], edges: number[][], seeds: number[], top?: { file: string; users: number[] }) {
   const starts = startsOf(fns, files)
-  const reach = reachOf([...edges, ...starts.map((start) => start.calls)], seeds)
+  const module = fns.length + starts.length
+  const uses = top ? edges.map((out, from) => (top.users.includes(from) ? [...out, module] : out)) : edges
+  const reach = reachOf([...uses, ...starts.map((start) => start.calls), []], top ? [...seeds, module] : seeds)
   const callee = (node: number) => {
-    const fn = fns[reach.parent.get(node) ?? -1]
-    return fn ? named(fn) : ''
+    const parent = reach.parent.get(node) ?? -1
+    const fn = fns[parent]
+    return fn ? named(fn) : parent === module && top ? `${top.file} top level code` : ''
   }
 
   const found = [...reach.depth].flatMap(([node, depth]) => {

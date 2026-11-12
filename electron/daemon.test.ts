@@ -2643,6 +2643,17 @@ describe("check_change rules", () => {
     daemon = createDaemon({ socketPath });
     await daemon.listen();
     expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ file: "api/a.ts", impact: { touched: { total: 1 } } });
+
+    await daemon.close();
+    const key = createHash("sha256").update(fs.realpathSync.native(tmpRoot)).digest("hex");
+    const journal = path.join(path.dirname(socketPath), "verdicts", `${key}.json`);
+    const rows = JSON.parse(fs.readFileSync(journal, "utf8"));
+    fs.writeFileSync(journal, JSON.stringify([{ ...rows[0], impact: { shape: "from an older version" } }]));
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    expect(daemon.verdicts(tmpRoot)).toHaveLength(1);
+    expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ file: "api/a.ts", verdict: { status: "allowed" } });
+    expect(JSON.parse(JSON.stringify(daemon.verdicts(tmpRoot)[0]))).not.toHaveProperty("impact");
   });
 
   it("records a pass or fail run per rule", async () => {
