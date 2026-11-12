@@ -33,11 +33,15 @@ Works out when each function and each component last changed. Each function gets
 owns: `electron/recency/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, the per project change history, and the guarded read, write and directory listing of project files.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, the per project change history, the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
 
+### journal
+A capped, newest first list of records per project kept as one JSON file each in the cache directory. Rows are validated against a schema on load and any that fail are dropped, and every write replaces the file whole so a crash never leaves half a list. Holds the change history, the check_change verdicts and the rule runs.
+owns: `electron/journal/**`
+
 ### rules
-Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Keeps a capped pass and fail history per rule for each project. Fully deterministic, no model calls.
+Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Fully deterministic, no model calls.
 owns: `electron/rules/**`
 
 ### review
@@ -76,12 +80,14 @@ owns: `lsp/**`
 - rules -> types
 - daemon -> rules
 - cli -> rules
+- rules -> journal
 - daemon -> types
 - daemon -> graph
 - daemon -> draft
 - daemon -> functions
 - daemon -> review
 - daemon -> recency
+- daemon -> journal
 - recency -> types
 - recency -> graph
 - recency -> git
@@ -124,6 +130,7 @@ owns: `lsp/**`
 - canvas -> recency : the renderer never reads git history, when each function and component last changed arrives over the preload bridge
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
 - bridge -> review : the hook only forwards an edit over the socket and prints the answer, the queue lives in the app
+- canvas -> journal : the renderer never reads the cache directory, history and verdicts arrive over the preload bridge
 
 ## Packages
 
@@ -161,8 +168,9 @@ owns: `lsp/**`
 - lines: 450 `electron/contract/graph.ts`, `src/view/RepoPicker.tsx`
 - lines: 500 `electron/github/github.ts`
 - lines: 550 `electron/git/git.ts`
-- lines: 600 `shared/types.ts`, `src/model/store.ts`
-- lines: 650 `electron/scan/scan.ts`, `src/model/demo-mock.ts`
+- lines: 600 `src/model/store.ts`
+- lines: 650 `electron/scan/scan.ts`, `shared/types.ts`
+- lines: 700 `src/model/demo-mock.ts`
 - lines: 1050 `electron/daemon.ts`
 - files: 6 `scripts`
 - files: 7 `shared`

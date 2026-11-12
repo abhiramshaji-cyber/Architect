@@ -1744,6 +1744,53 @@ ${h2} Packages
     );
     c.close();
   });
+
+  it("records one verdict per check_change, stale answers included, and keeps them across a restart", async () => {
+    writeArchitect(tmpRoot, good);
+    await daemonOn(tmpRoot);
+
+    const c = await client(socketPath);
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db", session: "s-1" });
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "db", to: "api" });
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "ghost", session: "" });
+    writeArchitect(tmpRoot, broken);
+    await settle();
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db", session: "s-2" });
+    c.close();
+    await daemon.close();
+
+    daemon = createDaemon({ socketPath });
+    const records = daemon.verdicts(tmpRoot);
+    expect(records.map(({ from, to, verdict, stale, session }) => ({ from, to, status: verdict.status, stale, session }))).toEqual([
+      { from: "api", to: "db", status: "unknown", stale: true, session: "s-2" },
+      { from: "api", to: "ghost", status: "unknown-component", stale: undefined, session: undefined },
+      { from: "db", to: "api", status: "forbidden", stale: undefined, session: undefined },
+      { from: "api", to: "db", status: "allowed", stale: undefined, session: "s-1" },
+    ]);
+    expect(records.every((r) => r.root === tmpRoot && typeof r.id === "string" && r.at > 0)).toBe(true);
+    expect(records[0]?.verdict).toMatchObject({ reason: expect.stringContaining(`line ${badLine}`) });
+    expect(records[1]?.verdict).toEqual({ status: "unknown-component", ids: ["ghost"] });
+    expect(records[2]?.verdict).toEqual({ status: "forbidden", reason: "layers only point down" });
+  });
+
+  it("records an error answer as an unknown verdict when the file never parsed", async () => {
+    writeArchitect(tmpRoot, broken);
+    await daemonOn(tmpRoot);
+
+    const c = await client(socketPath);
+    const res = await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db" });
+    c.close();
+
+    expect(res.ok).toBe(false);
+    expect(daemon.verdicts(tmpRoot)).toEqual([
+      expect.objectContaining({
+        from: "api",
+        to: "db",
+        stale: true,
+        verdict: { status: "unknown", reason: expect.stringContaining(`line ${badLine}`) },
+      }),
+    ]);
+  });
 });
 
 describe("source watcher", () => {
@@ -2414,6 +2461,7 @@ describe("check_change rules", () => {
     expect(await ask({ file: "api/a.ts" })).toMatchObject({ ok: false, error: expect.stringContaining("proposed content") });
     expect(await ask({})).toMatchObject({ ok: false, error: expect.stringContaining("from and to, or a file") });
     expect(await ask({ file: "../elsewhere.ts", content: "x" })).toMatchObject({ ok: false, error: expect.stringContaining("outside the project") });
+    expect(daemon.verdicts(tmpRoot).map((record) => record.verdict.status)).toEqual(["unknown", "unknown", "unknown", "unknown"]);
   });
 
   it("records a pass or fail run per rule", async () => {
@@ -2421,8 +2469,10 @@ describe("check_change rules", () => {
 
     const key = createHash("sha256").update(fs.realpathSync.native(tmpRoot)).digest("hex");
     const runs = JSON.parse(fs.readFileSync(path.join(path.dirname(socketPath), "rules", `${key}.json`), "utf8"));
-    expect(runs).toHaveLength(4);
-    expect(runs).toContainEqual(expect.objectContaining({ source: "check_change", rule: "lines", pass: false, violations: 1, file: "api/long.ts" }));
-    expect(runs).toContainEqual(expect.objectContaining({ rule: "files", pass: true, violations: 0 }));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ source: "check_change", file: "api/long.ts" });
+    expect(runs[0].results).toContainEqual({ rule: "lines", pass: false, violations: 1 });
+    expect(runs[0].results).toContainEqual({ rule: "files", pass: true, violations: 0 });
+    expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ file: "api/long.ts", verdict: { status: "rule-violation" } });
   });
 });

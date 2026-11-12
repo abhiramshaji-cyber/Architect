@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { createServer, type Server, type Socket } from 'node:net'
 import { unlinkSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
@@ -56,6 +56,7 @@ function startServerWithNoise(noise: string) {
 describe('bridge', () => {
   afterEach(() => {
     disconnect()
+    vi.unstubAllEnvs()
   })
 
   it('sends a request and resolves the matching response', async () => {
@@ -206,9 +207,30 @@ describe('bridge', () => {
       })
     })
 
-    await checkChange({ file: 'src/a.ts', content: 'export const a = 1\n' }, path)
+    await checkChange({ file: 'src/a.ts', content: 'export const a = 1\n' }, path, '')
     expect(seenReq).toMatchObject({ op: 'check_change', file: 'src/a.ts', content: 'export const a = 1\n' })
     expect(seenReq).not.toHaveProperty('from')
+
+    stopServer(server, path)
+  })
+
+  it.each([
+    ['sess-1', { session: 'sess-1' }],
+    ['', {}],
+    [undefined, {}],
+  ])('sends the launching Claude Code session %j with check_change only when it is set', async (env, expected) => {
+    vi.stubEnv('CLAUDE_CODE_SESSION_ID', env)
+    let seenReq: Request | undefined
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seenReq = req
+        s.write(JSON.stringify({ id: req.id, ok: true, result: { status: 'allowed' } }) + '\n')
+      })
+    })
+
+    await checkChange({ from: 'a', to: 'b' }, path)
+    const { id: _id, ...sent } = seenReq as Request
+    expect(sent).toEqual({ op: 'check_change', cwd: process.cwd(), from: 'a', to: 'b', ...expected })
 
     stopServer(server, path)
   })

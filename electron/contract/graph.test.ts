@@ -167,8 +167,8 @@ describe('parse', () => {
     const arch = parse(doc)
     expect(arch.components.map((c) => c.id)).toContain('graph')
     expect(arch.edges).toContainEqual({ from: 'daemon', to: 'graph' })
-    expect(arch.forbidden.map((f) => `${f.from}->${f.to}`)).toContain('canvas->pty')
-    expect(arch.forbidden.length).toBe(12)
+    expect(arch.forbidden.map((f) => `${f.from}->${f.to}`)).toEqual(expect.arrayContaining(['canvas->pty', 'canvas->journal']))
+    expect(arch.forbidden.length).toBe(13)
   })
 
   it('throws on a duplicate component id', () => {

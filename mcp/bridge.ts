@@ -141,7 +141,11 @@ export const getArchitecture = (socketPath = SOCKET_PATH) => callTool({ op: 'get
 
 type ChangeInput = { from?: string; to?: string; file?: string; content?: string }
 
-export const checkChange = (input: ChangeInput, socketPath = SOCKET_PATH) => callTool({ op: 'check_change', ...input }, socketPath)
+export const checkChange = (
+  input: ChangeInput,
+  socketPath = SOCKET_PATH,
+  session = process.env.CLAUDE_CODE_SESSION_ID || undefined,
+) => callTool({ op: 'check_change', ...input, ...(session ? { session } : {}) }, socketPath)
 
 export const proposeChange = (proposal: Proposal, rationale: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'propose_change', proposal, rationale }, socketPath)

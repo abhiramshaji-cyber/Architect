@@ -75,8 +75,8 @@ function history(runs: RuleRun[]): string {
 
   return runs
     .map((run) => {
-      const outcome = run.pass ? 'pass' : `fail ${run.violations} violation${run.violations === 1 ? '' : 's'}`
-      return `${new Date(run.at).toISOString()}  ${run.source.padEnd(12)}  ${run.rule.padEnd(5)}  ${outcome}${run.file ? `  ${run.file}` : ''}`
+      const outcomes = run.results.map((result) => `${result.rule} ${result.pass ? 'pass' : `fail ${result.violations}`}`)
+      return `${new Date(run.at).toISOString()}  ${run.source.padEnd(12)}  ${outcomes.join(', ')}${run.file ? `  ${run.file}` : ''}`
     })
     .join('\n')
 }
@@ -139,11 +139,7 @@ export async function run(
   const violations = audit(architecture, map)
   const rules = auditRules(architecture.rules, sourcesOf(args.root, map), architecture.scope)
 
-  try {
-    recordRuns(cacheDir, args.root, 'check', rules)
-  } catch (error) {
-    err(`architect: could not record the rule runs: ${error instanceof Error ? error.message : String(error)}`)
-  }
+  recordRuns(cacheDir, args.root, 'check', rules)
 
   out(args.json ? JSON.stringify({ root: args.root, violations, rules }, null, 2) : report(architecture, violations, rules))
   return violations.length === 0 && rules.length === 0 ? OK : VIOLATED

@@ -51,6 +51,7 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>) {
   handle('architect:open', (root: string) => daemon.open(root))
   handle('architect:close-project', (root: string) => daemon.closeProject(root))
   handle('architect:history', (root: string) => daemon.history(root))
+  handle('architect:verdicts', (root: string) => daemon.verdicts(root))
   handle('architect:edits', (root: string) => daemon.edits(root))
   handle('architect:edit', (root: string, id: string) => daemon.edit(root, id))
   handle('architect:create-edit', (root: string, architecture: Architecture) =>

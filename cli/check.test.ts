@@ -281,8 +281,7 @@ describe('rules', () => {
     expect(await run(['--history', root], (l) => lines.push(l), () => {}, cache)).toBe(OK)
 
     const shown = lines.join('\n')
-    expect(shown).toMatch(/check\s+lines\s+fail 1 violation/)
-    expect(shown).toMatch(/check\s+files\s+pass/)
+    expect(shown).toMatch(/check\s+lines fail 1, files pass, names pass, jobs pass$/)
   })
 
   it('says so when no run is recorded', async () => {

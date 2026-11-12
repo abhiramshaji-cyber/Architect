@@ -28,6 +28,7 @@ const architect: ArchitectApi = {
   releaseRoot: () => invoke('architect:release-root'),
   focusRoot: (root) => invoke('architect:focus-root', root),
   history: (root) => invoke('architect:history', root),
+  verdicts: (root) => invoke('architect:verdicts', root),
   edits: (root) => invoke('architect:edits', root),
   edit: (root, id) => invoke('architect:edit', root, id),
   createEdit: (root, architecture) => invoke('architect:create-edit', root, architecture),

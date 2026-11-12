@@ -67,10 +67,6 @@ export function checkFile(cacheDir: string, root: string, architecture: Architec
   const after = factsOf(relative, () => content, parse)
   const violations = after ? proposedViolations(architecture.rules, architecture.scope, filesBeside(root, relative), before, after) : []
 
-  try {
-    recordRuns(cacheDir, root, 'check_change', violations, relative)
-  } catch (err) {
-    console.error('could not record the rule runs:', err instanceof Error ? err.message : String(err))
-  }
+  recordRuns(cacheDir, root, 'check_change', violations, relative)
   return violations
 }
