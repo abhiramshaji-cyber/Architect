@@ -1,0 +1,97 @@
+.coupling {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cp-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+.cp-field input {
+  width: 72px;
+  padding: var(--sp-1) var(--sp-2);
+  font: inherit;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cp-note {
+  margin: var(--sp-3) var(--sp-6) 0;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.cp-note code {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.cp-list {
+  margin: var(--sp-4) var(--sp-6) var(--sp-6);
+  padding-left: var(--sp-5);
+  font-size: var(--fs-sm);
+}
+
+.cp-pair {
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.cp-summary {
+  margin: 0 0 var(--sp-1);
+  color: var(--text);
+}
+
+.cp-file {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+
+.cp-file button {
+  padding: 0;
+  font-family: var(--mono);
+  font-size: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.cp-file button:hover {
+  text-decoration: underline;
+}
+
+.cp-ratio {
+  color: var(--text-faint);
+}
+
+.cp-evidence summary {
+  margin-top: var(--sp-1);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.cp-evidence ul {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-4);
+  color: var(--text-2);
+}
+
+.cp-evidence code {
+  font-family: var(--mono);
+  color: var(--text);
+}

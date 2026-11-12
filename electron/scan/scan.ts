@@ -538,13 +538,14 @@ export async function scan(root: string, digests = new Map<string, string>()): P
   const parsed = new Map<string, Parsed>()
 
   await walk(root, '', { into: folders, parsed, counter: { seen: 0 }, digests })
-  const imports = link(root, parsed)
+  const links = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 
   for (const folder of folders) {
     for (const file of folder.files) {
-      const found = imports.get(file.path)
-      if (found !== undefined && found.length > 0) file.imports = found
+      const { imports = [], reexports = [] } = links.get(file.path) ?? {}
+      if (imports.length > 0) file.imports = imports
+      if (reexports.length > 0) file.reexports = reexports
       const starts = parsed.get(file.path)?.starts
       if (starts !== undefined && starts.length > 0) file.starts = starts
     }

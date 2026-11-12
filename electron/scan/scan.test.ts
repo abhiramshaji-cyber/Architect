@@ -820,4 +820,33 @@ describe('exports and imports', () => {
     expect(file?.imports).toEqual(['b.ts', 'c.ts', 'd.ts', 'e.js', 't.ts'])
     expect(folder(map, '').files.find((f) => f.path === 'b.ts')?.imports).toBeUndefined()
   })
+
+  it('lists the scanned files a file passes on through star, named, namespace and imported then exported bindings, apart from what it only imports', async () => {
+    const map = await scan(
+      fixture({
+        'index.ts': [
+          "export * from './a'",
+          "export { b as bee } from './b'",
+          "export * as c from './c'",
+          "export type { T } from './t'",
+          "import { d } from './d'",
+          "export { d }",
+          "import { e } from './e'",
+          "export * from 'node:fs'",
+          "export * from './index'",
+        ].join('\n'),
+        'a.ts': 'export const a = 1',
+        'b.ts': 'export const b = 1',
+        'c.ts': 'export const c = 1',
+        'd.ts': 'export const d = 1',
+        't.ts': 'export type T = 1',
+        'e.ts': 'export const e = 1',
+      }),
+    )
+
+    const index = folder(map, '').files.find((f) => f.path === 'index.ts')
+    expect(index?.reexports).toEqual(['a.ts', 'b.ts', 'c.ts', 'd.ts', 't.ts'])
+    expect(index?.imports).toEqual(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 't.ts'])
+    expect(folder(map, '').files.find((f) => f.path === 'a.ts')?.reexports).toBeUndefined()
+  })
 })
