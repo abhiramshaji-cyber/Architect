@@ -15,6 +15,7 @@ const row = (name: string, over: Partial<FunctionRow> = {}): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
   ...over,
 })
@@ -27,13 +28,14 @@ function graph(specs: [string, number[], Partial<FunctionRow>?][]) {
 }
 
 const placed = (tree: ReturnType<typeof treeOf>) =>
-  [...tree.starts, ...tree.unreached, ...tree.children.flat()].sort((a, b) => a - b)
+  [...tree.starts, ...tree.unknown, ...tree.unreached, ...tree.children.flat()].sort((a, b) => a - b)
 
 describe('treeOf', () => {
   it('handles an empty project and a single function', () => {
     expect(treeOf([], [])).toEqual({
       starts: [],
       groups: [],
+      unknown: [],
       unreached: [],
       children: [],
       also: [],
@@ -41,6 +43,7 @@ describe('treeOf', () => {
     expect(graph([['main', [], { entry: BIN }]])).toEqual({
       starts: [0],
       groups: [{ file: 'cli.ts', reason: 'bin', members: [0] }],
+      unknown: [],
       unreached: [],
       children: [[]],
       also: [0],
@@ -48,6 +51,7 @@ describe('treeOf', () => {
     expect(graph([['lonely', []]])).toEqual({
       starts: [],
       groups: [],
+      unknown: [],
       unreached: [0],
       children: [[]],
       also: [0],
@@ -90,7 +94,7 @@ describe('treeOf', () => {
     const rows = [row('orphan'), row('kid', { fanIn: 1 })]
     expect(treeOf(rows, [[1], []]).starts).toEqual([])
     expect(treeOf(rows, [[1], []]).unreached).toEqual([0])
-    expect(treeOf(rows, [[1], []], true)).toMatchObject({ starts: [0], groups: [], unreached: [] })
+    expect(treeOf(rows, [[1], []], true)).toMatchObject({ starts: [0], groups: [], unknown: [], unreached: [] })
   })
 
   it('places every function exactly once, under its shallowest and most important caller', () => {
@@ -135,6 +139,38 @@ describe('treeOf', () => {
     expect(tree.children[1]).toEqual([2])
     expect(tree.children[3]).toEqual([4])
     expect(placed(tree)).toEqual([0, 1, 2, 3, 4])
+  })
+
+  it('keeps code reached only through a value or a file load out of the unreached bucket, in its own', () => {
+    const tree = graph([
+      ['main', [1], { entry: BIN }],
+      ['reached', [], { untraced: 'value' }],
+      ['handler', [3], { untraced: 'value' }],
+      ['inner', []],
+      ['dead', [5]],
+      ['deadInner', []],
+      ['loaded', [], { untraced: 'load' }],
+    ])
+    expect(tree.starts).toEqual([0])
+    expect(tree.unknown).toEqual([2, 6])
+    expect(tree.children[2]).toEqual([3])
+    expect(tree.unreached).toEqual([4])
+    expect(tree.children[4]).toEqual([5])
+    expect(placed(tree)).toEqual([0, 1, 2, 3, 4, 5, 6])
+  })
+
+  it('places an overload signature under its implementation, never on its own', () => {
+    const tree = graph([
+      ['main', [3], { entry: BIN }],
+      ['parse', [], { overload: true, line: 2 }],
+      ['parse', [], { overload: true, line: 3 }],
+      ['parse', [], { line: 4 }],
+      ['dead', [], { overload: true, line: 9 }],
+      ['dead', [], { line: 10 }],
+    ])
+    expect(tree.children[3]).toEqual([1, 2])
+    expect(tree.unreached).toEqual([5])
+    expect(tree.children[5]).toEqual([4])
   })
 
   it('orders children by importance, then lines, then name, and keeps duplicate names apart', () => {

@@ -13,6 +13,7 @@ const row: FunctionRow = {
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
 }
 

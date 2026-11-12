@@ -140,6 +140,19 @@ describe('entriesIn', () => {
     ).toEqual({ 'index.js': ['main'], 'bin/x.js': ['bin'] })
     expect(entriesOf({})).toEqual({})
   })
+
+  it('maps exports patterns and compiled targets back to every matching source', () => {
+    const exports = { '.': './dist/index.js', './plugins/*': { types: './dist/plugins/*.d.ts', default: './dist/plugins/*.js' } }
+    const files = {
+      'package.json': JSON.stringify({ exports }),
+      'tsconfig.json': JSON.stringify({ compilerOptions: { outDir: 'dist', rootDir: 'src' } }),
+      'src/index.ts': '',
+      'src/plugins/a.ts': '',
+      'src/plugins/deep/b.ts': '',
+      'src/other.ts': '',
+    }
+    expect(entriesOf(files)).toEqual({ 'src/index.ts': ['exports'], 'src/plugins/a.ts': ['exports'], 'src/plugins/deep/b.ts': ['exports'] })
+  })
 })
 
 describe('declaredIn', () => {
@@ -150,6 +163,17 @@ describe('declaredIn', () => {
       { reason: 'bin', file: 'cli/b.js' },
     ])
     expect(declaredIn({ bin: 'run.js' })).toEqual([{ reason: 'bin', file: 'run.js' }])
+  })
+
+  it('reads every exports condition and subpath and the module field, each under its own reason', () => {
+    const exports = { '.': { import: './dist/index.mjs', require: ['./dist/index.cjs'] }, './sub/*': './dist/sub/*.js', './x': null }
+    expect(declaredIn({ exports, module: './dist/index.mjs' })).toEqual([
+      { reason: 'exports', file: 'dist/index.mjs' },
+      { reason: 'exports', file: 'dist/index.cjs' },
+      { reason: 'exports', file: 'dist/sub/*.js' },
+      { reason: 'module', file: 'dist/index.mjs' },
+    ])
+    expect(declaredIn({ exports: './lib.js' })).toEqual([{ reason: 'exports', file: 'lib.js' }])
   })
 
   it('ignores a missing or malformed manifest', () => {

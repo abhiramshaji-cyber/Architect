@@ -326,6 +326,7 @@
 .fn-card-name,
 .fn-card-title,
 .fn-card-file,
+.fn-card-reach,
 .fn-card-sig {
   min-width: 0;
   white-space: nowrap;

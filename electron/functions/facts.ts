@@ -1,5 +1,5 @@
 import { isTestFile } from '../scan/starts'
-import type { CodeMap, Entry, EntryReason, FileEntry, FunctionFacts } from '../../shared/types'
+import type { CodeMap, Entry, EntryReason, FileEntry, FunctionFacts, Untraced } from '../../shared/types'
 import type { EntryFiles } from './entries'
 
 export const REASONS: EntryReason[] = [
@@ -13,10 +13,14 @@ export const REASONS: EntryReason[] = [
   'page',
   'bin',
   'main',
+  'exports',
+  'module',
   'script',
 ]
 
 const HANDLERS = new Set<string>(['mcpTool', 'ipcHandler', 'bridge', 'cliCommand'])
+
+const LIBRARY = new Set<EntryReason>(['main', 'exports', 'module'])
 
 export function edgesOf(map: CodeMap): number[][] {
   const files = map.folders.flatMap((folder) => folder.files)
@@ -53,7 +57,7 @@ function claimsOf(file: FileEntry, reasons: EntryReason[]): { reason: EntryReaso
     ...starts.filter((start) => start.kind === 'exports').flatMap((start) => start.calls),
   ]
   const opened = reasons.flatMap((reason) =>
-    [...loaded, ...(reason === 'main' ? api : [])].map((call) => ({ ...call, reason })),
+    [...loaded, ...(LIBRARY.has(reason) ? api : [])].map((call) => ({ ...call, reason })),
   )
   return [...handlers, ...opened].map(({ reason, file: target, fn }) => ({ reason, file: target, fn }))
 }
@@ -75,17 +79,29 @@ export function entriesOf(map: CodeMap, entries: EntryFiles): Map<string, Entry>
   return best
 }
 
+function untracedOf(files: FileEntry[]): Map<string, Untraced> {
+  const marks = new Map<string, Untraced>()
+  for (const file of files.filter((one) => !isTestFile(one.path))) {
+    for (const { kind, calls } of file.starts ?? []) {
+      if (kind !== 'value' && kind !== 'load') continue
+      for (const call of calls) if (marks.get(`${call.file}\0${call.fn}`) !== 'value') marks.set(`${call.file}\0${call.fn}`, kind)
+    }
+  }
+  return marks
+}
+
 export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map)): FunctionFacts[] {
   const files = map.folders.flatMap((folder) => folder.files)
   const claimed = entriesOf(map, entries)
+  const untraced = untracedOf(files)
   const callers = new Array<number>(edges.length).fill(0)
   for (const out of edges) for (const to of out) callers[to] = (callers[to] ?? 0) + 1
 
   let at = 0
   return files.flatMap((file) =>
-    file.functions.map((fn, index) => {
+    file.functions.map((fn, index): FunctionFacts => {
       const self = at++
-      return {
+      const fact: FunctionFacts = {
         file: file.path,
         name: fn.name,
         line: fn.line,
@@ -94,7 +110,10 @@ export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map))
         fanOut: edges[self]?.length ?? 0,
         exported: fn.exported === true,
         entry: claimed.get(`${file.path}\0${index}`) ?? null,
+        untraced: untraced.get(`${file.path}\0${index}`) ?? null,
       }
+      if (fn.overload) fact.overload = true
+      return fact
     }),
   )
 }

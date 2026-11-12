@@ -2,11 +2,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 import type { EntryReason } from '../../../shared/types'
-import { configOf, field, pathOf, pathsOf, valueOf } from './config'
+import { configsOf, field, pathOf, pathsOf, valueOf } from './config'
 
 export type Built = { file: string; name: string | null; reason: EntryReason | null; outDir: string }
 
-const CONFIG = /^(electron\.)?vite(\.[\w-]+)?\.config\.[cm]?[jt]s$/
+const CONFIG = /^((electron\.)?vite(\.[\w-]+)?|tsup|tsdown)\.config\.[cm]?[jt]s$/
 
 const SIDES = [
   { key: 'main', reason: 'electronMain', home: 'src/main' },
@@ -69,6 +69,11 @@ function electronSides(root: string, source: ts.SourceFile, config: ts.ObjectLit
   })
 }
 
+function bundled(source: ts.SourceFile, config: ts.ObjectLiteralExpression): Built[] {
+  const outDir = path.posix.normalize(pathOf(source, field(source, config, 'outDir')) ?? 'dist')
+  return pathsOf(source, field(source, config, 'entry')).map(({ name, file }) => ({ file, name, reason: null, outDir }))
+}
+
 export function builtIn(root: string): Built[] {
   let names: string[]
   try {
@@ -81,10 +86,11 @@ export function builtIn(root: string): Built[] {
     const text = read(path.join(root, name))
     if (text === undefined) return []
     const source = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true)
-    const config = configOf(source)
-    if (config === undefined) return []
-    if (name.startsWith('electron.')) return electronSides(root, source, config)
-    const lib = field(source, config, 'build', 'lib')?.kind === ts.SyntaxKind.ObjectLiteralExpression
-    return sideOf(root, source, config, { reason: null, outDir: 'dist', base: '.', html: !lib })
+    return configsOf(source).flatMap((config) => {
+      if (name.startsWith('electron.')) return electronSides(root, source, config)
+      if (!name.startsWith('vite')) return bundled(source, config)
+      const lib = field(source, config, 'build', 'lib')?.kind === ts.SyntaxKind.ObjectLiteralExpression
+      return sideOf(root, source, config, { reason: null, outDir: 'dist', base: '.', html: !lib })
+    })
   })
 }

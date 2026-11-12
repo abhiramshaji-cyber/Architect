@@ -4,8 +4,9 @@ import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry } from '../../shared/types'
 import { link, type Parsed, type Pending, type Raw } from './link'
-import { calleeName, lineOf, startsIn, type Call, type Site } from './starts'
+import { calleeName, isTestFile, lineOf, startsIn, type Call, type Site } from './starts'
 import { docOf, renderedTag, signatureOf } from './traits'
+import { valuesIn, type Value } from './values'
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -249,12 +250,16 @@ function shadowsOf(source: ts.SourceFile): Map<ts.Node, Set<string>> {
   return byScope
 }
 
+function isMember(node: ts.Node): boolean {
+  return ts.isClassElement(node) || ts.isObjectLiteralElement(node)
+}
+
 function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
   const byScope = new Map<ts.Node, Map<string, number>>()
 
   for (const [i, f] of found.entries()) {
     const scope = scopeOf(f.node)
-    if (scope === undefined) continue
+    if (scope === undefined || (f.owner === '' && isMember(f.node))) continue
 
     const names = byScope.get(scope) ?? new Map<string, number>()
     byScope.set(scope, names)
@@ -286,6 +291,23 @@ function resolveCall(
   }
 
   return undefined
+}
+
+function membersOf(
+  name: string,
+  at: ts.Node,
+  byScope: Map<ts.Node, Map<string, number>>,
+  shadows: Map<ts.Node, Set<string>>,
+  imported: Map<string, ImportBinding | null>,
+): Call[] {
+  const root = name.split('.')[0] ?? name
+  for (let scope = scopeOf(at); scope !== undefined; scope = scopeOf(scope)) {
+    const hits = [...(byScope.get(scope) ?? [])].filter(([key]) => key.startsWith(`${name}.`)).map(([, fn]) => fn)
+    if (hits.length > 0) return hits
+    if (shadows.get(scope)?.has(root)) return []
+    if (ts.isSourceFile(scope) && imported.has(root)) return [{ name, root }]
+  }
+  return []
 }
 
 function isFree(
@@ -390,6 +412,24 @@ function parseFile(source: string, file: string): Parsed {
     const sites = found.map((f) => callsIn(f.node, f.owner, nested, resolver))
     const sitesIn = (node: ts.Node) => callsIn(node, '', nested, resolver)
     const opened = startsIn(sourceFile, found.map((f) => f.node), nested, resolve, imported, sitesIn)
+    const index = new Map(found.map((f, i) => [f.node, i]))
+    const lookup = {
+      resolve,
+      members: (name: string, at: ts.Node) => membersOf(name, at, byScope, shadows, imported),
+      local: (node: ts.Node) => index.get(node),
+    }
+    const values: Value[] = isTestFile(file)
+      ? []
+      : [...found.flatMap((f) => valuesIn(f.node, f.owner, nested, lookup)), ...valuesIn(sourceFile, '', nested, lookup)]
+    const used = [...new Set(values.flatMap((value) => (typeof value === 'number' ? [value] : [])))]
+    const linked = values.flatMap((value) => {
+      if (typeof value === 'number') return []
+      if ('spec' in value) return [{ spec: value.spec, key: '' }]
+      const binding = imported.get(value.root)
+      const rest = value.name.slice(value.root.length)
+      return binding ? [{ spec: binding.spec, key: binding.name === null ? rest.slice(1) : binding.name + rest }] : []
+    })
+    if (used.length + linked.length > 0) opened.push({ kind: 'value', calls: used })
 
     const order = found
       .map((f, i) => ({ f, i }))
@@ -444,16 +484,20 @@ function parseFile(source: string, file: string): Parsed {
 
     const functions = order.map(({ f, i }, from) => {
       rawOf(sites[i] ?? [], from)
-      return { ...f.entry, calls: refsOf(distinct(sites[i] ?? []), from) }
+      const entry: FunctionEntry = { ...f.entry, calls: refsOf(distinct(sites[i] ?? []), from) }
+      if (isOverloadSignature(f.node)) entry.overload = true
+      return entry
     })
     const starts: FileStart[] = opened.map(({ sites: handled, ...start }, k) => {
       rawOf(handled ?? [], functions.length + k)
       return { ...start, calls: refsOf(start.calls, functions.length + k) }
     })
 
+    for (const { spec, key } of linked) pending.push({ from: functions.length + starts.length - 1, spec, key })
+
     // reexports
     if (reexports.size > 0 || stars.length > 0) {
-      for (const { spec, name } of reexports.values()) if (name !== '*') pending.push({ from: functions.length + starts.length, spec, key: name })
+      for (const { spec, name } of reexports.values()) pending.push({ from: functions.length + starts.length, spec, key: name === '*' ? '' : name })
       starts.push({ kind: 'exports', calls: [] })
     }
 

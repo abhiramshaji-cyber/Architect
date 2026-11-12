@@ -3,8 +3,8 @@ import ts from 'typescript'
 
 const EMITTED: Record<string, string[]> = {
   '.js': ['.ts', '.tsx', '.js', '.jsx'],
-  '.mjs': ['.mts', '.mjs'],
-  '.cjs': ['.cts', '.cjs'],
+  '.mjs': ['.mts', '.mjs', '.ts', '.tsx', '.js', '.jsx'],
+  '.cjs': ['.cts', '.cjs', '.ts', '.tsx', '.js', '.jsx'],
 }
 
 function inPlace(file: string): string[] {

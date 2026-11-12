@@ -11,6 +11,7 @@ const fact = (over: Partial<FunctionFacts> = {}): FunctionFacts => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   ...over,
 })
 

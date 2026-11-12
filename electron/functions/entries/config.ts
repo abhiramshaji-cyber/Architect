@@ -35,7 +35,7 @@ function returned(fn: ts.ArrowFunction | ts.FunctionExpression): Value {
   return last?.expression
 }
 
-export function configOf(source: ts.SourceFile): ts.ObjectLiteralExpression | undefined {
+export function configsOf(source: ts.SourceFile): ts.ObjectLiteralExpression[] {
   let exported: Value
   for (const statement of source.statements) {
     if (ts.isExportAssignment(statement)) exported = statement.expression
@@ -50,12 +50,18 @@ export function configOf(source: ts.SourceFile): ts.ObjectLiteralExpression | un
 
   let value = valueOf(source, exported)
   for (let depth = 0; value !== undefined && depth < 4; depth++) {
-    if (ts.isObjectLiteralExpression(value)) return value
+    if (ts.isObjectLiteralExpression(value)) return [value]
+    if (ts.isArrayLiteralExpression(value)) {
+      return value.elements.flatMap((element) => {
+        const item = valueOf(source, element)
+        return item !== undefined && ts.isObjectLiteralExpression(item) ? [item] : []
+      })
+    }
     if (ts.isCallExpression(value)) value = valueOf(source, value.arguments[0])
     else if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) value = valueOf(source, returned(value))
-    else return undefined
+    else return []
   }
-  return undefined
+  return []
 }
 
 export function field(source: ts.SourceFile, object: Value, ...keys: string[]): Value {
