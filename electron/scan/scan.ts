@@ -4,7 +4,7 @@ import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry } from '../../shared/types'
 import { calleeName, startsIn, type Call } from './starts'
-import { starred } from './exports'
+import { linked, type Links } from './exports'
 import { docOf, renderedTag, signatureOf } from './traits'
 
 export const IGNORED_DIRS = new Set([
@@ -468,7 +468,7 @@ function realRoot(root: string): string {
   }
 }
 
-function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> {
+function link(root: string, parsed: Map<string, Parsed>): Map<string, Links> {
   const options = resolutionOptions(root)
   const cache = ts.createModuleResolutionCache(root, (name) => name, options)
   const bases = [...new Set([root, realRoot(root)])]
@@ -534,14 +534,7 @@ function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> 
     }
   }
 
-  starred(parsed, target)
-
-  const imports = new Map<string, string[]>()
-  for (const [file, at] of parsed) {
-    const resolved = [...at.specs].map((spec) => target(file, spec)).filter((to) => to !== undefined && to !== file)
-    imports.set(file, [...new Set(resolved as string[])].sort())
-  }
-  return imports
+  return linked(parsed, target)
 }
 
 export function functionsIn(source: string, file: string): FunctionEntry[] {
@@ -612,13 +605,14 @@ export async function scan(root: string, digests = new Map<string, string>()): P
   const parsed = new Map<string, Parsed>()
 
   await walk(root, '', { into: folders, parsed, counter: { seen: 0 }, digests })
-  const imports = link(root, parsed)
+  const links = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 
   for (const folder of folders) {
     for (const file of folder.files) {
-      const found = imports.get(file.path)
-      if (found !== undefined && found.length > 0) file.imports = found
+      const { imports = [], reexports = [] } = links.get(file.path) ?? {}
+      if (imports.length > 0) file.imports = imports
+      if (reexports.length > 0) file.reexports = reexports
       const starts = parsed.get(file.path)?.starts
       if (starts !== undefined && starts.length > 0) file.starts = starts
     }

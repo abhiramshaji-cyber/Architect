@@ -69,3 +69,18 @@ describe('stored line counts', () => {
     for (const bad of [-1, 1.5, '3', Number.NaN, null]) expect(withLines(bad)).toBeNull()
   })
 })
+
+describe('stored re-exports', () => {
+  const withReexports = (reexports: unknown): CodeMap | null => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-cache-'))
+    dirs.push(dir)
+    const map = { root: dir, scannedAt: 1, folders: [{ path: '', folders: [], files: [{ path: 'a.ts', reexports, functions: [] }] }] }
+    writeStoredMap(dir, dir, { map: map as CodeMap, cache: {} })
+    return readStoredMap(dir, dir)?.map ?? null
+  }
+
+  it('keeps a list of paths or none, and drops anything else', () => {
+    for (const good of [['b.ts'], [], undefined]) expect(withReexports(good)).not.toBeNull()
+    for (const bad of ['b.ts', [1], [null], {}]) expect(withReexports(bad)).toBeNull()
+  })
+})
