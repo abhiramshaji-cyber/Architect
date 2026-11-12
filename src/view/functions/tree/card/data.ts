@@ -40,9 +40,12 @@ function underOf(outline: Outline, id: string, parent: string): boolean {
 
 export function cardOf(outline: Outline, id: string, list: FunctionList, project: string) {
   const at = indexOf(id)
+  const row = list.rows[at]
+  const functions = id === PROJECT ? list.rows.length : (outline.tallies.get(id)?.functions ?? 0)
   return {
     ...labelOf(outline, id, list.rows, project),
-    row: list.rows[at] ?? null,
+    pill: row ? plural(row.fanIn, 'caller') : plural(functions, 'function'),
+    row: row ?? null,
     at,
     count: outline.kids.get(id)?.length ?? 0,
     also: list.tree.also[at] ?? 0,

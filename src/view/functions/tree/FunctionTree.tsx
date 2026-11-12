@@ -139,6 +139,7 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated, 
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
+        onlyRenderVisibleElements
         fitViewOptions={FIT}
         minZoom={0.05}
         maxZoom={2}

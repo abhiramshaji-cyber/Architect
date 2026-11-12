@@ -197,6 +197,64 @@
   transition: opacity var(--fast) ease, border-color var(--fast) ease;
 }
 
+.fn-card.fn-card-far {
+  border-radius: 78px;
+  border-width: 3px;
+}
+
+.fn-pill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 24px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: inherit;
+  cursor: pointer;
+}
+
+.fn-pill:disabled {
+  cursor: default;
+}
+
+.fn-pill:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.fn-pill:focus-visible {
+  outline: 3px solid var(--active-border);
+  outline-offset: -3px;
+}
+
+.fn-pill-name,
+.fn-pill-count {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fn-pill-name {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.fn-pill-count {
+  font-size: 22px;
+  color: var(--text-dim);
+}
+
 .fn-card.focused {
   border-color: var(--active-border);
 }
