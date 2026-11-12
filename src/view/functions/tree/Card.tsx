@@ -8,7 +8,8 @@ import Mark, { plural } from '../Mark'
 
 export type CardData = {
   title: string
-  note: string
+  notes: string[]
+  tag?: string
   row: FunctionRow | null
   at: number
   count: number
@@ -31,8 +32,17 @@ function Body({ data }: { data: CardData }) {
   if (!row) {
     return (
       <div className="fn-card-body">
-        <span className="fn-card-title">{data.title}</span>
-        <span className="fn-card-note">{data.note}</span>
+        <span className="fn-card-head">
+          <span className="fn-card-title" title={data.title}>
+            {data.title}
+          </span>
+          {data.tag && <span className="fn-badge">{data.tag}</span>}
+        </span>
+        {data.notes.map((note) => (
+          <span key={note} className="fn-card-note">
+            {note}
+          </span>
+        ))}
       </div>
     )
   }

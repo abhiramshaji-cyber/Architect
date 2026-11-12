@@ -22,6 +22,7 @@ const listOf = (rows: FunctionRow[], calls: number[][]): FunctionList => ({
   tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
   scope: '',
   folders: [],
+  owners: {},
 })
 
 const wide = { callers: 100, callees: 100 }
