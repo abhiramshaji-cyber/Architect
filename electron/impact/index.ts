@@ -17,7 +17,7 @@ export type ImpactInput = { cwd: string; from?: string; to?: string; file?: stri
 
 type Spot = { file: string; line: number; name: string }
 
-type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; file: string | null; notes: string[] }
+type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; file: string | null; notes: string[] }
 
 const SETTLE_MS = 2000
 
@@ -36,16 +36,26 @@ function before(root: string, file: string): string | Error {
   }
 }
 
+function firstDiff(before: string, after: string): number {
+  const [a, b] = [before.split(/\r?\n/), after.split(/\r?\n/)]
+  const at = a.findIndex((line, i) => line !== b[i])
+  return (at < 0 ? Math.min(a.length, b.length) : at) + 1
+}
+
 function fileSeeds(input: ImpactInput & { file: string; content: string }, root: string, files: FileEntry[], fns: Fn[]): Seeded {
   const file = projectPath(root, input.cwd, input.file)
   if (file === '' || file === '..' || file.startsWith('../') || path.isAbsolute(file)) return { seeds: [], touched: [], added: [], file: null, notes: [`${input.file} is outside ${root}, so no function is touched`] }
   const current = before(root, file)
   if (current instanceof Error) return { seeds: [], touched: [], added: [], file, notes: [`${file} could not be read (${current.message}), so no function is touched`] }
 
-  const { changes, parsed } = changesOf(file, current, input.content)
-  const notes = current.replaceAll('\r\n', '\n') === input.content.replaceAll('\r\n', '\n') ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 ? [`${file} holds no function the scan parses, so no function is touched`] : changes.length === 0 ? [`the change to ${file} is outside every function, so no function is touched`] : []
+  const { changes, parsed, outside } = changesOf(file, current, input.content)
+  const same = current.replaceAll('\r\n', '\n') === input.content.replaceAll('\r\n', '\n')
+  const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 ? [`${file} holds no function the scan parses, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
+  const whole = !same && outside && parsed > 0 && offset >= 0 ? scanned.map((_, index) => offset + index) : []
+  if (!same && outside && parsed > 0 && offset < 0) notes.push(`code outside every function in ${file} changed, but the file is not in the scan, so its callers are not counted`)
+  if (whole.length > 0) notes.push(`code outside every function in ${file} changed (a top level value, an import, a type or a field), so callers are counted from all ${whole.length} functions in the file`)
   notes.push(...changes.filter((change) => change.change === 'changed' && change.shares.length > 0).map((change) => `${change.name} at ${file}:${change.line} shares a line with ${change.shares.join(', ')}; the scan gives lines, not columns, so an edit on that line counts as a change to each`))
   const seeds = changes.flatMap((change) => {
     if (change.change === 'added') return []
@@ -55,8 +65,9 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
     notes.push(`${change.name} at ${file}:${change.line} is not in the scan (the scan skips this path, or the file changed after the scan), so its callers are not counted`)
     return []
   })
+  seeds.push(...whole)
   const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? ('proposed' as const) : ('disk' as const) }))
-  return { seeds, touched, added: changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name })), file, notes }
+  return { seeds: [...new Set(seeds)], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added: changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name })), file, notes }
 }
 
 function edgeSeeds(from: string, to: string, architecture: Architecture, fns: Fn[]): Seeded {
@@ -93,7 +104,7 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
   const both = file !== undefined && content !== undefined && from !== undefined && to !== undefined ? [`impact is worked out from ${file}; the edge ${from} -> ${to} is answered by the verdict only`] : []
 
   const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds)
-  const tests = testsOf(root, fns, files, reach, seeded.added)
+  const tests = testsOf(root, fns, files, reach, seeded.added, seeded.edited)
   return {
     status: 'done',
     touched: { total: seeded.touched.length, listed: seeded.touched.slice(0, LISTED) },
@@ -125,7 +136,7 @@ async function mapOf(root: string): Promise<CodeMap> {
   return scans.get(root) as Promise<CodeMap>
 }
 
-export async function impactFor(input: ImpactInput, root: string, architecture: Architecture, timeoutMs = TIMEOUT_MS): Promise<Impact> {
+export async function impactFor(input: ImpactInput, root: string, architecture: Architecture, stale: string | null = null, timeoutMs = TIMEOUT_MS): Promise<Impact> {
   const empty = { total: 0, listed: [] }
   const failed = (status: 'timeout' | 'failed', note: string): Impact => ({ status, touched: empty, callers: { ...empty, depths: [], listedThrough: LIST_DEPTH, unlisted: 0 }, entries: empty, components: [], tests: empty, notes: [note] })
   let timer: NodeJS.Timeout | undefined
@@ -135,7 +146,8 @@ export async function impactFor(input: ImpactInput, root: string, architecture: 
   try {
     const map = await Promise.race([mapOf(root), late])
     if (map === null) return failed('timeout', `impact was not worked out: scanning ${root} took longer than ${timeoutMs} ms; the scan goes on and a later check uses it`)
-    return impactOf(input, root, architecture, map)
+    const impact = impactOf(input, root, architecture, map)
+    return stale === null ? impact : { ...impact, notes: [`architect.md does not parse (${stale}); components come from the last version that parsed`, ...impact.notes] }
   } catch (err) {
     return failed('failed', `impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`)
   } finally {

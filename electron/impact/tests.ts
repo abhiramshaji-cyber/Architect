@@ -58,6 +58,21 @@ export function importsOf(root: string, test: string): Loaded[] | 'unreadable' {
   return found
 }
 
+function aliasesOf(root: string, file: string): Map<string, string> {
+  const aliases = new Map<string, string>()
+  let text: string
+  try {
+    text = fs.readFileSync(path.join(root, file), 'utf8')
+  } catch {
+    return aliases
+  }
+  for (const statement of ts.createSourceFile(file, text, ts.ScriptTarget.Latest, false).statements) {
+    if (!ts.isExportDeclaration(statement) || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue
+    for (const element of statement.exportClause.elements) if (element.propertyName) aliases.set(element.name.text, element.propertyName.text)
+  }
+  return aliases
+}
+
 function reachedOf(fns: Fn[], reach: Reach, node: number): number {
   let current = node
   while (fns[current]?.test === true && reach.parent.has(current)) current = reach.parent.get(current) as number
@@ -75,7 +90,7 @@ function exposedBy(fns: Fn[], files: FileEntry[]): Map<string, number[]> {
 
 type Hit = { via: 'touched' | 'call' | 'import'; at: string; reaches: string; unchecked?: string }
 
-export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[]): { total: number; listed: TestReach[]; notes: string[] } {
+export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[], edited?: { file: string; line: number }): { total: number; listed: TestReach[]; notes: string[] } {
   const found = new Map<string, Hit>()
 
   for (const node of [...reach.depth.keys()].sort((a, b) => a - b)) {
@@ -89,6 +104,7 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
     if (reached && !reached.test) found.set(fn.file, { via: 'call', at: at(fn), reaches: at(reached) })
   }
 
+  if (edited && isTestFile(edited.file)) found.set(edited.file, { via: 'touched', at: `${edited.file}:${edited.line}`, reaches: `${edited.file}:${edited.line}` })
   for (const spot of added) if (isTestFile(spot.file) && !found.has(spot.file)) found.set(spot.file, { via: 'touched', at: `${spot.file}:${spot.line}`, reaches: `${spot.file}:${spot.line}` })
 
   const exposed = exposedBy(fns, files)
@@ -99,7 +115,8 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
     const loaded = importsOf(root, file.path)
     for (const target of file.imports ?? []) {
       const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === bare(target))
-      const ways = entries.length > 0 ? entries : [{ target, line: 0, names: null }]
+      const aliases = (files.find((entry) => entry.path === target)?.starts ?? []).some((start) => start.kind === 'exports') ? aliasesOf(root, target) : new Map<string, string>()
+      const ways = (entries.length > 0 ? entries : [{ target, line: 0, names: null }]).map((way) => ({ ...way, names: way.names?.map((name) => aliases.get(name) ?? name) ?? null }))
       const hit = ways.flatMap((way) => {
         const index = (exposed.get(target) ?? []).find((i) => reach.depth.has(i) && fns[i]?.test === false && named(fns[i] as Fn, way.names))
         const reached = index === undefined ? undefined : fns[index]

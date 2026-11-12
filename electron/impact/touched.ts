@@ -44,7 +44,12 @@ function sharing(all: Map<string, Body>, body: Body): string[] {
   return [...all.values()].filter((other) => other !== body && !related(other) && other.line <= body.endLine && body.line <= other.endLine).map((other) => other.name)
 }
 
-export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number } {
+function outside(source: string, file: string): string {
+  const spans = functionsIn(source, file)
+  return source.split(/\r?\n/).flatMap((line, at) => (spans.some((fn) => fn.line <= at + 1 && at + 1 <= fn.endLine) || line.trim() === '' ? [] : [line.trim()])).join('\n')
+}
+
+export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: boolean } {
   const old = bodies(before, file)
   const next = bodies(after, file)
   const change = (all: Map<string, Body>, body: Body, kind: Change['change']): Change => ({ name: body.name, key: body.key, line: body.line, change: kind, shares: sharing(all, body) })
@@ -57,5 +62,5 @@ export function changesOf(file: string, before: string, after: string): { change
   const removed = [...old.values()].flatMap((body): Change[] => (next.has(body.key) ? [] : [change(old, body, 'removed')]))
 
   const order = (entry: Change) => ORDER.indexOf(entry.change)
-  return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size }
+  return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outside(before, file) !== outside(after, file) }
 }

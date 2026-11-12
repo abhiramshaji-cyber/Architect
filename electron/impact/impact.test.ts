@@ -52,6 +52,7 @@ describe('changesOf', () => {
         { name: 'fresh', key: '/fresh#0', line: 7, change: 'added', shares: [] },
       ],
       parsed: 6,
+      outside: false,
     })
   })
 
@@ -168,7 +169,7 @@ describe('impactOf', () => {
 
     expect(notes({ cwd: root, file: '../out.ts', content: 'x' })).toEqual([`../out.ts is outside ${root}, so no function is touched`])
     expect(notes({ cwd: root, file: 'notes.md', content: '# more\n' })).toEqual(['notes.md holds no function the scan parses, so no function is touched'])
-    expect(notes(edit(root, 'store/cache.ts', "'./db'", '"./db"'))).toEqual(['the change to store/cache.ts is outside every function, so no function is touched'])
+    expect(notes(edit(root, 'store/cache.ts', "'./db'", '"./db"'))).toEqual(['code outside every function in store/cache.ts changed (a top level value, an import, a type or a field), so callers are counted from all 1 functions in the file'])
     expect(notes({ cwd: root, file: 'dir.ts', content: 'x' })).toEqual(['dir.ts could not be read (dir.ts is not a file), so no function is touched'])
     expect(notes({ cwd: path.join(root, 'api'), file: 'route.ts', content: fs.readFileSync(path.join(root, 'api/route.ts'), 'utf8') })).toEqual(['the proposed content of api/route.ts is the same as the file on disk, so no function is touched'])
   })
@@ -202,8 +203,10 @@ describe('impactFor', () => {
 
     fs.mkdirSync(path.join(root, 'pad'))
     for (let i = 0; i < 200; i += 1) fs.writeFileSync(path.join(root, 'pad', `p${i}.ts`), `export function p${i}() {}\n`)
-    expect(await impactFor(input, root, architecture, 0)).toMatchObject({ status: 'timeout' })
-    expect((await impactFor(input, root, architecture, 0)).notes[0]).toMatch(/^impact was not worked out: scanning .* took longer than 0 ms/)
+    expect(await impactFor(input, root, architecture, null, 0)).toMatchObject({ status: 'timeout' })
+    expect((await impactFor(input, root, architecture, null, 0)).notes[0]).toMatch(/^impact was not worked out: scanning .* took longer than 0 ms/)
+
+    expect((await impactFor(input, root, architecture, 'bad line')).notes[0]).toBe('architect.md does not parse (bad line); components come from the last version that parsed')
 
     const broken = await impactFor(input, root, {} as Architecture)
     expect(broken.notes[0]).toMatch(/^impact could not be worked out: /)
@@ -276,7 +279,7 @@ describe('cases the reviews found', () => {
     expect(overload.callers.listed.map((caller) => caller.at)).toEqual(['api/use.ts:3'])
 
     const tested = impactOf(edit(root, 'api/handler.test.ts', 'return cached()', 'return cached() + 1'), root, architecture, map)
-    expect(tested.tests.listed).toEqual([{ file: 'api/handler.test.ts', via: 'touched', at: 'api/handler.test.ts:3', reaches: 'api/handler.test.ts:3' }])
+    expect(tested.tests.listed).toEqual([{ file: 'api/handler.test.ts', via: 'touched', at: 'api/handler.test.ts:4', reaches: 'api/handler.test.ts:4' }])
     expect(tested.components.map((component) => component.id)).toEqual(['api'])
   })
 
@@ -286,4 +289,23 @@ describe('cases the reviews found', () => {
     expect(changes.map((change) => `${change.key} ${change.change} ${change.shares.join(',')}`)).toEqual(['/a#0 changed b', '/b#0 changed a'])
   })
 
+})
+
+describe('renamed re-exports and test callbacks', () => {
+  it('finds a test importing a function re-exported under another name, and lists an edited test file with no named function', async () => {
+    const { root, map, architecture } = await project({ ...FILES, 'store/index.ts': "export { load as start } from './db'\n", 'store/start.test.ts': "import { start } from './index'\n\nit('starts', () => start())\n" })
+    const impact = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, map)
+    expect(impact.tests.listed).toContainEqual({ file: 'store/start.test.ts', via: 'import', at: 'store/start.test.ts:1', reaches: 'store/db.ts:1' })
+
+    const callback = impactOf(edit(root, 'store/start.test.ts', 'start())', 'start() + 1)'), root, architecture, map)
+    expect(callback.tests.listed).toEqual([{ file: 'store/start.test.ts', via: 'touched', at: 'store/start.test.ts:3', reaches: 'store/start.test.ts:3' }])
+  })
+
+  it('counts callers of every function in the file when code outside them changes', async () => {
+    const { root, map, architecture } = await project({ ...FILES, 'store/db.ts': `const K = 1\n\n${FILES['store/db.ts']}` })
+    const impact = impactOf(edit(root, 'store/db.ts', 'const K = 1', 'const K = 2'), root, architecture, map)
+    expect(impact.touched.total).toBe(0)
+    expect(impact.callers.total).toBe(6)
+    expect(impact.notes[0]).toBe('code outside every function in store/db.ts changed (a top level value, an import, a type or a field), so callers are counted from all 3 functions in the file')
+  })
 })
