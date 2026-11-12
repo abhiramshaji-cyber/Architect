@@ -55,8 +55,8 @@ export default function Keep({
 
   useEffect(() => {
     const id = jump.current
-    if (id === null || !spots.has(id)) return
     jump.current = null
+    if (id === null || !spots.has(id)) return
     requestAnimationFrame(() => fitView({ ...FIT, nodes: [{ id }], duration: 200 }))
   }, [jump, spots, fitView])
 
