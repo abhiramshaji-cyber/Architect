@@ -490,7 +490,8 @@ export type FunctionRow = FunctionFacts & {
   importance: Importance
   signature?: Signature
   doc?: string
-  outside?: number
+  outsideCallers?: number
+  outsideCallees?: number
 }
 
 export type FunctionTree = { starts: number[]; unreached: number[]; children: number[][]; also: number[] }

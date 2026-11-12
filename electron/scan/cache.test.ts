@@ -32,5 +32,7 @@ describe('stored signatures', () => {
     expect(stored({ params: [{ type: 'T' }] })).toBeNull()
     expect(stored({ params: [], returns: 3 })).toBeNull()
     expect(stored('(x)')).toBeNull()
+    expect(stored({ params: [{ name: 'x', optional: 'yes' }] })).toBeNull()
+    expect(stored({ params: [{ name: 'x', rest: 1 }] })).toBeNull()
   })
 })

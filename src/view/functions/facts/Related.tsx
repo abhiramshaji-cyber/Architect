@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import type { FunctionList, FunctionRow } from '../../../../shared/types'
 import { plural } from '../Mark'
-import { callersOf, type Asked, type Way } from './calls'
+import { callersOf, shownOf, type Asked, type Way } from './calls'
 
 type RelatedProps = {
   list: FunctionList
@@ -24,50 +24,43 @@ export function useRelated(list: FunctionList | null) {
 
 export default function Related({ list, asked, onOpen, onClose }: RelatedProps) {
   const callers = useMemo(() => callersOf(list.calls), [list.calls])
+  const shown = shownOf(list, callers, asked)
+  if (!shown) return null
 
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', close)
-    return () => window.removeEventListener('keydown', close)
-  }, [onClose])
-
-  const row = list.rows[asked.at]
-  if (!row) return null
-  const ats = (asked.way === 'callers' ? callers : list.calls)[asked.at] ?? []
-  const outside = asked.way === 'callers' ? (row.outside ?? 0) : 0
+  const close = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') onClose()
+  }
 
   return (
     <div className="fn-related-dock">
-      <aside className="fn-related" aria-label={`${asked.way} of ${row.name}`}>
+      <aside className="fn-related" aria-label={`${asked.way} of ${shown.row.name}`} onKeyDown={close}>
         <header className="fn-related-head">
           <span className="fn-related-title">
-            {asked.way === 'callers' ? 'Called by' : 'Calls'} <code>{row.name}</code>
+            {asked.way === 'callers' ? 'Called by' : 'Calls'} <code>{shown.row.name}</code>
           </span>
-          <button className="fn-related-close" aria-label="Close" onClick={onClose}>
+          <button className="fn-related-close" aria-label="Close" autoFocus onClick={onClose}>
             ×
           </button>
         </header>
         <ul className="fn-related-list">
-          {ats.flatMap((at) => {
-            const other = list.rows[at]
-            if (!other) return []
-            return [
-              <li key={at}>
-                <button className="fn-related-item" onClick={() => onOpen(other)} title={`${other.file}:${other.line}`}>
-                  <span className="fn-related-name">{other.name}</span>
-                  <span className="fn-related-file">
-                    <bdi>
-                      {other.file}:{other.line}
-                    </bdi>
-                  </span>
-                </button>
-              </li>,
-            ]
-          })}
+          {shown.related.map(({ at, row }) => (
+            <li key={at}>
+              <button className="fn-related-item" onClick={() => onOpen(row)} title={`${row.file}:${row.line}`}>
+                <span className="fn-related-name">{row.name}</span>
+                <span className="fn-related-file">
+                  <bdi>
+                    {row.file}:{row.line}
+                  </bdi>
+                </span>
+              </button>
+            </li>
+          ))}
         </ul>
-        {outside > 0 && <p className="fn-related-note">{plural(outside, 'caller')} outside this folder</p>}
+        {shown.outside > 0 && (
+          <p className="fn-related-note">
+            {plural(shown.outside, asked.way === 'callers' ? 'caller' : 'callee')} outside this folder
+          </p>
+        )}
       </aside>
     </div>
   )

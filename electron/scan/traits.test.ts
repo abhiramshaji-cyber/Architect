@@ -60,6 +60,24 @@ describe('doc', () => {
     expect(by.run?.doc).toBe('Use as `run({ fast: true })`.')
   })
 
+  it('keeps a doc block whatever word it starts with', async () => {
+    const by = await scanned('a.ts', '/** License key check for the user. */\nfunction a() {}\n/** #1 rule: never block */\nfunction b() {}\n')
+    expect([by.a?.doc, by.b?.doc]).toEqual(['License key check for the user.', '#1 rule: never block'])
+  })
+
+  it('keeps line comment prose that shows code or punctuation', async () => {
+    const by = await scanned(
+      'a.ts',
+      '// Parse the config.\n// Example: parse({ a: 1 })\nfunction parse() {}\n// Returns the id; never null\nfunction id() {}\n',
+    )
+    expect([by.parse?.doc, by.id?.doc]).toEqual(['Parse the config.\nExample: parse({ a: 1 })', 'Returns the id; never null'])
+  })
+
+  it('keeps indentation inside a block without stars', async () => {
+    const by = await scanned('a.ts', 'class A {\n  /**\n    Runs:\n      step one\n  */\n  run() {}\n}\n')
+    expect(by['A.run']?.doc).toBe('Runs:\n  step one')
+  })
+
   it('ignores labels, directives, code, empty blocks and comments separated by a blank line', async () => {
     const by = await scanned(
       'a.ts',
@@ -111,6 +129,25 @@ describe('signature', () => {
       ],
       returns: 'Pick<T, K>',
     })
+  })
+
+  it('joins a type split over lines but keeps spaces inside it', async () => {
+    const by = await scanned('a.ts', "function f(): Promise<\n  'a  b'\n> { return null! }\n")
+    expect(by.f?.signature?.returns).toBe("Promise< 'a  b' >")
+  })
+
+  it('records each overload as its own entry with its own doc and signature', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-traits-'))
+    roots.push(root)
+    const lines = ['/** Reads a number. */', 'function read(a: number): number', 'function read(a: string): string', 'function read(a: any): any { return a }']
+    fs.writeFileSync(path.join(root, 'a.ts'), lines.join('\n'))
+    const map = await scan(root)
+    const reads = map.folders.flatMap((folder) => folder.files).flatMap((file) => file.functions)
+    expect(reads.map((fn) => [fn.line, fn.doc, fn.signature?.returns])).toEqual([
+      [2, 'Reads a number.', 'number'],
+      [3, undefined, 'string'],
+      [4, undefined, 'any'],
+    ])
   })
 
   it('never infers a type the source leaves out', async () => {

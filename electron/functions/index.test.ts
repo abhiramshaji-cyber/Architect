@@ -132,12 +132,21 @@ describe('functionsOf in a folder', () => {
   it('counts only callers inside the folder and flags outside callers', () => {
     const { rows, scope } = functionsOf(map, new Set(), 'app/core/')
     expect(scope).toBe('app/core')
-    expect(rows.map((row) => [row.name, row.fanIn, row.outside])).toEqual([
+    expect(rows.map((row) => [row.name, row.fanIn, row.outsideCallers])).toEqual([
       ['run', 0, 1],
       ['load', 1, 1],
     ])
     expect(functionsOf(map, new Set(), 'app/core').calls).toEqual([[1], []])
-    expect(functionsOf(map, new Set()).rows.every((row) => row.outside === undefined)).toBe(true)
+    expect(functionsOf(map, new Set()).rows.every((row) => row.outsideCallers === undefined && row.outsideCallees === undefined)).toBe(true)
+  })
+
+  it('counts only callees inside the folder and flags outside callees', () => {
+    const { rows } = functionsOf(map, new Set(), 'app')
+    expect(rows.map((row) => [row.name, row.fanOut, row.outsideCallees])).toEqual([
+      ['main', 1, 1],
+      ['run', 1, undefined],
+      ['load', 0, undefined],
+    ])
   })
 
   it('roots the tree at uncalled functions in the folder with no unreached bucket for them', () => {
@@ -199,7 +208,7 @@ describe('functionsOf in a folder', () => {
     expect(pkg.rows).toHaveLength(21)
     expect(byName(pkg.rows, 'hub')?.importance).toBe(5)
     expect(byName(pkg.rows, 'leaf')?.importance).toBeLessThan(5)
-    expect(byName(pkg.rows, 'leaf')?.outside).toBe(60)
+    expect(byName(pkg.rows, 'leaf')?.outsideCallers).toBe(60)
     expect(Math.min(...pkg.rows.map((row) => row.importance))).toBe(1)
   })
 

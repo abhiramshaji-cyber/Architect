@@ -1,9 +1,8 @@
 import ts from 'typescript'
 import type { Param, Signature } from '../../shared/types'
 
-const DIRECTIVE = /^(eslint|oxlint|prettier|istanbul|c8|biome|tslint|jshint|@ts-|#|copyright|license|spdx|<reference)\b/i
-
-const CODE = /[{};]|=>/
+const DIRECTIVE =
+  /^(eslint[\s-]|eslint$|global\s|oxlint-|prettier-ignore|istanbul ignore|c8 ignore|biome-ignore|tslint:|jshint\s|jscs:|@ts-|#region|#endregion|#!|<reference|@jsx|spdx-license-identifier)/i
 
 type Comment = { line: boolean; doc: boolean; text: string }
 
@@ -34,10 +33,23 @@ function commentOf(range: ts.CommentRange, source: ts.SourceFile): Comment {
     ? inner.trimEnd()
     : inner
         .split(/\r?\n/)
-        .map((row) => row.replace(/^\s*\*? ?/, '').trimEnd())
+        .map((row) => row.replace(/^\s*\* ?/, '').trimEnd())
         .join('\n')
-        .trim()
   return { line, doc: !line && /^\/\*\*[^/]/.test(raw), text }
+}
+
+function dedented(text: string): string {
+  const rows = text.split('\n')
+  const indents = rows.filter((row) => row.trim() !== '').map((row) => /^[ \t]*/.exec(row)?.[0].length ?? 0)
+  const cut = indents.length === 0 ? 0 : Math.min(...indents)
+  return rows
+    .map((row) => row.slice(cut))
+    .join('\n')
+    .replace(/^\n+|\s+$/g, '')
+}
+
+function parses(text: string): boolean {
+  return (ts.transpileModule(text, { reportDiagnostics: true }).diagnostics ?? []).length === 0
 }
 
 function merged(comments: Comment[]): Comment[] {
@@ -51,17 +63,18 @@ function merged(comments: Comment[]): Comment[] {
 }
 
 function authored(block: Comment): boolean {
-  if (block.text === '') return false
-  return block.doc || (/\s/.test(block.text) && !CODE.test(block.text))
+  const text = block.text.trim()
+  if (text === '') return false
+  return block.doc || (/\s/.test(text) && !parses(text))
 }
 
 export function docOf(node: ts.Node, source: ts.SourceFile): string | undefined {
   const comments = adjacent(anchorOf(node), source)
     .map((range) => commentOf(range, source))
-    .filter((comment) => !DIRECTIVE.test(comment.text.trimStart()))
+    .filter((comment) => comment.doc || !DIRECTIVE.test(comment.text.trimStart()))
   const text = merged(comments)
     .filter(authored)
-    .map((block) => block.text)
+    .map((block) => dedented(block.text))
     .join('\n\n')
   return text === '' ? undefined : text
 }
@@ -78,7 +91,7 @@ function declaredFunction(node: ts.Node): ts.SignatureDeclaration | undefined {
 }
 
 function written(node: ts.Node, source: ts.SourceFile): string {
-  return node.getText(source).replace(/\s+/g, ' ').trim()
+  return node.getText(source).replace(/\s*\n\s*/g, ' ').trim()
 }
 
 function paramOf(param: ts.ParameterDeclaration, source: ts.SourceFile): Param {

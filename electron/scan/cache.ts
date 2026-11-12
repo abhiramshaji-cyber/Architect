@@ -41,7 +41,8 @@ const optionalText = (value: unknown) => value === undefined || typeof value ===
 function isParam(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const param = value as Record<string, unknown>
-  return typeof param.name === 'string' && optionalText(param.type) && optionalText(param.value)
+  const flag = (value: unknown) => value === undefined || value === true
+  return typeof param.name === 'string' && optionalText(param.type) && optionalText(param.value) && flag(param.optional) && flag(param.rest)
 }
 
 function isSignature(value: unknown): boolean {

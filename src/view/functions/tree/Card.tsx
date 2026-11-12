@@ -1,4 +1,4 @@
-import { memo, type KeyboardEvent } from 'react'
+import { memo } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import type { FunctionRow } from '../../../../shared/types'
 import Facts from '../facts/Facts'
@@ -37,39 +37,35 @@ function Body({ data }: { data: CardData }) {
   }
 
   const signature = signatureText(row.signature)
-  const open = () => data.onOpen(row)
-  const key = (event: KeyboardEvent) => {
-    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
-    event.preventDefault()
-    open()
-  }
 
   return (
-    <div className="fn-card-body open" role="button" tabIndex={0} onClick={open} onKeyDown={key} title={`${row.file}:${row.line}`}>
-      <span className="fn-card-head">
-        <Mark importance={row.importance} />
-        <span className="fn-card-name" title={row.name + signature}>
-          {row.name}
+    <div className="fn-card-body">
+      <button className="fn-card-open" onClick={() => data.onOpen(row)} title={`${row.file}:${row.line}`}>
+        <span className="fn-card-head">
+          <Mark importance={row.importance} />
+          <span className="fn-card-name" title={row.name + signature}>
+            {row.name}
+          </span>
+          {row.exported && <span className="fn-badge">exported</span>}
         </span>
-        {row.exported && <span className="fn-badge">exported</span>}
-      </span>
-      {signature !== '' && (
-        <span className="fn-card-sig" title={signature}>
-          {signature}
+        {signature !== '' && (
+          <span className="fn-card-sig" title={signature}>
+            {signature}
+          </span>
+        )}
+        {row.doc !== undefined && (
+          <span className="fn-card-doc" title={row.doc}>
+            {row.doc}
+          </span>
+        )}
+        {data.also > 0 && <span className="fn-card-also">also used by {plural(data.also, 'other')}</span>}
+        <span className="fn-card-foot">
+          <span className="fn-card-file">
+            {baseName(row.file)}:{row.line}
+          </span>
+          <span className="fn-card-lines">{plural(row.lines, 'line')}</span>
         </span>
-      )}
-      {row.doc !== undefined && (
-        <span className="fn-card-doc" title={row.doc}>
-          {row.doc}
-        </span>
-      )}
-      {data.also > 0 && <span className="fn-card-also">also used by {plural(data.also, 'other')}</span>}
-      <span className="fn-card-foot">
-        <span className="fn-card-file">
-          {baseName(row.file)}:{row.line}
-        </span>
-        <span className="fn-card-lines">{plural(row.lines, 'line')}</span>
-      </span>
+      </button>
       <Facts row={row} at={data.at} onRelated={data.onRelated} />
     </div>
   )

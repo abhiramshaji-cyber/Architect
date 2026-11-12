@@ -31,15 +31,16 @@ export function indexOf(map: CodeMap, declared: Set<string>, scope: string): { r
   const importance = importanceOf(sub, local)
   const rows = local.flatMap((fact, i) => {
     const entry = entries[keep[i] ?? -1]
-    const outside = (facts[keep[i] ?? -1]?.fanIn ?? 0) - fact.fanIn
-    if (!entry) return []
+    const whole = facts[keep[i] ?? -1]
+    if (!entry || !whole) return []
     const row: FunctionRow = {
       ...fact,
       importance: importance[i] ?? 1,
     }
     if (entry.signature !== undefined) row.signature = entry.signature
     if (entry.doc !== undefined) row.doc = entry.doc
-    if (outside > 0) row.outside = outside
+    if (whole.fanIn > fact.fanIn) row.outsideCallers = whole.fanIn - fact.fanIn
+    if (whole.fanOut > fact.fanOut) row.outsideCallees = whole.fanOut - fact.fanOut
     return [row]
   })
   return { rows, calls: sub }
