@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Kind, MapNode } from '../../map/layout/nest'
-import { light } from './light'
+import { EARLIER, light } from './light'
 import type { Step } from './steps'
 
 const node = (id: string, kind: Kind, path: string, children: MapNode[] = []): MapNode => ({
@@ -38,10 +38,10 @@ describe('replay light', () => {
       1,
       null,
       null,
-      0,
-      0,
+      EARLIER,
+      EARLIER,
       1,
-      0,
+      EARLIER,
       1,
     ])
     expect(found).toBe(1)
@@ -55,6 +55,6 @@ describe('replay light', () => {
 
   it('lights nothing past the last step', () => {
     const { values } = light(tree, [step(['src/a.ts'])], 5)
-    expect(values.get('a1')).toBe(0)
+    expect(values.get('a1')).toBe(EARLIER)
   })
 })

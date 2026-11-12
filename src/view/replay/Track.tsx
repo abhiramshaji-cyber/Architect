@@ -1,5 +1,5 @@
 import type { KeyboardEvent, PointerEvent } from 'react'
-import type { VerdictRecord } from '../../../shared/types'
+import { stepText, verdictText } from './Readout'
 import type { Step } from './timeline/steps'
 import type { Held } from './timeline/verdicts'
 
@@ -8,11 +8,9 @@ type Props = {
   at: number
   held: Held[]
   onAt: (at: number) => void
-  describe: (step: Step) => string
-  verdictText: (record: VerdictRecord) => string
 }
 
-export default function Track({ steps, at, held, onAt, describe, verdictText }: Props) {
+export default function Track({ steps, at, held, onAt }: Props) {
   const last = steps.length - 1
   const place = (index: number) => (last <= 0 ? 50 : (index / last) * 100)
   const clamp = (index: number) => Math.min(last, Math.max(0, index))
@@ -63,7 +61,7 @@ export default function Track({ steps, at, held, onAt, describe, verdictText }: 
         aria-valuemin={1}
         aria-valuemax={steps.length}
         aria-valuenow={at + 1}
-        aria-valuetext={step ? describe(step) : ''}
+        aria-valuetext={step ? stepText(step) : ''}
         onKeyDown={key}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId)
@@ -71,12 +69,12 @@ export default function Track({ steps, at, held, onAt, describe, verdictText }: 
         }}
         onPointerMove={(event) => event.buttons === 1 && seek(event)}
       >
+        <div className="replay-fill" style={{ width: `${place(at)}%` }} />
         <svg className="replay-ticks" preserveAspectRatio="none" viewBox="0 0 100 10">
           {steps.map((item, index) => (
             <line key={item.key} className={`replay-tick ${item.kind}`} x1={place(index)} x2={place(index)} y1={2} y2={8} />
           ))}
         </svg>
-        <div className="replay-fill" style={{ width: `${place(at)}%` }} />
         <div className="replay-head" style={{ left: `${place(at)}%` }} />
       </div>
     </div>

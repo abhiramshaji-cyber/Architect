@@ -7,6 +7,7 @@ export type Step = {
   files: string[]
   components: string[]
   title: string
+  short?: string
   session?: string
 }
 
@@ -24,6 +25,7 @@ function fromCommit(commit: Commit): Step {
     files: commit.files,
     components: [],
     title: commit.subject,
+    short: commit.short,
   }
 }
 

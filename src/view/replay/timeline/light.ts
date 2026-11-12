@@ -1,6 +1,8 @@
 import type { MapNode } from '../../map/layout/nest'
 import type { Step } from './steps'
 
+export const EARLIER = 0.3
+
 export type Lit = { values: Map<string, number | null>; found: number }
 
 export function light(root: MapNode, steps: Step[], at: number): Lit {
@@ -16,7 +18,7 @@ export function light(root: MapNode, steps: Step[], at: number): Lit {
     if (node.kind === 'file' && files.has(node.path)) seen.add(node.path)
 
     let value: number | null = null
-    if (node.children.length === 0) value = now || files.has(node.path) ? 1 : before.has(node.path) ? 0 : null
+    if (node.children.length === 0) value = now || files.has(node.path) ? 1 : before.has(node.path) ? EARLIER : null
     for (const child of node.children) {
       const held = visit(child, now)
       if (held !== null) value = Math.max(value ?? 0, held)
