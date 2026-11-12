@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { FunctionRow } from '../../shared/types'
+import type { Entry, FunctionRow } from '../../shared/types'
 import { treeOf } from './tree'
+
+const BIN: Entry = { reason: 'bin', file: 'cli.ts' }
+
+const TOOL: Entry = { reason: 'mcpTool', file: 'mcp.ts' }
 
 const row = (name: string, over: Partial<FunctionRow> = {}): FunctionRow => ({
   file: 'a.ts',
@@ -10,9 +14,8 @@ const row = (name: string, over: Partial<FunctionRow> = {}): FunctionRow => ({
   fanIn: 0,
   fanOut: 0,
   exported: false,
-  entry: false,
+  entry: null,
   importance: 1,
-  summary: '',
   ...over,
 })
 
@@ -30,43 +33,69 @@ describe('treeOf', () => {
   it('handles an empty project and a single function', () => {
     expect(treeOf([], [])).toEqual({
       starts: [],
+      groups: [],
       unreached: [],
       children: [],
       also: [],
     })
-    expect(graph([['main', [], { entry: true }]])).toEqual({
+    expect(graph([['main', [], { entry: BIN }]])).toEqual({
       starts: [0],
+      groups: [{ file: 'cli.ts', reason: 'bin', members: [0] }],
       unreached: [],
       children: [[]],
       also: [0],
     })
     expect(graph([['lonely', []]])).toEqual({
       starts: [],
+      groups: [],
       unreached: [0],
       children: [[]],
       also: [0],
     })
   })
 
-  it('roots at uncalled functions in starting point files, most important first', () => {
+  it('roots only at functions with a named reason, most important first, even when something calls them', () => {
     const tree = graph([
-      ['page', [2], { entry: true, importance: 2 }],
-      ['layout', [2], { entry: true, importance: 4 }],
+      ['page', [2], { entry: BIN, importance: 2 }],
+      ['layout', [2], { entry: BIN, importance: 4 }],
       ['shared', []],
-      ['called', [], { entry: true }],
-      ['caller', [3]],
+      ['tool', [], { entry: TOOL, importance: 3 }],
+      ['register', [3]],
+      ['orphan', []],
     ])
-    expect(tree.starts).toEqual([1, 0])
+    expect(tree.starts).toEqual([1, 3, 0])
     expect(tree.children[1]).toEqual([2])
     expect(tree.children[0]).toEqual([])
     expect(tree.also[2]).toBe(1)
-    expect(tree.unreached).toEqual([4])
-    expect(tree.children[4]).toEqual([3])
+    expect(tree.unreached).toEqual([5, 4])
+    expect(tree.children[4]).toEqual([])
+    expect(tree.also[3]).toBe(1)
+  })
+
+  it('groups starting points by reason and the file that declares it, in rank order', () => {
+    const tree = graph([
+      ['a', [], { entry: TOOL, importance: 2 }],
+      ['b', [], { entry: BIN, importance: 5 }],
+      ['c', [], { entry: TOOL, importance: 4 }],
+      ['d', [], { entry: { reason: 'mcpTool', file: 'other.ts' } }],
+    ])
+    expect(tree.groups).toEqual([
+      { file: 'cli.ts', reason: 'bin', members: [1] },
+      { file: 'mcp.ts', reason: 'mcpTool', members: [2, 0] },
+      { file: 'other.ts', reason: 'mcpTool', members: [3] },
+    ])
+  })
+
+  it('never makes an uncalled function without a reason a starting point, but lifts it when scoped', () => {
+    const rows = [row('orphan'), row('kid', { fanIn: 1 })]
+    expect(treeOf(rows, [[1], []]).starts).toEqual([])
+    expect(treeOf(rows, [[1], []]).unreached).toEqual([0])
+    expect(treeOf(rows, [[1], []], true)).toMatchObject({ starts: [0], groups: [], unreached: [] })
   })
 
   it('places every function exactly once, under its shallowest and most important caller', () => {
     const tree = graph([
-      ['main', [1, 2], { entry: true }],
+      ['main', [1, 2], { entry: BIN }],
       ['weak', [3], { importance: 1 }],
       ['strong', [3], { importance: 5 }],
       ['deep', [4]],
@@ -95,7 +124,7 @@ describe('treeOf', () => {
 
   it('buckets unreached code with its own callees beneath it, most important first', () => {
     const tree = graph([
-      ['main', [], { entry: true }],
+      ['main', [], { entry: BIN }],
       ['dead', [2], { importance: 1 }],
       ['deadHelper', []],
       ['loopA', [4], { importance: 5 }],
@@ -110,7 +139,7 @@ describe('treeOf', () => {
 
   it('orders children by importance, then lines, then name, and keeps duplicate names apart', () => {
     const tree = graph([
-      ['main', [1, 2, 3, 4], { entry: true }],
+      ['main', [1, 2, 3, 4], { entry: BIN }],
       ['run', [], { importance: 3, lines: 5 }],
       ['run', [], { importance: 3, lines: 5, file: 'b.ts' }],
       ['big', [], { importance: 3, lines: 50 }],
@@ -123,7 +152,7 @@ describe('treeOf', () => {
     const specs: [string, number[], Partial<FunctionRow>?][] = Array.from({ length: 1500 }, (_, at) => [
       `f${at}`,
       [(at * 7 + 1) % 1500, (at + 1) % 1500],
-      { entry: at % 100 === 0 },
+      { entry: at % 100 === 0 ? BIN : null },
     ])
     const started = performance.now()
     const tree = graph(specs)

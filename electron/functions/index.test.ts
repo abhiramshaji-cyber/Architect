@@ -16,13 +16,14 @@ const fn = (name: string, calls: { file: string; fn: number }[] = []) => ({
 
 describe('functionsOf', () => {
   it('returns nothing for an empty project and a full row for a single function', () => {
-    expect(functionsOf(mapOf([]), new Set())).toEqual({
+    expect(functionsOf(mapOf([]), new Map())).toEqual({
       rows: [],
-      tree: { starts: [], unreached: [], children: [], also: [] },
+      calls: [],
+      tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
       scope: '',
       folders: [],
     })
-    expect(functionsOf(mapOf([{ path: 'a.ts', functions: [fn('loadConfig')] }]), new Set()).rows).toEqual([
+    expect(functionsOf(mapOf([{ path: 'a.ts', functions: [fn('loadConfig')] }]), new Map()).rows).toEqual([
       {
         file: 'a.ts',
         name: 'loadConfig',
@@ -31,11 +32,27 @@ describe('functionsOf', () => {
         fanIn: 0,
         fanOut: 0,
         exported: false,
-        entry: true,
+        entry: null,
         importance: 3,
-        summary: 'Loads the config. Starting point of the app.',
       },
     ])
+  })
+
+  it('carries the scanned signature and doc verbatim and leaves them out when the scan has none', () => {
+    const signature = { params: [{ name: 'root', type: 'string' }], returns: 'Config' }
+    const doc = 'Loads it.\n@param root where'
+    const { rows } = functionsOf(mapOf([{ path: 'a.ts', functions: [{ ...fn('load'), signature, doc }, fn('bare')] }]), new Map())
+    expect(rows[0]).toMatchObject({ signature, doc })
+    expect(rows[1]).not.toHaveProperty('signature')
+    expect(rows[1]).not.toHaveProperty('doc')
+  })
+
+  it('lists the calls between rows by row index', () => {
+    const map = mapOf([
+      { path: 'a.ts', functions: [fn('a', [{ file: 'b.ts', fn: 0 }, { file: 'b.ts', fn: 1 }]), fn('c')] },
+      { path: 'b.ts', functions: [fn('b', [{ file: 'a.ts', fn: 1 }]), fn('d')] },
+    ])
+    expect(functionsOf(map, new Map()).calls).toEqual([[2, 3], [], [1], []])
   })
 
   it('fills every row, keeps duplicate names apart and survives a cycle', () => {
@@ -47,9 +64,9 @@ describe('functionsOf', () => {
         functions: [fn('ping', [{ file: 'b.ts', fn: 1 }]), fn('pong', [{ file: 'b.ts', fn: 0 }])],
       },
     ])
-    const { rows } = functionsOf(map, new Set())
+    const { rows } = functionsOf(map, new Map())
     expect(rows).toHaveLength(4)
-    expect(rows.every((row) => row.summary !== '' && row.importance >= 1 && row.importance <= 5)).toBe(true)
+    expect(rows.every((row) => row.importance >= 1 && row.importance <= 5)).toBe(true)
     expect(rows.map((row) => row.fanIn)).toEqual([0, 0, 2, 1])
     expect(rows[2]?.importance).toBeGreaterThan(rows[1]?.importance ?? 0)
   })
@@ -66,7 +83,7 @@ describe('functionsOf', () => {
       ),
     }))
     const started = performance.now()
-    const { rows, tree } = functionsOf(mapOf(files), new Set())
+    const { rows, tree } = functionsOf(mapOf(files), new Map())
     const spent = performance.now() - started
     expect(rows).toHaveLength(1500)
     expect(tree.children.flat().length + tree.starts.length + tree.unreached.length).toBe(1500)
@@ -113,24 +130,32 @@ describe('functionsOf in a folder', () => {
   ])
 
   it('counts only callers inside the folder and flags outside callers', () => {
-    const { rows, scope } = functionsOf(map, new Set(), 'app/core/')
+    const { rows, scope } = functionsOf(map, new Map(), 'app/core/')
     expect(scope).toBe('app/core')
-    expect(rows.map((row) => [row.name, row.fanIn, row.outside])).toEqual([
+    expect(rows.map((row) => [row.name, row.fanIn, row.outsideCallers])).toEqual([
       ['run', 0, 1],
       ['load', 1, 1],
     ])
-    expect(rows[0]?.summary).toBe('Runs it. Used only from outside this folder.')
-    expect(rows[1]?.summary).toBe('Loads it. Used in 1 place. Also used from outside this folder.')
-    expect(functionsOf(map, new Set()).rows.every((row) => row.outside === undefined)).toBe(true)
+    expect(functionsOf(map, new Map(), 'app/core').calls).toEqual([[1], []])
+    expect(functionsOf(map, new Map()).rows.every((row) => row.outsideCallers === undefined && row.outsideCallees === undefined)).toBe(true)
+  })
+
+  it('counts only callees inside the folder and flags outside callees', () => {
+    const { rows } = functionsOf(map, new Map(), 'app')
+    expect(rows.map((row) => [row.name, row.fanOut, row.outsideCallees])).toEqual([
+      ['main', 1, 1],
+      ['run', 1, undefined],
+      ['load', 0, undefined],
+    ])
   })
 
   it('roots the tree at uncalled functions in the folder with no unreached bucket for them', () => {
-    const { tree } = functionsOf(map, new Set(), 'app/core')
-    expect(tree).toEqual({ starts: [0], unreached: [], children: [[1], []], also: [0, 0] })
+    const { tree } = functionsOf(map, new Map(), 'app/core')
+    expect(tree).toEqual({ starts: [0], groups: [], unreached: [], children: [[1], []], also: [0, 0] })
   })
 
   it('puts real starting points first, then the other uncalled functions', () => {
-    const { rows, tree } = functionsOf(map, new Set(), 'app')
+    const { rows, tree } = functionsOf(map, new Map(), 'app')
     expect(tree.starts.map((at) => rows[at]?.name)).toEqual(['main'])
     const lib = functionsOf(
       foldered([
@@ -138,7 +163,7 @@ describe('functionsOf in a folder', () => {
         { path: 'pkg/deep/b.ts', functions: [fn('loose', [call('pkg/deep/b.ts', 1)]), fn('called')] },
         { path: 'pkg/user.ts', imports: ['pkg/deep/b.ts'], functions: [fn('ping', [call('pkg/deep/b.ts', 1)])] },
       ]),
-      new Set(),
+      new Map(),
       'pkg',
     )
     expect(lib.tree.starts.map((at) => lib.rows[at]?.name)).toEqual(['boot', 'ping'])
@@ -152,7 +177,7 @@ describe('functionsOf in a folder', () => {
         { path: 'pkg/b.ts', imports: ['pkg/a.ts'], functions: [fn('pong', [call('pkg/a.ts')])] },
         { path: 'pkg/c.ts', imports: ['pkg/a.ts'], functions: [fn('solo')] },
       ]),
-      new Set(),
+      new Map(),
       'pkg',
     )
     expect(cyc.tree.starts.map((at) => cyc.rows[at]?.name)).toEqual(['solo'])
@@ -175,31 +200,32 @@ describe('functionsOf in a folder', () => {
         functions: [fn(`out${i}`, [call('pkg/leaf.ts')])],
       })),
     ]
-    const whole = functionsOf(foldered(files), new Set())
+    const whole = functionsOf(foldered(files), new Map())
     const byName = (rows: typeof whole.rows, name: string) => rows.find((row) => row.name === name)
     expect(byName(whole.rows, 'leaf')?.importance).toBe(5)
 
-    const pkg = functionsOf(foldered(files), new Set(), 'pkg')
+    const pkg = functionsOf(foldered(files), new Map(), 'pkg')
     expect(pkg.rows).toHaveLength(21)
     expect(byName(pkg.rows, 'hub')?.importance).toBe(5)
     expect(byName(pkg.rows, 'leaf')?.importance).toBeLessThan(5)
-    expect(byName(pkg.rows, 'leaf')?.outside).toBe(60)
-    expect(Math.min(...pkg.rows.map((row) => row.importance))).toBe(1)
+    expect(byName(pkg.rows, 'leaf')?.outsideCallers).toBe(60)
+    expect(new Set(pkg.rows.map((row) => row.importance)).size).toBeGreaterThan(1)
   })
 
   it('handles an empty folder, a missing folder and a path outside the project', () => {
-    expect(functionsOf(map, new Set(), 'empty')).toEqual({
+    expect(functionsOf(map, new Map(), 'empty')).toEqual({
       rows: [],
-      tree: { starts: [], unreached: [], children: [], also: [] },
+      calls: [],
+      tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
       scope: 'empty',
       folders: [],
     })
     for (const gone of ['deleted', '../r', '/elsewhere', 'app/main.ts']) {
-      const list = functionsOf(map, new Set(), gone)
+      const list = functionsOf(map, new Map(), gone)
       expect(list.scope).toBe('')
       expect(list.rows).toHaveLength(4)
     }
-    expect(functionsOf(map, new Set(), 'app').folders).toEqual([{ path: 'app/core', functions: 2 }])
+    expect(functionsOf(map, new Map(), 'app').folders).toEqual([{ path: 'app/core', functions: 2 }])
   })
 
   it('narrows a large project to one folder well inside the time budget', () => {
@@ -211,7 +237,7 @@ describe('functionsOf in a folder', () => {
     }))
     const big = foldered(files)
     const started = performance.now()
-    const { rows, tree, scope } = functionsOf(big, new Set(), 'pkg3')
+    const { rows, tree, scope } = functionsOf(big, new Map(), 'pkg3')
     const spent = performance.now() - started
     expect(scope).toBe('pkg3')
     expect(rows).toHaveLength(500)

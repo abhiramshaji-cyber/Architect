@@ -138,6 +138,28 @@ billing: 320,220
 -->
 ```
 
+An optional `## Rules` section sets code standards that `architect check` and `check_change` enforce. Without it the defaults below apply; with it, any rule it leaves out keeps its default.
+
+```markdown
+## Rules
+
+- skip: `**/*.test.*`, `**/*.spec.*`
+- lines: 200
+- files: 5
+- names: Manager, Helper, Service, Factory, Base
+- jobs: 1
+- lines: 600 `src/legacy/big.ts`
+- names: off `vendor/**`
+```
+
+- `lines` is the most lines one code file may have.
+- `files` is the most code files one folder may hold. Its globs match folder paths, with `.` for the repo root.
+- `names` lists words no file, class or function name may contain as a whole word, so `UserService` and `baseUrl` break it but `Database` does not.
+- `jobs` is how many unrelated groups of exported top level functions one file may hold. Two exported functions are related when one reaches the other through calls inside that file, through a function they both call, or by nesting.
+- `skip` lists files no rule looks at, and they do not count toward a folder. Declaring it replaces the default.
+
+Any rule can be `off`. Backticked globs after the value limit a line to those paths, and the last line that matches a path wins, so a file that already breaks a rule can get its own limit while new code is held to the default. `check_change` given a `file` and its full proposed `content` rejects a change only when it adds a violation or makes one worse, naming the rule, the file and the line. Every check records a pass or fail per rule, which `architect check --history` lists.
+
 Architect ships with its own [`architect.md`](architect.md) describing Architect. It is the demo, the test fixture, and the proof the tool survives contact with itself.
 
 ## Install

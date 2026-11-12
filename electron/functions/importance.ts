@@ -34,8 +34,7 @@ export function pageRank(edges: number[][]): number[] {
 }
 
 export function scoreOf(fact: FunctionFacts, centrality: number): number {
-  const root = fact.entry && fact.fanIn === 0
-  return centrality + Math.log2(1 + fact.fanIn) + (fact.exported ? 1 : 0) + (root ? 2 : 0)
+  return centrality + Math.log2(1 + fact.fanIn) + (fact.exported ? 1 : 0) + (fact.entry === null ? 0 : 2)
 }
 
 export function bucketed(scores: number[]): Importance[] {

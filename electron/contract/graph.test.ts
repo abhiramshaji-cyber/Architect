@@ -784,3 +784,52 @@ describe('flow labels and covered functions', () => {
     expect(scan(markdown.replace('covers: `src/chat/handler.ts#handle`', 'covers: handle')).problems).toHaveLength(1)
   })
 })
+
+describe('rules section', () => {
+  const ruled = `${fixture}
+${h2} Rules
+
+- skip: \`**/*.test.ts\`, \`gen/**\`
+- lines: 300
+- names: Manager, Base
+- jobs: off \`src/ui/**\`
+- files: 8 \`src/api\`
+`
+
+  it('leaves rules out when the section is absent, so the defaults apply', () => {
+    expect(parse(fixture).rules).toBeUndefined()
+    expect(serialize(parse(fixture))).not.toContain(`${h2} Rules`)
+  })
+
+  it('reads an empty section as declared with no rules', () => {
+    expect(parse(`${fixture}\n${h2} Rules\n`).rules).toEqual([])
+  })
+
+  it('reads every rule line in order', () => {
+    expect(parse(ruled).rules).toEqual([
+      { rule: 'skip', globs: ['**/*.test.ts', 'gen/**'] },
+      { rule: 'lines', limit: 300, globs: [] },
+      { rule: 'names', banned: ['Manager', 'Base'], globs: [] },
+      { rule: 'jobs', limit: 'off', globs: ['src/ui/**'] },
+      { rule: 'files', limit: 8, globs: ['src/api'] },
+    ])
+  })
+
+  it('round trips the section and keeps it through an applied proposal', () => {
+    const arch = parse(ruled)
+    expect(parse(serialize(arch))).toEqual(arch)
+    expect(apply(arch, { kind: 'edge', from: 'ui', to: 'db' }).rules).toEqual(arch.rules)
+  })
+
+  it('reads only the exact Rules heading, not one that starts with it', () => {
+    const text = `${fixture}\n${h2} Rules of thumb\n\nKeep it small.\n\n${h2} Rules\n\n- jobs: 2\n`
+    expect(parse(text).rules).toEqual([{ rule: 'jobs', limit: 2, globs: [] }])
+  })
+
+  it('reports a malformed rule with its line', () => {
+    const { problems } = scan(`${fixture}\n${h2} Rules\n\n- lines: lots\n`)
+    expect(problems).toHaveLength(1)
+    expect(problems[0]?.message).toContain('lines takes a whole number above zero')
+    expect(() => parse(`${fixture}\n${h2} Rules\n\n- lines: lots\n`)).toThrow(/whole number/)
+  })
+})

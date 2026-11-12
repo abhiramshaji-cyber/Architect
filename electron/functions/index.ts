@@ -1,21 +1,11 @@
-import fs from 'node:fs'
-import path from 'node:path'
 import type { CodeMap, FunctionList, FunctionRow } from '../../shared/types'
-import { declaredEntries, edgesOf, factsOf } from './facts'
+import { entryFiles, type EntryFiles } from './entries'
+import { edgesOf, factsOf } from './facts'
 import { importanceOf } from './importance'
 import { foldersOf, scopeOf, subgraphOf, within } from './scope'
-import { sentenceOf } from './summary/sentence'
 import { treeOf } from './tree'
 
-function manifestOf(root: string): unknown {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-export function indexOf(map: CodeMap, declared: Set<string>, scope: string): { rows: FunctionRow[]; calls: number[][] } {
+export function indexOf(map: CodeMap, declared: EntryFiles, scope: string): { rows: FunctionRow[]; calls: number[][] } {
   const edges = edgesOf(map)
   const facts = factsOf(map, declared, edges)
   const entries = map.folders.flatMap((folder) => folder.files).flatMap((file) => file.functions)
@@ -32,33 +22,35 @@ export function indexOf(map: CodeMap, declared: Set<string>, scope: string): { r
   const importance = importanceOf(sub, local)
   const rows = local.flatMap((fact, i) => {
     const entry = entries[keep[i] ?? -1]
-    const outside = (facts[keep[i] ?? -1]?.fanIn ?? 0) - fact.fanIn
-    if (!entry) return []
-    const row = {
+    const whole = facts[keep[i] ?? -1]
+    if (!entry || !whole) return []
+    const row: FunctionRow = {
       ...fact,
       importance: importance[i] ?? 1,
-      summary: sentenceOf(entry, fact, outside),
     }
-    return [outside > 0 ? { ...row, outside } : row]
+    if (entry.signature !== undefined) row.signature = entry.signature
+    if (entry.doc !== undefined) row.doc = entry.doc
+    if (whole.fanIn > fact.fanIn) row.outsideCallers = whole.fanIn - fact.fanIn
+    if (whole.fanOut > fact.fanOut) row.outsideCallees = whole.fanOut - fact.fanOut
+    return [row]
   })
   return { rows, calls: sub }
 }
 
-export function functionsOf(map: CodeMap, declared: Set<string>, asked?: unknown): FunctionList {
+export function functionsOf(map: CodeMap, declared: EntryFiles, asked?: unknown): FunctionList {
   const scope = scopeOf(map, asked)
   const { rows, calls } = indexOf(map, declared, scope)
   return {
     rows,
+    calls,
     tree: treeOf(rows, calls, scope !== ''),
     scope,
     folders: foldersOf(map, scope),
   }
 }
 
-export function manifestEntries(root: string): Set<string> {
-  return declaredEntries(manifestOf(root))
-}
+export { entryFiles, type EntryFiles } from './entries'
 
 export function listFunctions(root: string, map: CodeMap, scope?: unknown): FunctionList {
-  return functionsOf(map, manifestEntries(root), scope)
+  return functionsOf(map, entryFiles(root, map), scope)
 }

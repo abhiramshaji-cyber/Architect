@@ -2,7 +2,7 @@ import dagre from '@dagrejs/dagre'
 import type { Shown } from './outline'
 
 export const CARD_W = 248
-export const CARD_H = 132
+export const CARD_H = 156
 
 const NODE_SEP = 20
 const RANK_SEP = 56

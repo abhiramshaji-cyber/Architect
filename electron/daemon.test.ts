@@ -320,19 +320,20 @@ describe("drafting a first contract", () => {
     expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
   });
 
-  it("lists every function with its facts, importance and summary without asking the agent", async () => {
+  it("lists every function with its facts and importance without asking the agent", async () => {
     const root = repo();
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ main: "./ui/page.ts" }));
     const claude = vi.fn();
     daemon = createDaemon({ socketPath, claude });
 
     const { rows, tree } = await daemon.listFunctions(root);
     expect(rows.map((r) => [r.file, r.name, r.fanIn, r.entry])).toEqual([
-      ["api/handler.ts", "handler", 1, false],
-      ["ui/page.ts", "page", 0, true],
+      ["api/handler.ts", "handler", 1, null],
+      ["ui/page.ts", "page", 0, { reason: "main", file: "ui/page.ts" }],
     ]);
     expect(tree.starts).toEqual([1]);
     expect(tree.children[1]).toEqual([0]);
-    expect(rows.every((r) => r.summary !== "" && r.importance >= 1 && r.importance <= 5)).toBe(true);
+    expect(rows.every((r) => r.importance >= 1 && r.importance <= 5)).toBe(true);
     expect(claude).not.toHaveBeenCalled();
   });
 
@@ -1049,7 +1050,7 @@ describe("code map migration", () => {
     fs.writeFileSync(
       path.join(tmpRoot, ".architect", "map.json"),
       JSON.stringify({
-        version: 5,
+        version: 7,
         map: {
           root: tmpRoot,
           scannedAt: 1,
@@ -2532,6 +2533,113 @@ describe("change review", () => {
     const res = await c.request({ op: "propose_change", cwd: tmpRoot, proposal: { kind: "edge", from: "api", to: "db" }, rationale: "r" });
     expect(res.ok && res.result).toEqual({ status: "approved" });
     expect(daemon.review()).toEqual({ enabled: false, items: [] });
+    c.close();
+  });
+});
+
+describe("check_change rules", () => {
+  const body = (count: number) => `export function go() {\n${"  void 0\n".repeat(count)}}\n`;
+
+  async function ask(input: Omit<Extract<Request, { op: "check_change" }>, "id" | "cwd" | "op">) {
+    const c = await client(socketPath);
+    const res = await c.request({ op: "check_change", cwd: tmpRoot, ...input });
+    c.close();
+    return res;
+  }
+
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")));
+    fs.mkdirSync(path.join(tmpRoot, "api"), { recursive: true });
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+  });
+
+  it("rejects a proposed file that breaks a rule and names it", async () => {
+    const res = await ask({ file: "api/long.ts", content: body(220) });
+
+    expect(res.ok && res.result).toMatchObject({
+      status: "rule-violation",
+      violations: [{ rule: "lines", path: "api/long.ts", line: 201, message: "222 lines, the limit is 200" }],
+    });
+  });
+
+  it("allows a change that leaves an existing violation no worse", async () => {
+    fs.writeFileSync(path.join(tmpRoot, "api", "long.ts"), body(240));
+    const res = await ask({ file: path.join(tmpRoot, "api", "long.ts"), content: body(230) });
+
+    expect(res.ok && res.result).toEqual({ status: "allowed" });
+  });
+
+  it("rejects a new file in a folder already at its limit", async () => {
+    for (const name of ["a", "b", "c", "d", "e"]) fs.writeFileSync(path.join(tmpRoot, "api", `${name}.ts`), "export const x = 1\n");
+    fs.writeFileSync(path.join(tmpRoot, "api", "a.test.ts"), "export const x = 1\n");
+
+    const added = await ask({ file: "api/f.ts", content: "export const y = 2\n" });
+    expect(added.ok && added.result).toMatchObject({ status: "rule-violation", violations: [{ rule: "files", path: "api" }] });
+
+    const replaced = await ask({ file: "api/a.ts", content: "export const y = 2\n" });
+    expect(replaced.ok && replaced.result).toEqual({ status: "allowed" });
+  });
+
+  it("follows the Rules section of architect.md", async () => {
+    const tuned = fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8") + "\n## Rules\n\n- lines: 300 `api/**`\n- names: off\n";
+    writeArchitect(tmpRoot, tuned);
+
+    const res = await ask({ file: "api/UserService.ts", content: body(250) });
+    expect(res.ok && res.result).toEqual({ status: "allowed" });
+  });
+
+  it("answers the edge first when both an edge and a file are given", async () => {
+    const res = await ask({ from: "api", to: "db", file: "api/long.ts", content: body(220) });
+    expect(res.ok && res.result).toEqual({ status: "undrawn-edge" });
+  });
+
+  it("refuses a half edge, a file with no content and a file outside the project", async () => {
+    expect(await ask({ from: "api" })).toMatchObject({ ok: false, error: "check_change needs both from and to" });
+    expect(await ask({ file: "api/a.ts" })).toMatchObject({ ok: false, error: expect.stringContaining("proposed content") });
+    expect(await ask({})).toMatchObject({ ok: false, error: expect.stringContaining("from and to, or a file") });
+    expect(await ask({ file: "../elsewhere.ts", content: "x" })).toMatchObject({ ok: false, error: expect.stringContaining("outside the project") });
+    expect(daemon.verdicts(tmpRoot).map((record) => record.verdict.status)).toEqual(["unknown", "unknown", "unknown", "unknown"]);
+  });
+
+  it("keeps checking rules and says so when the contract is stale", async () => {
+    await ask({ file: "api/a.ts", content: "export const a = 1\n" });
+    writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")).replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const alone = await ask({ file: "api/a.ts", content: "export const a = 1\n" });
+    expect(alone.ok && alone.result).toMatchObject({ status: "unknown", reason: expect.stringMatching(/stale/) });
+    const both = await ask({ from: "api", to: "db", file: "api/long.ts", content: body(220) });
+    expect(both.ok && both.result).toMatchObject({ status: "rule-violation", violations: [{ rule: "lines" }] });
+    const edgeOnly = await ask({ from: "api", to: "db", file: "api/a.ts", content: "export const a = 1\n" });
+    expect(edgeOnly.ok && edgeOnly.result).toMatchObject({ status: "unknown" });
+  });
+
+  it("records a pass or fail run per rule", async () => {
+    await ask({ file: "api/long.ts", content: body(220) });
+
+    const key = createHash("sha256").update(fs.realpathSync.native(tmpRoot)).digest("hex");
+    const runs = JSON.parse(fs.readFileSync(path.join(path.dirname(socketPath), "rules", `${key}.json`), "utf8"));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ source: "check_change", file: "api/long.ts" });
+    expect(runs[0].results).toContainEqual({ rule: "lines", pass: false, violations: 1 });
+    expect(runs[0].results).toContainEqual({ rule: "files", pass: true, violations: 0 });
+    expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ file: "api/long.ts", verdict: { status: "rule-violation" } });
+  });
+});
+
+describe("check_change rules outside the scan", () => {
+  it("leaves a file in a folder the scan ignores alone, as architect check does", async () => {
+    writeArchitect(tmpRoot, fixture(component("api")));
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    const c = await client(socketPath);
+    const long = `export function go() {\n${"  void 0\n".repeat(300)}}\n`;
+
+    for (const file of ["node_modules/pkg/index.ts", ".github/scripts/a.ts", "dist/bundle.js"]) {
+      const res = await c.request({ op: "check_change", cwd: tmpRoot, file, content: long });
+      expect(res.ok && res.result).toEqual({ status: "allowed" });
+    }
     c.close();
   });
 });

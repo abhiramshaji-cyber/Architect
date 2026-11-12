@@ -10,7 +10,7 @@ const fact = (over: Partial<FunctionFacts> = {}): FunctionFacts => ({
   fanIn: 0,
   fanOut: 0,
   exported: false,
-  entry: false,
+  entry: null,
   ...over,
 })
 
@@ -64,7 +64,7 @@ describe('importanceOf', () => {
   it('ranks the shared core and the starting point above a loose leaf', () => {
     const edges = [[1], [2], [], [2], []]
     const facts = [
-      fact({ name: 'main', entry: true }),
+      fact({ name: 'main', entry: { reason: 'bin', file: 'cli.ts' } }),
       fact({ name: 'mid', fanIn: 1 }),
       fact({ name: 'core', fanIn: 2, exported: true }),
       fact({ name: 'other', fanOut: 1 }),
@@ -75,9 +75,10 @@ describe('importanceOf', () => {
     expect(main).toBeGreaterThan(leaf ?? 0)
   })
 
-  it('treats a starting point file function nobody calls as a root, and exported as a bonus', () => {
-    expect(scoreOf(fact({ entry: true }), 1)).toBeGreaterThan(scoreOf(fact(), 1))
-    expect(scoreOf(fact({ entry: true, fanIn: 1 }), 1)).toBe(scoreOf(fact({ fanIn: 1 }), 1))
+  it('treats any function with a starting point reason as a root, and exported as a bonus', () => {
+    const tool = { reason: 'mcpTool', file: 'mcp.ts' } as const
+    expect(scoreOf(fact({ entry: tool }), 1)).toBeGreaterThan(scoreOf(fact(), 1))
+    expect(scoreOf(fact({ entry: tool, fanIn: 1 }), 1)).toBeGreaterThan(scoreOf(fact({ fanIn: 1 }), 1))
     expect(scoreOf(fact({ exported: true }), 1)).toBeGreaterThan(scoreOf(fact(), 1))
   })
 })

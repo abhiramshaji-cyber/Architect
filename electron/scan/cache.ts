@@ -9,7 +9,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-const MAP_VERSION = 5
+const MAP_VERSION = 7
 
 const LEGACY_MAP = path.join('.architect', 'map.json')
 
@@ -36,19 +36,42 @@ function isCallRef(value: unknown): boolean {
   return typeof ref.file === 'string' && Number.isInteger(ref.fn)
 }
 
+const optionalText = (value: unknown) => value === undefined || typeof value === 'string'
+
+function isParam(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const param = value as Record<string, unknown>
+  const flag = (value: unknown) => value === undefined || value === true
+  return typeof param.name === 'string' && optionalText(param.type) && optionalText(param.value) && flag(param.optional) && flag(param.rest)
+}
+
+function isSignature(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const signature = value as Record<string, unknown>
+  if (!optionalText(signature.generics) || !optionalText(signature.returns)) return false
+  return Array.isArray(signature.params) && signature.params.every(isParam)
+}
+
 function isFunctionEntry(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const fn = value as Record<string, unknown>
   if (!Array.isArray(fn.calls) || !fn.calls.every(isCallRef)) return false
   if (typeof fn.endLine !== 'number') return false
   if (fn.doc !== undefined && typeof fn.doc !== 'string') return false
-  if (fn.kind !== undefined && typeof fn.kind !== 'string') return false
+  if (fn.signature !== undefined && !isSignature(fn.signature)) return false
   return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
+}
+
+function isFileStart(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const start = value as Record<string, unknown>
+  return typeof start.kind === 'string' && Array.isArray(start.calls) && start.calls.every(isCallRef)
 }
 
 function isFileEntry(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const file = value as Record<string, unknown>
+  if (file.starts !== undefined && !(Array.isArray(file.starts) && file.starts.every(isFileStart))) return false
   return typeof file.path === 'string' && Array.isArray(file.functions) && file.functions.every(isFunctionEntry)
 }
 

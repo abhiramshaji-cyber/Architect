@@ -51,6 +51,7 @@ import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
 import { createReview } from './review'
 import { createJournal } from './journal'
+import { checkFile } from './rules/proposed'
 
 const HISTORY_LIMIT = 200
 
@@ -807,13 +808,29 @@ export function createDaemon(options: DaemonOptions = {}) {
     return { status: 'unknown', reason: note }
   }
 
+  function changeVerdict(root: string, architecture: Architecture, stale: string | null, req: Extract<Request, { op: 'check_change' }>): Verdict {
+    const { from, to, file, content } = req
+    if ((from === undefined) !== (to === undefined)) throw new Error('check_change needs both from and to')
+
+    const edge = from !== undefined && to !== undefined ? verdictFor(architecture, stale, from, to) : null
+    if (edge && (file === undefined || (edge.status !== 'allowed' && edge.status !== 'unknown'))) return edge
+    if (file === undefined || content === undefined) throw new Error('check_change needs from and to, or a file with its proposed content')
+
+    const violations = checkFile(cacheDir, root, architecture, path.resolve(req.cwd, file), content)
+    if (violations.length > 0) return { status: 'rule-violation', violations }
+    if (edge) return edge
+    if (stale === null) return { status: 'allowed' }
+    return { status: 'unknown', reason: `the architecture is stale: ${stale}. These rules come from the last version of architect.md that parsed. Fix architect.md and check again before relying on it.` }
+  }
+
   function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null) {
     verdicts.append(root, {
       id: randomUUID(),
       root,
       at: Date.now(),
-      from: req.from,
-      to: req.to,
+      ...(req.from === undefined ? {} : { from: req.from }),
+      ...(req.to === undefined ? {} : { to: req.to }),
+      ...(req.file === undefined ? {} : { file: req.file }),
       verdict,
       ...(stale === null ? {} : { stale: true as const }),
       ...(req.session ? { session: req.session } : {}),
@@ -846,7 +863,14 @@ export function createDaemon(options: DaemonOptions = {}) {
             logVerdict(root, req, { status: 'unknown', reason: error }, stale)
             return { id: req.id, ok: false, error }
           }
-          const verdict = verdictFor(state.architecture, stale, req.from, req.to)
+          let verdict: Verdict
+          try {
+            verdict = changeVerdict(root, state.architecture, stale, req)
+          } catch (err) {
+            const error = err instanceof Error ? err.message : String(err)
+            logVerdict(root, req, { status: 'unknown', reason: error }, stale)
+            return { id: req.id, ok: false, error }
+          }
           logVerdict(root, req, verdict, stale)
           return { id: req.id, ok: true, result: verdict }
         }
