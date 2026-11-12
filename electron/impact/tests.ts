@@ -14,7 +14,7 @@ const at = (fn: Fn) => `${fn.file}:${fn.line}`
 
 export const bare = (file: string) => file.replace(/\.[cm]?[jt]sx?$/i, '').replace(/\/index$/, '')
 
-type Loaded = { target: string; line: number; names: string[] | null; forwards: boolean }
+type Loaded = { target: string; line: number; names: string[] | null; locals: [string, string][]; forwards: boolean }
 
 const picked = (elements: readonly (ts.ImportSpecifier | ts.ExportSpecifier)[], types: boolean) => elements.filter((element) => types || !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text)
 
@@ -30,6 +30,14 @@ function namesOf(node: ts.Node, types: boolean): string[] | null {
     return node.exportClause && ts.isNamedExports(node.exportClause) ? picked(node.exportClause.elements, types || node.isTypeOnly) : null
   }
   return null
+}
+
+function localsOf(node: ts.Node): [string, string][] {
+  const clause = ts.isImportDeclaration(node) ? node.importClause : undefined
+  if (!clause) return []
+  const bindings = clause.namedBindings
+  const whole: [string, string][] = [...(clause.name ? [clause.name.text] : []), ...(bindings && ts.isNamespaceImport(bindings) ? [bindings.name.text] : [])].map((local) => ['*', local])
+  return [...whole, ...(bindings && ts.isNamedImports(bindings) ? bindings.elements.map((element): [string, string] => [(element.propertyName ?? element.name).text, element.name.text]) : [])]
 }
 
 function specOf(node: ts.Node): ts.Expression | undefined {
@@ -52,7 +60,7 @@ export function importsOf(root: string, test: string, types = false): Loaded[] |
     const spec = specOf(node)
     const names = spec === undefined ? undefined : namesOf(node, types)
     if (spec !== undefined && names !== undefined && ts.isStringLiteralLike(spec) && spec.text.startsWith('.')) {
-      found.push({ target: bare(path.posix.join(path.posix.dirname(test), spec.text)), line: source.getLineAndCharacterOfPosition(spec.getStart(source)).line + 1, names, forwards: ts.isExportDeclaration(node) })
+      found.push({ target: bare(path.posix.join(path.posix.dirname(test), spec.text)), line: source.getLineAndCharacterOfPosition(spec.getStart(source)).line + 1, names, locals: localsOf(node), forwards: ts.isExportDeclaration(node) })
     }
     ts.forEachChild(node, visit)
   }
@@ -130,7 +138,7 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
     const loaded = importsOf(root, file.path)
     for (const target of file.imports ?? []) {
       const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === bare(target))
-      const ways = (entries.length > 0 ? entries : [{ target, line: 0, names: null, forwards: false }]).map((way) => ({ ...way, names: originals(target, way.names) }))
+      const ways = (entries.length > 0 ? entries : [{ target, line: 0, names: null, locals: [], forwards: false }]).map((way) => ({ ...way, names: originals(target, way.names) }))
       const hit = ways.flatMap((way) => {
         const index = (exposed.get(target) ?? []).find((i) => reach.depth.has(i) && fns[i]?.test === false && named(fns[i] as Fn, way.names))
         const reached = index === undefined ? undefined : fns[index]
@@ -157,8 +165,8 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
 
 type Loads = ReturnType<typeof importsOf>
 
-export function importersOf(root: string, file: string, names: string[] | 'all', files: FileEntry[]): Set<string> {
-  const [found, seen, loads] = [new Set<string>(), new Set<string>([file]), new Map<string, Loads>()]
+export function importersOf(root: string, file: string, names: string[] | 'all', files: FileEntry[]): Map<string, string[] | 'all'> {
+  const [found, seen, loads] = [new Map<string, string[] | 'all'>(), new Set<string>([file]), new Map<string, Loads>()]
   const queue = [{ target: file, wanted: names }]
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     const { target, wanted } = next
@@ -166,9 +174,11 @@ export function importersOf(root: string, file: string, names: string[] | 'all',
       if (isTestFile(entry.path) || !(entry.imports ?? []).includes(target)) continue
       const loaded = loads.get(entry.path) ?? (loads.set(entry.path, importsOf(root, entry.path, true)).get(entry.path) as Loads)
       const ways = loaded === 'unreadable' ? [] : loaded.filter((way) => way.target === bare(target))
-      const hits = ways.length === 0 ? [{ forwards: false }] : ways.filter((way) => wanted === 'all' || way.names === null || way.names.some((name) => wanted.includes(name)))
+      const hits = ways.length === 0 ? [{ forwards: false, locals: [] as [string, string][] }] : ways.filter((way) => wanted === 'all' || way.names === null || way.names.some((name) => wanted.includes(name)))
       if (hits.length === 0) continue
-      found.add(entry.path)
+      const locals = hits.flatMap((hit) => hit.locals.filter(([original]) => original === '*' || wanted === 'all' || wanted.includes(original)).map(([, local]) => local))
+      const held = found.get(entry.path) ?? []
+      found.set(entry.path, wanted === 'all' || ways.length === 0 || held === 'all' ? 'all' : [...new Set([...held, ...locals])])
       const passed = exportsOf(root, entry.path).filter((one) => wanted === 'all' || wanted.includes(one.original))
       if ((!hits.some((hit) => hit.forwards) && !passed.some((one) => one.local)) || seen.has(entry.path)) continue
       seen.add(entry.path)

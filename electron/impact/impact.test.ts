@@ -248,7 +248,7 @@ describe('importsOf', () => {
       'a/b.ts': 'export const b = 1\n',
       'a/b.test.ts': "import type { T } from './t'\nimport { b, type U, c as d } from './b.js'\nimport * as all from './all'\nimport side from './side'\nexport * from './star'\nimport './bare'\nimport { x } from '@/alias'\n",
     })
-    expect(importsOf(root, 'a/b.test.ts')).toEqual([
+    expect(importsOf(root, 'a/b.test.ts')).toMatchObject([
       { target: 'a/t', line: 1, names: [], forwards: false },
       { target: 'a/b', line: 2, names: ['b', 'c'], forwards: false },
       { target: 'a/all', line: 3, names: null, forwards: false },
@@ -315,7 +315,7 @@ describe('renamed re-exports and test callbacks', () => {
     const constant = impactOf(edit(root, 'store/limit.ts', 'LIMIT = 5', 'LIMIT = 6'), root, architecture, map)
     expect(constant.callers.listed).toEqual([{ name: 'cap', at: 'api/cap.ts:3', depth: 1, calls: 'store/limit.ts top level code' }])
     expect(constant.tests.listed).toEqual([{ file: 'api/cap.test.ts', via: 'import', at: 'api/cap.test.ts:1', reaches: 'store/limit.ts' }])
-    expect(constant.notes[0]).toBe('code outside every function in store/limit.ts changed (LIMIT), so its 0 functions that use those names count as touched, and the 1 functions in the 1 files that import those names, directly or through a re-export, count as its callers')
+    expect(constant.notes[0]).toBe('code outside every function in store/limit.ts changed (LIMIT), so its 0 functions that use those names count as touched, and the 1 functions that use those names in the 1 files that import them, directly or through a re-export, count as its callers')
 
     const typed = impactOf(edit(root, 'store/limit.ts', 'a: number', 'a: string'), root, architecture, map)
     expect(typed.callers.listed.map((caller) => caller.name)).toEqual(['shape'])
@@ -348,9 +348,9 @@ describe('renamed re-exports and test callbacks', () => {
       'src/d.ts': "import { alpha } from './a'\n\nexport function useAlpha() {\n  return alpha\n}\n",
     })
     const limit = impactOf(edit(root, 'src/a.ts', 'LIMIT = 3', 'LIMIT = 4'), root, architecture, map)
-    expect(limit.callers.listed.map((caller) => caller.name)).toEqual(['useLimit', 'useFirst'])
+    expect(limit.callers.listed.map((caller) => caller.name)).toEqual(['useLimit'])
     const alpha = impactOf(edit(root, 'src/a.ts', 'alpha: 1', 'alpha: 5'), root, architecture, map)
-    expect(alpha.callers.listed.map((caller) => caller.name)).toEqual(['useAlpha', 'useLimit', 'useFirst'])
+    expect(alpha.callers.listed.map((caller) => caller.name)).toEqual(['useAlpha', 'useFirst'])
     const fresh = impactOf({ cwd: root, file: 'src/new.ts', content: 'export const X = 1\n' }, root, architecture, map)
     expect(fresh.notes).toEqual([])
   })
@@ -409,6 +409,21 @@ describe('renamed re-exports and test callbacks', () => {
     expect(unexported.callers.listed.map((caller) => caller.name)).toEqual(['useIt'])
     const constant = impactOf(edit(root, 'src/lib.ts', 'LIMIT = 3', 'LIMIT = 4'), root, architecture, map)
     expect(constant.tests.listed).toEqual([{ file: 'src/lib.test.ts', via: 'import', at: 'src/lib.test.ts:1', reaches: 'src/lib.ts' }])
+  })
+
+  it('keeps same named functions in anonymous handlers matched by content, sees line break changes, and credits a callback edit to its function', () => {
+    const handler = (n: number) => `on('e${n}', () => {\n  function parse() {\n    return ${n}\n  }\n  return parse()\n})\n`
+    const before = handler(1) + handler(2)
+    expect(changesOf('x.ts', before, handler(0) + before).changes.map((change) => `${change.name} ${change.change}`)).toEqual(['parse added'])
+    expect(changesOf('x.ts', 'function f(v: number) {\n  return v\n}\n', 'function f(v: number) {\n  return\n  v\n}\n').changes.map((change) => change.name)).toEqual(['f'])
+    const line = 'function f() {\n  const g = () => 1; [1].forEach((x) => { go(x) })\n  return g\n}\n'
+    expect(changesOf('x.ts', line, line.replace('go(x)', 'stop(x)')).changes.map((change) => change.name)).toEqual(['f'])
+  })
+
+  it('names the file functions that use a changed top level value', async () => {
+    const { root, map, architecture } = await project({ 'src/c.ts': 'export const LIMIT = 1\n\nexport function f() {\n  return LIMIT\n}\n\nexport function g() {\n  return 2\n}\n' })
+    const impact = impactOf(edit(root, 'src/c.ts', 'LIMIT = 1', 'LIMIT = 2'), root, architecture, map)
+    expect(impact.touched.listed).toEqual([{ name: 'f', change: 'uses', at: 'src/c.ts:3', in: 'disk' }])
   })
 
   it('caps the notes and names a few functions per note', async () => {

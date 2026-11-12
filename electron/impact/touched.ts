@@ -3,6 +3,8 @@ import { functionsIn } from '../scan/scan'
 
 export type Change = { name: string; key: string; line: number; change: 'added' | 'changed' | 'removed'; shares: string[] }
 
+const stemOf = (key: string) => key.replace(/#\d+/g, '')
+
 type Span = { name: string; line: number; endLine: number }
 
 type Body = { name: string; key: string; line: number; endLine: number; text: string; words: Set<string> }
@@ -29,6 +31,8 @@ const lineOf = (node: ts.Node, source: ts.SourceFile) => source.getLineAndCharac
 
 const bodyOf = (node: ts.Node) => (ts.isFunctionLike(node) ? (node as { body?: ts.Node }).body : undefined)
 
+const isNamed = (node: ts.Node) => ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessor(node) || ts.isSetAccessor(node) || ts.isConstructorDeclaration(node) || holderOf(node) !== node
+
 function holderOf(node: ts.Node): ts.Node {
   const parent = node.parent
   if (parent && ts.isVariableDeclaration(parent) && parent.initializer === node) return ts.isVariableStatement(parent.parent.parent) ? parent.parent.parent : parent
@@ -39,7 +43,7 @@ function nodesByLine(source: ts.SourceFile): Map<number, ts.Node[]> {
   const found = new Map<number, ts.Node[]>()
   const add = (line: number, node: ts.Node) => found.get(line)?.includes(node) || found.set(line, [...(found.get(line) ?? []), node])
   const visit = (node: ts.Node): void => {
-    if (bodyOf(node)) {
+    if (bodyOf(node) && isNamed(node)) {
       add(lineOf(node, source), holderOf(node))
       add(lineOf(holderOf(node), source), holderOf(node))
     }
@@ -59,7 +63,7 @@ function bodies(text: string, file: string): Map<string, Body> {
     fns.map((fn, i) => {
       const key = keys[i] ?? ''
       const own = nodes.get(fn.line) ?? []
-      const inner = (kid: ts.Node, parent: ts.Node) => kid === bodyOf(parent) && !own.includes(holderOf(parent)) && named.has(lineOf(parent, source))
+      const inner = (kid: ts.Node, parent: ts.Node) => kid === bodyOf(parent) && isNamed(parent) && !own.includes(holderOf(parent)) && named.has(lineOf(parent, source))
       const words = new Set<string>()
       const shaped = own.length > 0 ? own.map((node) => shape(node, source, inner, words)).join(' | ') : text.split(/\r?\n/).slice(fn.line - 1, fn.endLine).join('\n')
       return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text: shaped, words }]
@@ -80,7 +84,7 @@ function shape(node: ts.Node, source: ts.SourceFile, skip: (kid: ts.Node, parent
     if (words && ts.isIdentifier(node) && isReference(node)) words.add(node.text)
     return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? JSON.stringify(node.text) : node.getText(source)
   }
-  return kids.filter((kid) => !skip(kid, node)).map((kid) => shape(kid, source, skip, words)).join(' ')
+  return `${node.kind}(${kids.filter((kid) => !skip(kid, node)).map((kid) => shape(kid, source, skip, words)).join(' ')})`
 }
 
 const isFunction = (node: ts.Node | undefined) => node !== undefined && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
@@ -138,18 +142,27 @@ function outsideOf(file: string, before: string, after: string): Outside {
   return { names: differ(old.declared, next.declared, false), locals: differ(old.local, next.local, true), code: old.code.join('\n') !== next.code.join('\n') }
 }
 
+export const usersOf = (file: string, text: string, names: string[]) => [...bodies(text, file).values()].filter((body) => names.some((name) => body.words.has(name))).map((body) => body.key)
+
 export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: Outside; uses: (names: string[]) => string[] } {
   const old = bodies(before, file)
   const next = bodies(after, file)
   const change = (all: Map<string, Body>, body: Body, kind: Change['change']): Change => ({ name: body.name, key: body.key, line: body.line, change: kind, shares: sharing(all, body) })
 
-  const edited = [...next.values()].flatMap((body): Change[] => {
-    const was = old.get(body.key)
-    if (!was) return [change(next, body, 'added')]
-    return was.text === body.text ? [] : [change(old, was, 'changed')]
-  })
-  const removed = [...old.values()].flatMap((body): Change[] => (next.has(body.key) ? [] : [change(old, body, 'removed')]))
+  const found: Change[] = []
+  for (const base of new Set([...old.values(), ...next.values()].map((body) => stemOf(body.key)))) {
+    const was = [...old.values()].filter((body) => stemOf(body.key) === base)
+    const now = [...next.values()].filter((body) => stemOf(body.key) === base)
+    const left: Body[] = []
+    for (const body of now) {
+      const same = was.findIndex((one) => one.text === body.text)
+      if (same < 0) left.push(body)
+      else was.splice(same, 1)
+    }
+    left.forEach((body, i) => found.push(was[i] ? change(old, was[i] as Body, 'changed') : change(next, body, 'added')))
+    was.slice(left.length).forEach((body) => found.push(change(old, body, 'removed')))
+  }
 
   const order = (entry: Change) => ORDER.indexOf(entry.change)
-  return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outsideOf(file, before, after), uses: (names) => [...next.values()].filter((body) => names.some((name) => body.words.has(name))).map((body) => body.key) }
+  return { changes: found.sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outsideOf(file, before, after), uses: (names) => [...next.values()].filter((body) => names.some((name) => body.words.has(name))).map((body) => body.key) }
 }

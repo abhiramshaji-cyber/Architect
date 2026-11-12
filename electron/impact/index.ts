@@ -9,7 +9,7 @@ import { projectPath, type Fn } from '../where/refs'
 import { callersOf, LIST_DEPTH, LISTED, type Reach } from './callers'
 import type { Impact, Touch } from './schema'
 import { importersOf, testsOf } from './tests'
-import { changesOf, keysOf, type Outside } from './touched'
+import { changesOf, keysOf, usersOf, type Outside } from './touched'
 
 export { impactSchema, type Impact } from './schema'
 
@@ -77,12 +77,22 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
     return []
   })
   if (unseen.length > 0) notes.push(`${unseen.length} changed functions are not in the scan (${listed(unseen)}); the scan skips this path or the file changed after the scan, so their callers are not counted`)
-  const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? ('proposed' as const) : ('disk' as const) }))
+  const using = (wide?.seeds ?? []).filter((index) => !seeds.includes(index)).flatMap((index): Touch[] => (fns[index] ? [{ name: fns[index].name, change: 'uses', at: `${file}:${fns[index].line}`, in: 'disk' }] : []))
+  const touched: Touch[] = [...changes.map((change): Touch => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? 'proposed' : 'disk' })), ...using]
   const added = changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name }))
   return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide ? { whole: { file, names: wide.names }, users: wide.users } : {}) }
 }
 
 const listed = (names: string[]) => names.slice(0, NAMED).join(', ') + (names.length > NAMED ? ', ...' : '')
+
+function usingIn(root: string, file: string, locals: string[] | 'all', files: FileEntry[], fns: Fn[]): number[] {
+  const offset = fns.findIndex((fn) => fn.file === file)
+  const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
+  if (offset < 0 || locals === 'all') return offset < 0 ? [] : scanned.map((_, index) => offset + index)
+  const text = before(root, file)
+  const keys = new Set(typeof text === 'string' && locals.length > 0 ? usersOf(file, text, locals) : [])
+  return scanned.flatMap((key, index) => (keys.has(key) ? [offset + index] : []))
+}
 
 function outsideSeeds(root: string, file: string, outside: Outside, uses: (names: string[]) => string[], scanned: string[], offset: number, files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; names: string[] | 'all'; note: string } {
   const all = outside === 'all'
@@ -90,10 +100,10 @@ function outsideSeeds(root: string, file: string, outside: Outside, uses: (names
   const keys = new Set(all ? scanned : uses(changed))
   const own = offset < 0 ? [] : scanned.flatMap((key, index) => (keys.has(key) ? [offset + index] : []))
   const loads = all || outside.code
-  const importers = loads || outside.names.length > 0 ? importersOf(root, file, loads ? 'all' : outside.names, files) : new Set<string>()
-  const using = fns.flatMap((fn, i) => (importers.has(fn.file) ? [i] : []))
+  const importers = loads || outside.names.length > 0 ? importersOf(root, file, loads ? 'all' : outside.names, files) : new Map<string, string[] | 'all'>()
+  const using = [...importers].flatMap(([path, locals]) => usingIn(root, path, locals, files, fns))
   const what = [...(all ? ['a module load or a star re-export'] : []), ...(!all && outside.code ? ['code that runs when the file loads, such as a handler it registers'] : []), ...(changed.length > 0 ? [listed(changed)] : [])].join('; ')
-  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions in the ${importers.size} files that ${loads ? 'load it' : 'import those names'}, directly or through a re-export, count as its callers`
+  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions ${loads ? 'in' : 'that use those names in'} the ${importers.size} files that ${loads ? 'load it' : 'import them'}, directly or through a re-export, count as its callers`
   return { seeds: own, users: using, names: loads ? 'all' : outside.names, note }
 }
 

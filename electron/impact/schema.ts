@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const touchSchema = z.object({ name: z.string(), change: z.enum(['added', 'changed', 'removed']), at: z.string(), in: z.enum(['disk', 'proposed']) })
+const touchSchema = z.object({ name: z.string(), change: z.enum(['added', 'changed', 'removed', 'uses']), at: z.string(), in: z.enum(['disk', 'proposed']) })
 
 const callerSchema = z.object({ name: z.string(), at: z.string(), depth: z.number().int().positive(), calls: z.string() })
 
