@@ -60,7 +60,7 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 && !code ? [`${file} holds no function the scan parses, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
-  const moved = outside === 'all' || outside.names.length > 0 || outside.locals.length > 0
+  const moved = outside === 'all' || outside.code || outside.names.length > 0 || outside.locals.length > 0
   const wide = !same && code && moved && fs.existsSync(path.join(root, file)) ? outsideSeeds(root, file, outside, uses, scanned, offset, files, fns) : null
   if (wide) notes.push(wide.note)
   if (!same && code && !moved && changes.length === 0) notes.push(`the change to ${file} only touches formatting, quotes or comments, so nothing is counted`)
@@ -71,8 +71,8 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const seeds = changes.flatMap((change) => {
     if (change.change === 'added') return []
     const base = change.key.slice(0, change.key.lastIndexOf('#') + 1)
-    const same = scanned.flatMap((key, index) => (key.startsWith(base) && !key.slice(base.length).includes('/') ? [index] : []))
-    if (same.length > 0 && offset >= 0) return same.map((index) => offset + index)
+    const matches = scanned.flatMap((key, index) => (key.startsWith(base) && !key.slice(base.length).includes('/') ? [index] : []))
+    if (matches.length > 0 && offset >= 0) return matches.map((index) => offset + index)
     unseen.push(`${change.name} at ${file}:${change.line}`)
     return []
   })
@@ -89,10 +89,11 @@ function outsideSeeds(root: string, file: string, outside: Outside, uses: (names
   const changed = all ? [] : [...outside.names, ...outside.locals]
   const keys = new Set(all ? scanned : uses(changed))
   const own = offset < 0 ? [] : scanned.flatMap((key, index) => (keys.has(key) ? [offset + index] : []))
-  const importers = all || outside.names.length > 0 ? importersOf(root, file, all ? 'all' : outside.names, files) : new Set<string>()
+  const loads = all || outside.code
+  const importers = loads || outside.names.length > 0 ? importersOf(root, file, loads ? 'all' : outside.names, files) : new Set<string>()
   const using = fns.flatMap((fn, i) => (importers.has(fn.file) ? [i] : []))
-  const what = all ? 'a statement with no name, such as a module load or a star re-export' : listed(changed)
-  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions in the ${importers.size} files that import ${all ? 'it' : 'those names'}, directly or through a re-export, count as its callers`
+  const what = [...(all ? ['a module load or a star re-export'] : []), ...(!all && outside.code ? ['code that runs when the file loads, such as a handler it registers'] : []), ...(changed.length > 0 ? [listed(changed)] : [])].join('; ')
+  const note = `code outside every function in ${file} changed (${what}), so its ${own.length} functions ${all ? 'all count' : 'that use those names count'} as touched, and the ${using.length} functions in the ${importers.size} files that ${loads ? 'load it' : 'import those names'}, directly or through a re-export, count as its callers`
   return { seeds: own, users: using, note }
 }
 

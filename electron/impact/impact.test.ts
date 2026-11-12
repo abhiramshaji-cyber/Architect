@@ -325,7 +325,7 @@ describe('renamed re-exports and test callbacks', () => {
     const resourced = impactOf(edit(root, 'store/cache.ts', "import { load } from './db'", "import { load } from './other'"), root, architecture, map)
     expect(resourced.callers.listed.map((caller) => caller.name)).toEqual(['handle', 'route', 'top'])
     const side = impactOf(edit(root, 'store/cache.ts', "import { load } from './db'", "import './setup'\nimport { load } from './db'"), root, architecture, map)
-    expect(side.notes[0]).toMatch(/^code outside every function in store\/cache.ts changed \(a statement with no name, such as a module load or a star re-export\)/)
+    expect(side.notes[0]).toMatch(/^code outside every function in store\/cache.ts changed \(a module load or a star re-export\)/)
   })
 
   it('follows a local rename and a renamed re-export of it', async () => {
@@ -353,6 +353,23 @@ describe('renamed re-exports and test callbacks', () => {
     expect(alpha.callers.listed.map((caller) => caller.name)).toEqual(['useAlpha', 'useLimit', 'useFirst'])
     const fresh = impactOf({ cwd: root, file: 'src/new.ts', content: 'export const X = 1\n' }, root, architecture, map)
     expect(fresh.notes).toEqual([])
+  })
+
+  it('counts an edit inside a top level callback, and credits a shared line to the outer function too', async () => {
+    const { root, map, architecture } = await project({
+      'src/main.ts': "import { work } from './work'\n\nregister('go', () => {\n  return work(1)\n})\n",
+      'src/work.ts': 'export function work(n: number) {\n  return n\n}\n',
+      'src/app.ts': "import './main'\n\nexport function boot() {\n  return 1\n}\n",
+      'src/outer.ts': 'export function outer(a: number) {\n  const r = compute(a, { go: () => 1 })\n  return r\n}\n',
+      'src/user.ts': "import { outer } from './outer'\n\nexport function user() {\n  return outer(1)\n}\n",
+    })
+    const callback = impactOf(edit(root, 'src/main.ts', 'work(1)', 'work(2)'), root, architecture, map)
+    expect(callback.callers.listed.map((caller) => caller.name)).toEqual(['boot'])
+    expect(callback.notes[0]).toMatch(/^code outside every function in src\/main.ts changed \(code that runs when the file loads, such as a handler it registers\)/)
+    const shared = impactOf(edit(root, 'src/outer.ts', 'compute(', 'Math.max('), root, architecture, map)
+    expect(shared.touched.listed.map((touch) => touch.name)).toEqual(['outer', 'go'])
+    expect(shared.callers.listed.map((caller) => caller.name)).toEqual(['user'])
+    expect(changesOf('x.ts', "function q() {\n  return 'a'\n}\n", 'function q() {\n  return "a"\n}\n').changes).toEqual([])
   })
 
   it('caps the notes and names a few functions per note', async () => {

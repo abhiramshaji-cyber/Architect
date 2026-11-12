@@ -33,7 +33,7 @@ function bodies(source: string, file: string): Map<string, Body> {
     fns.map((fn, i) => {
       const key = keys[i] ?? ''
       const inner = fns.filter((_, j) => (keys[j] ?? '').startsWith(`${key}/`))
-      const own = (line: number) => line === fn.line || line === fn.endLine || !inner.some((child) => child.line <= line && line <= child.endLine)
+      const own = (line: number) => !inner.some((child) => child.line < line && line < child.endLine)
       const text = tokens(lines.slice(fn.line - 1, fn.endLine).filter((_, at) => own(fn.line + at)).join('\n'))
       return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text, words: new Set(text.split(' ')) }]
     }),
@@ -48,15 +48,16 @@ function sharing(all: Map<string, Body>, body: Body): string[] {
 function tokens(text: string): string {
   const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text)
   const found: string[] = []
-  while (scanner.scan() !== ts.SyntaxKind.EndOfFileToken) found.push(scanner.getTokenText())
+  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) found.push(kind === ts.SyntaxKind.StringLiteral ? JSON.stringify(scanner.getTokenValue()) : scanner.getTokenText())
   return found.join(' ')
 }
 
-function shape(node: ts.Node, source: ts.SourceFile): string {
-  const body = ts.isFunctionLike(node) ? (node as { body?: ts.Node }).body : undefined
+function shape(node: ts.Node, source: ts.SourceFile, named: Set<number>): string {
+  const scanned = ts.isFunctionLike(node) && named.has(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)
+  const body = scanned ? (node as { body?: ts.Node }).body : undefined
   const kids = node.getChildren(source)
   if (kids.length === 0) return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? JSON.stringify(node.text) : node.getText(source)
-  return kids.filter((kid) => kid !== body).map((kid) => shape(kid, source)).join(' ')
+  return kids.filter((kid) => kid !== body).map((kid) => shape(kid, source, named)).join(' ')
 }
 
 const isFunction = (node: ts.Node | undefined) => node !== undefined && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
@@ -69,7 +70,7 @@ function bound(name: ts.BindingName): string[] {
   return ts.isIdentifier(name) ? [name.text] : name.elements.flatMap((element) => (ts.isOmittedExpression(element) ? [] : bound(element.name)))
 }
 
-type Declared = { kind: 'function' } | { kind: 'export'; names: string[] } | { kind: 'local'; bindings: [string, string][] } | { kind: 'other' }
+type Declared = { kind: 'function' } | { kind: 'export'; names: string[] } | { kind: 'local'; bindings: [string, string][] } | { kind: 'module' } | { kind: 'code' }
 
 function declared(statement: ts.Statement): Declared {
   if (ts.isFunctionDeclaration(statement)) return { kind: 'function' }
@@ -81,33 +82,36 @@ function declared(statement: ts.Statement): Declared {
   if (ts.isExportAssignment(statement)) return { kind: 'export', names: ['default'] }
   if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) return { kind: 'export', names: statement.exportClause.elements.map((element) => element.name.text) }
   const clause = ts.isImportDeclaration(statement) ? statement.importClause : undefined
-  if (!clause) return { kind: 'other' }
+  if (ts.isExportDeclaration(statement) || (ts.isImportDeclaration(statement) && !clause)) return { kind: 'module' }
+  if (!clause) return { kind: 'code' }
   const from = ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) ? statement.moduleSpecifier.text : ''
   const space: [string, string][] = clause.namedBindings && ts.isNamespaceImport(clause.namedBindings) ? [[clause.namedBindings.name.text, `${from} *`]] : []
   const named: [string, string][] = clause.namedBindings && ts.isNamedImports(clause.namedBindings) ? clause.namedBindings.elements.map((element) => [element.name.text, `${from} ${(element.propertyName ?? element.name).text}`]) : []
   return { kind: 'local', bindings: [...(clause.name ? ([[clause.name.text, `${from} default`]] as [string, string][]) : []), ...space, ...named] }
 }
 
-function topLevel(text: string, file: string): { exported: Map<string, string>; local: Map<string, string>; other: string[] } {
+function topLevel(text: string, file: string): { declared: Map<string, string>; local: Map<string, string>; module: string[]; code: string[] } {
   const source = sourceOf(file, text)
-  const [exported, local, other] = [new Map<string, string>(), new Map<string, string>(), [] as string[]]
+  const named = new Set(functionsIn(text, file).map((fn) => fn.line))
+  const [declaredNames, local, module, code] = [new Map<string, string>(), new Map<string, string>(), [] as string[], [] as string[]]
   for (const statement of source.statements) {
     const found = declared(statement)
     if (found.kind === 'function') continue
-    if (found.kind === 'other') other.push(shape(statement, source))
+    if (found.kind === 'module') module.push(shape(statement, source, named))
+    else if (found.kind === 'code') code.push(shape(statement, source, named))
     else if (found.kind === 'local') for (const [name, from] of found.bindings) local.set(name, from)
-    else for (const name of found.names) exported.set(name, shape(statement, source))
+    else for (const name of found.names) declaredNames.set(name, shape(statement, source, named))
   }
-  return { exported, local, other: other.sort() }
+  return { declared: declaredNames, local, module: module.sort(), code: code.sort() }
 }
 
-export type Outside = { names: string[]; locals: string[] } | 'all'
+export type Outside = { names: string[]; locals: string[]; code: boolean } | 'all'
 
 function outsideOf(file: string, before: string, after: string): Outside {
   const [old, next] = [topLevel(before, file), topLevel(after, file)]
-  if (old.other.join('\n') !== next.other.join('\n')) return 'all'
+  if (old.module.join('\n') !== next.module.join('\n')) return 'all'
   const differ = (a: Map<string, string>, b: Map<string, string>, kept: boolean) => [...new Set([...a.keys(), ...b.keys()])].filter((name) => a.get(name) !== b.get(name) && (!kept || a.has(name))).sort()
-  return { names: differ(old.exported, next.exported, false), locals: differ(old.local, next.local, true) }
+  return { names: differ(old.declared, next.declared, false), locals: differ(old.local, next.local, true), code: old.code.join('\n') !== next.code.join('\n') }
 }
 
 export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: Outside; uses: (names: string[]) => string[] } {

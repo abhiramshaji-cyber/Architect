@@ -58,7 +58,8 @@ function startsOf(fns: Fn[], files: FileEntry[]): Start[] {
 export function callersOf(fns: Fn[], files: FileEntry[], edges: number[][], seeds: number[], top?: { file: string; users: number[] }) {
   const starts = startsOf(fns, files)
   const module = fns.length + starts.length
-  const uses = top ? edges.map((out, from) => (top.users.includes(from) ? [...out, module] : out)) : edges
+  const users = new Set(top?.users ?? [])
+  const uses = top ? edges.map((out, from) => (users.has(from) ? [...out, module] : out)) : edges
   const reach = reachOf([...uses, ...starts.map((start) => start.calls), []], top ? [...seeds, module] : seeds)
   const callee = (node: number) => {
     const parent = reach.parent.get(node) ?? -1
