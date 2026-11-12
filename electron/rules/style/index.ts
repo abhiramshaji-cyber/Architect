@@ -14,17 +14,25 @@ function filesHit(violation: RuleViolation, paths: string[]): string[] {
 
 export function styleOf(declared: RuleEntry[] | undefined, sources: SourceFacts[], scope?: string): StyleFile[] {
   const paths = consideredOf(effective(declared), sources, scope).map((file) => file.path)
-  const kept = new Set(auditRules(declared, sources, scope).map((violation) => violation.key))
+  const declaredRun = auditRules(declared, sources, scope)
+  const kept = new Set(declaredRun.map((violation) => violation.key))
+  const drift = auditRules(strictOf(declared), sources, scope).filter((violation) => !kept.has(violation.key))
   const found = new Map<string, StyleFile>(paths.map((path) => [path, { path, failing: [] }]))
-  const seen = new Set<string>()
 
-  for (const violation of [...auditRules(declared, sources, scope), ...auditRules(strictOf(declared), sources, scope)]) {
+  for (const [violation, grandfathered] of [
+    ...declaredRun.map((v) => [v, false] as const),
+    ...drift.map((v) => [v, true] as const),
+  ]) {
     for (const path of filesHit(violation, paths)) {
-      const file = found.get(path)
-      if (!file || seen.has(`${path}\0${violation.key}`)) continue
-      seen.add(`${path}\0${violation.key}`)
       const { rule, message } = violation
-      file.failing.push({ rule, ...(violation.line === undefined ? {} : { line: violation.line }), message, grandfathered: !kept.has(violation.key) })
+      found
+        .get(path)
+        ?.failing.push({
+          rule,
+          ...(violation.line === undefined ? {} : { line: violation.line }),
+          message,
+          grandfathered,
+        })
     }
   }
   return [...found.values()].sort((a, b) => a.path.localeCompare(b.path))
