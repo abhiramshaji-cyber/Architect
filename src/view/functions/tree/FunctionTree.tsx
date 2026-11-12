@@ -5,7 +5,7 @@ import type { FunctionList, FunctionRow } from '../../../../shared/types'
 import type { Way } from '../facts/calls'
 import { plural } from '../Mark'
 import Card, { type CardNode } from './Card'
-import { CARD_W, layoutOf, type Spot } from './layout'
+import { layoutOf, type Spot } from './layout'
 import { labelOf } from './labels'
 import { PROJECT, forcedOf, hitsOf, indexOf, isOpen, lineageOf, outlineOf, shownOf, toggledOf } from './outline'
 
@@ -28,6 +28,8 @@ const START_ZOOM = 0.9
 
 const START_TOP = 24
 
+const START_LEFT = 24
+
 function Keep({
   anchor,
   spots,
@@ -46,7 +48,7 @@ function Keep({
     if (placed.current || !top || width <= 0) return
     placed.current = true
     setViewport({
-      x: width / 2 - (top.x + CARD_W / 2) * START_ZOOM,
+      x: START_LEFT - top.x * START_ZOOM,
       y: START_TOP - top.y * START_ZOOM,
       zoom: START_ZOOM,
     })
@@ -99,7 +101,7 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated, 
     () => shownOf(outline, (id) => isOpen(outline, id, overrides, forced)),
     [outline, overrides, forced],
   )
-  const spots = useMemo(() => layoutOf(shown), [shown])
+  const spots = useMemo(() => layoutOf(shown, 'indent'), [shown])
   const lit = useMemo(() => lineageOf(outline, focus), [outline, focus])
 
   const spotsLatest = useRef(spots)

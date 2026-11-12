@@ -298,8 +298,21 @@
 }
 
 .fn-card-also {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 0;
+  font: inherit;
   font-size: var(--fs-xs);
   color: var(--text-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.fn-card-also:hover,
+.fn-card-also:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 .fn-card-foot {

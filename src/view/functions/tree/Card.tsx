@@ -5,6 +5,7 @@ import Facts from '../facts/Facts'
 import type { Way } from '../facts/calls'
 import { signatureText } from '../facts/signature'
 import Mark, { plural } from '../Mark'
+import { TRUNK } from './layout'
 
 export type CardData = {
   title: string
@@ -69,7 +70,6 @@ function Body({ data }: { data: CardData }) {
             {row.doc}
           </span>
         )}
-        {data.also > 0 && <span className="fn-card-also">also used by {plural(data.also, 'other')}</span>}
         <span className="fn-card-foot">
           <span className="fn-card-file">
             {baseName(row.file)}:{row.line}
@@ -77,6 +77,11 @@ function Body({ data }: { data: CardData }) {
           <span className="fn-card-lines">{plural(row.lines, 'line')}</span>
         </span>
       </button>
+      {data.also > 0 && (
+        <button className="fn-card-also" onClick={() => data.onRelated(data.at, 'callers')}>
+          also used by {plural(data.also, 'other')}
+        </button>
+      )}
       <Facts row={row} at={data.at} onRelated={data.onRelated} onFocus={data.onFocus} />
     </div>
   )
@@ -87,7 +92,7 @@ export default memo(function Card({ id, data }: NodeProps<CardNode>) {
 
   return (
     <div className={classes.filter(Boolean).join(' ')}>
-      <Handle type="target" position={Position.Top} isConnectable={false} className="fn-card-handle" />
+      <Handle type="target" position={Position.Left} isConnectable={false} className="fn-card-handle" />
       <Body data={data} />
       {data.count > 0 && (
         <button
@@ -99,7 +104,13 @@ export default memo(function Card({ id, data }: NodeProps<CardNode>) {
           {data.count.toLocaleString()} {data.open ? '⌃' : '⌄'}
         </button>
       )}
-      <Handle type="source" position={Position.Bottom} isConnectable={false} className="fn-card-handle" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={false}
+        className="fn-card-handle"
+        style={{ left: TRUNK }}
+      />
     </div>
   )
 })
