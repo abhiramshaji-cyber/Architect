@@ -55,6 +55,7 @@ import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
 import { hasAgents, writeAgents } from './agents/write'
+import { answerWhere } from './where'
 
 const HISTORY_LIMIT = 200
 
@@ -844,9 +845,7 @@ export function createDaemon(options: DaemonOptions = {}) {
           return { id: req.id, ok: true, result: decided }
         }
 
-        if (req.op === 'await_proposal') {
-          return { id: req.id, ok: true, result: await review.resume(req.proposalId, closed.signal) }
-        }
+        if (req.op === 'await_proposal') return { id: req.id, ok: true, result: await review.resume(req.proposalId, closed.signal) }
 
         if (req.op === 'review_edit') {
           return { id: req.id, ok: true, result: await review.gate([...projects.keys()], req.change, closed.signal) }
@@ -856,6 +855,7 @@ export function createDaemon(options: DaemonOptions = {}) {
           return { id: req.id, ok: true, result: await touchSession(req.cwd, req.session, req.file, req.digest) }
         }
 
+        if (req.op === 'where') return { id: req.id, ok: true, result: await answerWhere(req, [resolveRoot(req.cwd), ...projects.keys()], loadProject, mapOf) }
         const root = resolveRoot(req.cwd)
         if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
         loadProject(root)

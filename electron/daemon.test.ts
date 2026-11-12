@@ -2702,3 +2702,30 @@ describe("write_agents", () => {
     c.close();
   });
 });
+
+describe("where", () => {
+  it("answers from an open project without architect.md, from a drawn one found above cwd, and refuses anywhere else", async () => {
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    const plain = fs.mkdtempSync(path.join(tmpRoot, "plain-"));
+    fs.mkdirSync(path.join(plain, "store"));
+    fs.writeFileSync(path.join(plain, "store", "db.ts"), "export function load() {\n  return 1\n}\n");
+    await daemon.open(plain);
+
+    const drawn = fs.mkdtempSync(path.join(tmpRoot, "drawn-"));
+    writeArchitect(drawn, fixture(component("store")));
+    fs.mkdirSync(path.join(drawn, "store"));
+    fs.writeFileSync(path.join(drawn, "store", "db.ts"), "export function load() {\n  return 1\n}\n");
+
+    const c = await client(socketPath);
+    const bare = await c.request({ op: "where", cwd: path.join(plain, "store"), calls: ["db.ts:load"], callers: [] });
+    const owned = await c.request({ op: "where", cwd: drawn, calls: ["load"], callers: [], name: "loadAll" });
+    const lost = await c.request({ op: "where", cwd: os.tmpdir(), calls: ["load"], callers: [] });
+    c.close();
+
+    expect(bare).toMatchObject({ ok: true, result: { component: { status: "no-contract" }, folder: { path: "store" } } });
+    expect(owned).toMatchObject({ ok: true, result: { component: { status: "found", id: "store" }, verb: { verb: "load" } } });
+    expect(lost.ok).toBe(false);
+    if (!lost.ok) expect(lost.error).toMatch(/is not inside a project/);
+  });
+});

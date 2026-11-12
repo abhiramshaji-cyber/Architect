@@ -1,4 +1,4 @@
-import type { Architecture, RuleViolation, Verdict } from '../shared/types'
+import type { Architecture, RuleViolation, Verdict } from '../../shared/types'
 
 export type Violation = { from: string; to: string; verdict: Verdict; evidence: { from: string; to: string }[] }
 
