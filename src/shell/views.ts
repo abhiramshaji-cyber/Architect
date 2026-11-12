@@ -4,15 +4,17 @@ import ContractView from '../view/ContractView'
 import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
 import FunctionsView from '../view/functions/FunctionsView'
+import MapView from '../view/map/MapView'
 import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'functions' | 'map' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
   functions: { label: 'Functions', component: FunctionsView },
+  map: { label: 'Map', component: MapView },
   contract: { label: 'Contract', component: ContractView },
   code: { label: 'Code', component: CodeView },
   diff: { label: 'Diff', component: DiffView },

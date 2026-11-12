@@ -70,7 +70,7 @@ Spawns and owns pty processes in the main process, keyed by session id, and batc
 owns: `electron/pty/**`
 
 ### canvas
-React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
+React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The Map page is a squarified treemap of components (or top level folders when there is no contract), folders, files and functions, sized by each function's own lines and coloured by importance, churn, AI touched or unreached, with click to zoom, breadcrumbs back out and the facts on hover, laid out by a pure function and drawn on a canvas. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
 owns: `src/**`
 
 ### cli
