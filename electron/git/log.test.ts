@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { commitsSince, parseLog } from './log'
+import { commitsSince, parseLog, sinceArgs } from './log'
 
 const dirs: string[] = []
 
@@ -40,6 +40,20 @@ describe('log', () => {
       ['second\x1fpart', ['src/a b.ts']],
       ['first', ['src/a b.ts']],
     ])
+  })
+
+  it.each([[0], [-1], [999], [Number.NaN], [Number.POSITIVE_INFINITY]])('reads all of history for a since of %s, never only this second', async (since) => {
+    const dir = repo()
+    fs.writeFileSync(path.join(dir, 'a.ts'), 'a')
+    execFileSync('git', ['add', 'a.ts'], { cwd: dir })
+    execFileSync('git', ['commit', '-q', '-m', 'old'], { cwd: dir, env: { ...process.env, GIT_COMMITTER_DATE: '2001-01-01T00:00:00Z' } })
+    const found = await commitsSince(dir, since)
+    expect(found.ok && found.value.map((c) => c.subject)).toEqual(['old'])
+  })
+
+  it('passes a since of one second or more to git as a timestamp', () => {
+    expect(sinceArgs(1000)).toEqual(['--since=@1'])
+    expect(sinceArgs(1_700_000_000_500)).toEqual(['--since=@1700000000'])
   })
 
   it('returns no commits for an empty repo and fails outside git', async () => {
