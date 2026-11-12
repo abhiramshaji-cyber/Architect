@@ -5,6 +5,7 @@ import { loadCodeMap, openFile, rescan, useProject } from '../../model/store'
 import type { ViewProps } from '../../shell/views'
 import { Choice } from '../functions/bar/Bar'
 import { plural } from '../functions/Mark'
+import Field from './Field'
 import Pair from './Pair'
 import { useCoupling } from './useCoupling'
 
@@ -17,25 +18,6 @@ const WINDOWS: { key: Days; label: string }[] = [
 ]
 
 const day = (at: number) => new Date(at).toISOString().slice(0, 10)
-
-function Field({ label, value, min, max, onValue }: { label: string; value: number; min: number; max: number; onValue: (value: number) => void }) {
-  return (
-    <label className="cp-field">
-      {label}
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={1}
-        defaultValue={value}
-        onChange={(e) => {
-          const next = e.target.valueAsNumber
-          if (Number.isInteger(next) && next >= min && next <= max) onValue(next)
-        }}
-      />
-    </label>
-  )
-}
 
 export default function CouplingView({ show }: ViewProps) {
   const { currentRoot, codeMap, codeBusy, codeError } = useProject()
