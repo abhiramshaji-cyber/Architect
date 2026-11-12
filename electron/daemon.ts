@@ -994,8 +994,8 @@ export function createDaemon(options: DaemonOptions = {}) {
     readTree,
     rescan: rescanProject,
     listFunctions: async (root: string, scope?: unknown): Promise<FunctionList> => {
-      loadProject(root)
-      return listFunctions(root, await mapOf(root), scope)
+      const { architecture } = loadProject(root)
+      return listFunctions(root, await mapOf(root), scope, architecture)
     },
     recency: async (root: string): Promise<Recency> => {
       loadProject(root)

@@ -6,8 +6,8 @@ import type { Way } from '../facts/calls'
 import { plural } from '../Mark'
 import Card, { type CardNode } from './Card'
 import { CARD_W, layoutOf, type Spot } from './layout'
-import { REASON } from './reasons'
-import { PROJECT, UNREACHED, forcedOf, hitsOf, indexOf, isOpen, lineageOf, outlineOf, shownOf } from './outline'
+import { labelOf } from './labels'
+import { PROJECT, forcedOf, hitsOf, indexOf, isOpen, lineageOf, outlineOf, shownOf, toggledOf } from './outline'
 
 type Anchor = { id: string; before: Spot } | null
 
@@ -74,7 +74,7 @@ function Keep({
 
 export default function FunctionTree({ list, query, project, onOpen, onRelated }: TreeProps) {
   const { rows, tree } = list
-  const outline = useMemo(() => outlineOf(tree), [tree])
+  const outline = useMemo(() => outlineOf(list), [list])
   const [overrides, setOverrides] = useState(() => new Map<string, boolean>())
   const [focus, setFocus] = useState<string | null>(null)
   const anchor = useRef<Anchor>(null)
@@ -108,7 +108,7 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated }
       const before = spotsLatest.current.get(id)
       if (before) anchor.current = { id, before }
       setFocus(id)
-      setOverrides((prev) => new Map(prev).set(id, !isOpen(outline, id, prev, forced)))
+      setOverrides((prev) => toggledOf(outline, prev, id, forced))
     },
     [outline, forced],
   )
@@ -119,23 +119,12 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated }
         const at = indexOf(id)
         const row = rows[at] ?? null
         const kids = outline.kids.get(id)?.length ?? 0
-        const entry = outline.groups.get(id)
-        const group = entry
-          ? { title: REASON[entry.reason], note: `${entry.file} · ${plural(entry.members.length, 'function')}` }
-          : id === PROJECT
-            ? { title: project, note: plural(rows.length, 'function') }
-            : id === UNREACHED
-              ? {
-                  title: 'Not reached from a starting point',
-                  note: plural(tree.unreached.length, 'function'),
-                }
-              : { title: row?.name ?? id, note: '' }
         return {
           id,
           type: 'card',
           position: spots.get(id) ?? { x: 0, y: 0 },
           data: {
-            ...group,
+            ...labelOf(outline, id, rows, project),
             row,
             at,
             count: kids,
