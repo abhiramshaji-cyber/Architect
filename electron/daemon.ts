@@ -764,14 +764,13 @@ export function createDaemon(options: DaemonOptions = {}) {
     const { from, to, file, content } = req
     if ((from === undefined) !== (to === undefined)) throw new Error('check_change needs both from and to')
 
-    if (from !== undefined && to !== undefined) {
-      const edge = verdictFor(architecture, stale, from, to)
-      if (edge.status !== 'allowed' || file === undefined) return edge
-    }
+    const edge = from !== undefined && to !== undefined ? verdictFor(architecture, stale, from, to) : null
+    if (edge && (file === undefined || (edge.status !== 'allowed' && edge.status !== 'unknown'))) return edge
     if (file === undefined || content === undefined) throw new Error('check_change needs from and to, or a file with its proposed content')
 
     const violations = checkFile(cacheDir, root, architecture, path.resolve(req.cwd, file), content)
     if (violations.length > 0) return { status: 'rule-violation', violations }
+    if (edge) return edge
     if (stale === null) return { status: 'allowed' }
     return { status: 'unknown', reason: `the architecture is stale: ${stale}. These rules come from the last version of architect.md that parsed. Fix architect.md and check again before relying on it.` }
   }

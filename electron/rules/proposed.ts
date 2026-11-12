@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Architecture, RuleEntry, RuleViolation } from '../../shared/types'
-import { functionsIn } from '../scan/scan'
+import { functionsIn, IGNORED_DIRS } from '../scan/scan'
 import { auditRules, folderOf } from './audit'
 import { factsOf, type SourceFacts } from './facts'
 import { recordRuns } from './runs'
@@ -64,7 +64,8 @@ export function checkFile(cacheDir: string, root: string, architecture: Architec
 
   const parse = (text: string) => functionsIn(text, relative)
   const before = factsOf(relative, () => readText(path.join(root, relative)), parse)
-  const after = factsOf(relative, () => content, parse)
+  const scanned = relative.split('/').slice(0, -1).every((part) => !IGNORED_DIRS.has(part) && !part.startsWith('.'))
+  const after = scanned ? factsOf(relative, () => content, parse) : null
   const violations = after ? proposedViolations(architecture.rules, architecture.scope, filesBeside(root, relative), before, after) : []
 
   recordRuns(cacheDir, root, 'check_change', violations, relative)

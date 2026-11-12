@@ -162,16 +162,23 @@ owns: `lsp/**`
 - files: 5
 - names: Manager, Helper, Service, Factory, Base
 - jobs: 1
-- lines: 250 `electron/pty/pty.ts`, `mcp/bridge.ts`, `src/view/ContractView.tsx`, `src/view/FileTree.tsx`
-- lines: 300 `electron/git/open.ts`, `src/model/codemap.ts`
-- lines: 350 `src/view/Canvas.tsx`, `src/view/CodeCanvas.tsx`, `src/view/Inspector.tsx`
-- lines: 450 `electron/contract/graph.ts`, `src/view/RepoPicker.tsx`
-- lines: 500 `electron/github/github.ts`
-- lines: 550 `electron/git/git.ts`
-- lines: 600 `src/model/store.ts`
-- lines: 650 `electron/scan/scan.ts`, `shared/types.ts`
-- lines: 700 `src/model/demo-mock.ts`
-- lines: 1050 `electron/daemon.ts`
+- lines: 206 `src/view/ContractView.tsx`
+- lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
+- lines: 241 `mcp/bridge.ts`
+- lines: 272 `electron/git/open.ts`
+- lines: 279 `src/model/codemap.ts`
+- lines: 328 `src/view/Inspector.tsx`
+- lines: 332 `src/view/Canvas.tsx`
+- lines: 339 `src/view/CodeCanvas.tsx`
+- lines: 412 `electron/contract/graph.ts`
+- lines: 425 `src/view/RepoPicker.tsx`
+- lines: 469 `electron/github/github.ts`
+- lines: 537 `electron/git/git.ts`
+- lines: 597 `src/model/store.ts`
+- lines: 626 `shared/types.ts`
+- lines: 630 `electron/scan/scan.ts`
+- lines: 651 `src/model/demo-mock.ts`
+- lines: 1034 `electron/daemon.ts`
 - files: 6 `scripts`
 - files: 7 `shared`
 - files: 9 `src/shell`

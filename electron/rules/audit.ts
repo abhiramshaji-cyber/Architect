@@ -95,11 +95,13 @@ function names(entries: RuleEntry[], file: SourceFacts): RuleViolation[] {
     ...file.functions.map((fn) => ({ kind: 'function', name: fn.name.split('.').pop() ?? fn.name, line: fn.line })),
   ]
 
-  return subjects.flatMap(({ kind, name, line }) => {
-    const word = bannedWord(name, entries, file.path)
-    if (word === undefined) return []
-    const key = `names:${file.path}:${kind}:${name}`
-    return [{ rule: 'names' as const, path: file.path, ...(line === undefined ? {} : { line }), key, amount: 1, message: `${kind} ${name} uses the banned word ${word}` }]
+  const banned = subjects.flatMap((subject) => {
+    const word = bannedWord(subject.name, entries, file.path)
+    return word === undefined ? [] : [{ ...subject, word, key: `names:${file.path}:${subject.kind}:${subject.name}` }]
+  })
+  return banned.map(({ kind, name, line, word, key }) => {
+    const amount = banned.filter((other) => other.key === key).length
+    return { rule: 'names' as const, path: file.path, ...(line === undefined ? {} : { line }), key, amount, message: `${kind} ${name} uses the banned word ${word}` }
   })
 }
 

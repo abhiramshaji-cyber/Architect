@@ -97,6 +97,11 @@ describe('jobs', () => {
     expect(rulesOf([source('a.ts', text)])).toEqual([])
   })
 
+  it('measures module flavoured typescript too', () => {
+    const text = 'export function a() {}\nexport function b() {}\n'
+    expect(rulesOf([source('a.mts', text), source('b.cts', text)]).map((v) => `${v.rule} ${v.path}`)).toEqual(['jobs a.mts', 'jobs b.cts'])
+  })
+
   it('counts each component as a job', () => {
     const text = 'export function Header() {\n  return <h1 />\n}\nexport function Footer() {\n  return <p />\n}\n'
     expect(rulesOf([source('a.tsx', text)]).map((v) => v.rule)).toEqual(['jobs'])

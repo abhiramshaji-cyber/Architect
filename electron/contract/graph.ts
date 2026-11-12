@@ -25,7 +25,7 @@ type Line = { text: string; line: number; col: number }
 
 function sectionLines(markdown: string, heading: string): Line[] {
   const all = markdown.split(/\r?\n/)
-  const start = all.findIndex((l) => l.startsWith(`## ${heading}`))
+  const start = all.findIndex((l) => l.trimEnd() === `## ${heading}`)
   if (start === -1) return []
 
   const found: Line[] = []
@@ -201,8 +201,7 @@ export function scan(markdown: string): Scan {
   }
 
   // rules
-  const declared = /^## Rules\s*$/m.test(markdown)
-  const rules = declared ? parseRules(sectionLines(markdown, 'Rules'), note) : undefined
+  const rules = /^## Rules\s*$/m.test(markdown) ? parseRules(sectionLines(markdown, 'Rules'), note) : undefined
 
   const layout = layoutHint(markdown, knownIds, refs)
 

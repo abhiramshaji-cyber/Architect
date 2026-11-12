@@ -2464,6 +2464,19 @@ describe("check_change rules", () => {
     expect(daemon.verdicts(tmpRoot).map((record) => record.verdict.status)).toEqual(["unknown", "unknown", "unknown", "unknown"]);
   });
 
+  it("keeps checking rules and says so when the contract is stale", async () => {
+    await ask({ file: "api/a.ts", content: "export const a = 1\n" });
+    writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")).replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const alone = await ask({ file: "api/a.ts", content: "export const a = 1\n" });
+    expect(alone.ok && alone.result).toMatchObject({ status: "unknown", reason: expect.stringMatching(/stale/) });
+    const both = await ask({ from: "api", to: "db", file: "api/long.ts", content: body(220) });
+    expect(both.ok && both.result).toMatchObject({ status: "rule-violation", violations: [{ rule: "lines" }] });
+    const edgeOnly = await ask({ from: "api", to: "db", file: "api/a.ts", content: "export const a = 1\n" });
+    expect(edgeOnly.ok && edgeOnly.result).toMatchObject({ status: "unknown" });
+  });
+
   it("records a pass or fail run per rule", async () => {
     await ask({ file: "api/long.ts", content: body(220) });
 
@@ -2474,5 +2487,21 @@ describe("check_change rules", () => {
     expect(runs[0].results).toContainEqual({ rule: "lines", pass: false, violations: 1 });
     expect(runs[0].results).toContainEqual({ rule: "files", pass: true, violations: 0 });
     expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ file: "api/long.ts", verdict: { status: "rule-violation" } });
+  });
+});
+
+describe("check_change rules outside the scan", () => {
+  it("leaves a file in a folder the scan ignores alone, as architect check does", async () => {
+    writeArchitect(tmpRoot, fixture(component("api")));
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    const c = await client(socketPath);
+    const long = `export function go() {\n${"  void 0\n".repeat(300)}}\n`;
+
+    for (const file of ["node_modules/pkg/index.ts", ".github/scripts/a.ts", "dist/bundle.js"]) {
+      const res = await c.request({ op: "check_change", cwd: tmpRoot, file, content: long });
+      expect(res.ok && res.result).toEqual({ status: "allowed" });
+    }
+    c.close();
   });
 });

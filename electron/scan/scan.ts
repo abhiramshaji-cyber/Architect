@@ -22,6 +22,8 @@ const YIELD_EVERY = 50
 
 const SCRIPT_KINDS = new Map<string, ts.ScriptKind>([
   ['.ts', ts.ScriptKind.TS],
+  ['.mts', ts.ScriptKind.TS],
+  ['.cts', ts.ScriptKind.TS],
   ['.tsx', ts.ScriptKind.TSX],
   ['.js', ts.ScriptKind.JSX],
   ['.jsx', ts.ScriptKind.JSX],

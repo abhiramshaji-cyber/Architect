@@ -10,9 +10,6 @@ import type { Architecture, CodeMap, RuleRun } from '../shared/types'
 import { parseArgs, USAGE_TEXT } from './args'
 import { report, type Violation } from './report'
 
-export { parseArgs, report, type Violation }
-export type { Args } from './args'
-
 export const OK = 0
 export const VIOLATED = 1
 export const USAGE = 2

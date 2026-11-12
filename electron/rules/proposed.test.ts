@@ -27,6 +27,12 @@ describe('proposedViolations', () => {
     expect(rulesOf(['a.ts'], before, source('a.ts', 'function userService() {}\nfunction cacheHelper() {}\n'))).toEqual(['names a.ts'])
   })
 
+  it('reports a second function under a banned name already in the file', () => {
+    const one = 'export function go() {\n  const cacheHelper = () => 1\n  return cacheHelper\n}\n'
+    const two = `${one}export function run() {\n  const cacheHelper = () => 2\n  return go() + cacheHelper()\n}\n`
+    expect(rulesOf(['a.ts'], source('a.ts', one), source('a.ts', two))).toEqual(['names a.ts', 'names a.ts'])
+  })
+
   it('reports a job split only when it grows', () => {
     const two = 'export function a() {}\nexport function b() {}\n'
     expect(rulesOf(['a.ts'], source('a.ts', two), source('a.ts', `${two}export function c() {\n  a()\n}\n`))).toEqual([])

@@ -821,6 +821,11 @@ ${h2} Rules
     expect(apply(arch, { kind: 'edge', from: 'ui', to: 'db' }).rules).toEqual(arch.rules)
   })
 
+  it('reads only the exact Rules heading, not one that starts with it', () => {
+    const text = `${fixture}\n${h2} Rules of thumb\n\nKeep it small.\n\n${h2} Rules\n\n- jobs: 2\n`
+    expect(parse(text).rules).toEqual([{ rule: 'jobs', limit: 2, globs: [] }])
+  })
+
   it('reports a malformed rule with its line', () => {
     const { problems } = scan(`${fixture}\n${h2} Rules\n\n- lines: lots\n`)
     expect(problems).toHaveLength(1)
