@@ -6,7 +6,7 @@ import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry
 import { link, type Parsed, type Pending, type Raw } from './link'
 import { calleeName, isTestFile, lineOf, startsIn, type Call, type Site } from './starts'
 import { docOf, renderedTag, signatureOf } from './traits'
-import { valuesIn, type Value } from './values'
+import { usedIn } from './values'
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -82,6 +82,7 @@ function declaredName(node: ts.Node, owner: string): string | undefined {
 }
 
 function ownerFor(node: ts.Node, owner: string): string {
+  if (ts.isClassDeclaration(node) && node.name === undefined) return 'default'
   if (ts.isClassLike(node)) return node.name?.text ?? owner
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text
   if (ts.isObjectLiteralExpression(node)) return owner
@@ -418,17 +419,9 @@ function parseFile(source: string, file: string): Parsed {
       members: (name: string, at: ts.Node) => membersOf(name, at, byScope, shadows, imported),
       local: (node: ts.Node) => index.get(node),
     }
-    const values: Value[] = isTestFile(file)
-      ? []
-      : [...found.flatMap((f) => valuesIn(f.node, f.owner, nested, lookup)), ...valuesIn(sourceFile, '', nested, lookup)]
-    const used = [...new Set(values.flatMap((value) => (typeof value === 'number' ? [value] : [])))]
-    const linked = values.flatMap((value) => {
-      if (typeof value === 'number') return []
-      if ('spec' in value) return [{ spec: value.spec, key: '' }]
-      const binding = imported.get(value.root)
-      const rest = value.name.slice(value.root.length)
-      return binding ? [{ spec: binding.spec, key: binding.name === null ? rest.slice(1) : binding.name + rest }] : []
-    })
+    const { used, linked } = isTestFile(file)
+      ? { used: [], linked: [] }
+      : usedIn([...found.map((f) => ({ node: f.node, self: f.owner })), { node: sourceFile, self: '' }], nested, lookup, imported)
     if (used.length + linked.length > 0) opened.push({ kind: 'value', calls: used })
 
     const order = found

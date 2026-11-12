@@ -70,7 +70,6 @@ describe('cardOf', () => {
       cardOf(split, `f${at}`, { ...list, rows: marked.map((one, k) => (k === at ? { ...one, ...over } : one)), tree }, 'demo').notes
     expect(notes(1)).toEqual(['no callers'])
     expect(notes(2)).toEqual(['2 callers, all unreached'])
-    expect(notes(2, { outsideCallers: 4 })).toEqual(['2 callers, all unreached · +4 outside'])
     expect(notes(3)).toEqual(['used as a value'])
     expect(notes(5)).toEqual(['called when its file loads'])
     expect(notes(7, { fanIn: 1 })).toEqual(['1 caller, none from a starting point'])

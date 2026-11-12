@@ -52,6 +52,31 @@ describe('a library published through package.json exports', () => {
     expect(unknown).toEqual([])
   })
 
+  it('maps through any tsconfig in the package and keeps an unmapped entry out of unreached', async () => {
+    const source = { 'src/index.ts': 'export function api() { return inner() }\nfunction inner() { return 1 }\n' }
+    const built = await listOf({
+      ...source,
+      'package.json': JSON.stringify({ exports: './dist/index.js' }),
+      'tsconfig.json': JSON.stringify({ files: [], references: [{ path: './tsconfig.build.json' }] }),
+      'tsconfig.build.json': JSON.stringify({ compilerOptions: { outDir: 'dist', rootDir: 'src' }, include: ['src'] }),
+    })
+    expect(built.list.tree.groups).toEqual([{ file: 'src/index.ts', reason: 'exports', members: [0] }])
+    const rolled = await listOf({ ...source, 'package.json': JSON.stringify({ exports: { '.': './dist/bundle.js' } }) })
+    expect(rolled.unreached).toEqual([])
+    expect(rolled.unknown).toEqual(['api', 'inner'])
+    expect(rolled.list.rows.find((row) => row.name === 'api')?.untraced).toBe('export')
+  })
+
+  it('counts the members of an anonymous default class as library API', async () => {
+    const { unreached, list } = await listOf({
+      'package.json': JSON.stringify({ exports: { '.': './src/index.ts' } }),
+      'src/index.ts': "export { default as Store } from './store'\n",
+      'src/store.ts': 'export default class {\n  start() { return this.go() }\n  go() {}\n}\n',
+    })
+    expect(unreached).toEqual([])
+    expect(list.rows.map((row) => row.name).sort()).toEqual(['default.go', 'default.start'])
+  })
+
   it('reads the module field on its own and a workspace package in a subfolder', async () => {
     const { list } = await listOf({
       'package.json': JSON.stringify({ workspaces: ['packages/*'] }),

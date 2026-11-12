@@ -489,7 +489,7 @@ export type DraftFailure =
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
 
-export type Untraced = 'value' | 'load'
+export type Untraced = 'value' | 'load' | 'export'
 
 export type FunctionFacts = {
   file: string
@@ -504,17 +504,7 @@ export type FunctionFacts = {
   overload?: true
 }
 
-export type EntryReason =
-  | StartReason
-  | 'electronMain'
-  | 'preload'
-  | 'renderer'
-  | 'page'
-  | 'bin'
-  | 'main'
-  | 'exports'
-  | 'module'
-  | 'script'
+export type EntryReason = StartReason | 'electronMain' | 'preload' | 'renderer' | 'page' | 'bin' | 'main' | 'exports' | 'module' | 'script'
 
 export type Entry = { reason: EntryReason; file: string }
 
@@ -531,14 +521,7 @@ export type FunctionRow = FunctionFacts & {
 
 export type EntryGroup = { file: string; reason: EntryReason; members: number[] }
 
-export type FunctionTree = {
-  starts: number[]
-  groups: EntryGroup[]
-  unknown: number[]
-  unreached: number[]
-  children: number[][]
-  also: number[]
-}
+export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unknown: number[]; unreached: number[]; children: number[][]; also: number[] }
 
 export type ScopeFolder = { path: string; functions: number }
 

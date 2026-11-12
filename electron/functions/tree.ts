@@ -72,7 +72,13 @@ export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): 
   const starts = all.filter((at) => (rows[at]?.entry ?? null) !== null)
   const loose = all.filter((at) => (rows[at]?.entry ?? null) === null && rows[at]?.fanIn === 0 && !signed.has(at))
   walk(starts)
-  if (lifted) walk(loose)
+  const lifts = lifted ? [...loose] : []
+  walk(lifts)
+  for (const at of lifted ? all : []) {
+    if (seen[at] || (rows[at]?.outsideCallers ?? 0) === 0) continue
+    lifts.push(at)
+    walk([at])
+  }
 
   const unknown = all.filter((at) => !seen[at] && (rows[at]?.untraced ?? null) !== null)
   walk(unknown)
@@ -93,5 +99,5 @@ export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): 
   }
 
   const also = rows.map((row, at) => Math.max(0, row.fanIn - (parent[at] === null ? 0 : 1)))
-  return { starts: lifted ? [...starts, ...loose] : starts, groups: groupsOf(rows, starts), unknown, unreached, children, also }
+  return { starts: [...starts, ...lifts], groups: groupsOf(rows, starts), unknown, unreached, children, also }
 }

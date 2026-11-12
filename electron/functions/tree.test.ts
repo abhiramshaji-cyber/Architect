@@ -159,6 +159,12 @@ describe('treeOf', () => {
     expect(placed(tree)).toEqual([0, 1, 2, 3, 4, 5, 6])
   })
 
+  it('roots a folder cycle called from outside the folder instead of calling it unreached', () => {
+    const rows = [row('a', { fanIn: 1, outsideCallers: 1 }), row('b', { fanIn: 1 })]
+    const tree = treeOf(rows, [[1], [0]], true)
+    expect(tree).toMatchObject({ starts: [0], unreached: [], children: [[1], []] })
+  })
+
   it('places an overload signature under its implementation, never on its own', () => {
     const tree = graph([
       ['main', [3], { entry: BIN }],

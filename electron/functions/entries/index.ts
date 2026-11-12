@@ -5,7 +5,9 @@ import { builtIn, type Built } from './build'
 import { compiledFrom } from './compiled'
 import { declaredIn, type Declared } from './manifest'
 
-export type EntryFiles = Map<string, EntryReason[]>
+export type EntryFiles = Map<string, EntryReason[]> & { opaque?: string[] }
+
+const CODE = /\.[cm]?[jt]sx?$/
 
 function manifestOf(dir: string): unknown {
   try {
@@ -37,16 +39,22 @@ export function entriesIn(root: string, files: Set<string>, manifest: unknown, d
   const built = builtIn(base)
   const compiled = compiledFrom(base)
   const add = (file: string, reason: EntryReason) => {
-    for (const hit of matching(path.posix.join(dir, file), files)) {
+    const hits = matching(path.posix.join(dir, file), files)
+    for (const hit of hits) {
       const reasons = into.get(hit) ?? []
       if (!reasons.includes(reason)) into.set(hit, [...reasons, reason])
     }
+    return hits.length
   }
 
+  const mapped = new Map<string, boolean>()
   for (const entry of built) if (entry.reason !== null) add(entry.file, entry.reason)
   for (const declared of declaredIn(manifest)) {
-    for (const file of sourcesOf(declared, built, compiled)) add(file, declared.reason)
+    const found = sourcesOf(declared, built, compiled).reduce((sum, file) => sum + add(file, declared.reason), 0)
+    const code = CODE.test(declared.file) && !/\.d\.[cm]?ts$/.test(declared.file)
+    if (declared.subpath !== undefined && code) mapped.set(declared.subpath, (mapped.get(declared.subpath) ?? false) || found > 0)
   }
+  if ([...mapped.values()].includes(false)) into.opaque = [...new Set([...(into.opaque ?? []), dir])]
   return into
 }
 

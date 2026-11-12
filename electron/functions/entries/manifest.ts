@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-export type Declared = { reason: 'main' | 'exports' | 'module' | 'bin' | 'script'; file: string }
+export type Declared = { reason: 'main' | 'exports' | 'module' | 'bin' | 'script'; file: string; subpath?: string }
 
 function clean(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -14,6 +14,11 @@ function targetsOf(value: unknown): unknown[] {
   return [value]
 }
 
+function subpathsOf(exports: unknown): [string, unknown][] {
+  const keys = typeof exports === 'object' && exports !== null && !Array.isArray(exports) ? Object.keys(exports) : []
+  return keys.length > 0 && keys.every((key) => key.startsWith('.')) ? Object.entries(exports as object) : [['.', exports]]
+}
+
 export function declaredIn(manifest: unknown): Declared[] {
   if (typeof manifest !== 'object' || manifest === null) return []
   const { main, exports, module, bin, scripts } = manifest as Record<string, unknown>
@@ -22,10 +27,12 @@ export function declaredIn(manifest: unknown): Declared[] {
     .flatMap((command) => (typeof command === 'string' ? command.split(/[\s;&|()]+/) : []))
     .map((word) => word.replace(/^["']|["']$/g, ''))
   return [
-    ...[main].map((file) => ({ reason: 'main' as const, file: clean(file) })),
-    ...targetsOf(exports).map((file) => ({ reason: 'exports' as const, file: clean(file) })),
-    ...[module].map((file) => ({ reason: 'module' as const, file: clean(file) })),
+    ...[main].map((file) => ({ reason: 'main' as const, file: clean(file), subpath: '.' })),
+    ...subpathsOf(exports).flatMap(([subpath, value]) =>
+      targetsOf(value).map((file) => ({ reason: 'exports' as const, file: clean(file), subpath })),
+    ),
+    ...[module].map((file) => ({ reason: 'module' as const, file: clean(file), subpath: '.' })),
     ...bins.map((file) => ({ reason: 'bin' as const, file: clean(file) })),
     ...words.map((file) => ({ reason: 'script' as const, file: clean(file) })),
-  ].flatMap(({ reason, file }) => (file === null ? [] : [{ reason, file }]))
+  ].flatMap(({ file, ...rest }) => (file === null ? [] : [{ ...rest, file }]))
 }

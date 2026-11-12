@@ -3,7 +3,11 @@ import { plural } from '../../Mark'
 import type { Tally } from '../buckets/counts'
 import { PROJECT, REASON, UNKNOWN, UNKNOWN_TITLE, UNREACHED, UNREACHED_TITLE, idOf, indexOf, lineageOf, type Outline } from '../outline'
 
-const UNTRACED: Record<Untraced, string> = { value: 'used as a value', load: 'called when its file loads' }
+const UNTRACED: Record<Untraced, string> = {
+  value: 'used as a value',
+  load: 'called when its file loads',
+  export: 'exported by a package entry not mapped to source',
+}
 
 const countsOf = (tally: Tally | undefined) =>
   `${plural(tally?.functions ?? 0, 'function')} · ${plural(tally?.starts ?? 0, 'starting point')}`
@@ -44,14 +48,12 @@ function underOf(outline: Outline, id: string, parent: string): boolean {
 const callersOf = (row: FunctionList['rows'][number]) =>
   `${plural(row.fanIn, 'caller')}${row.outsideCallers ? ` +${row.outsideCallers.toLocaleString()} outside` : ''}`
 
-const outsideOf = (row: FunctionRow) => (row.outsideCallers ? ` · +${row.outsideCallers.toLocaleString()} outside` : '')
-
 export function reachOf(outline: Outline, id: string, row: FunctionRow): string[] {
   const line = lineageOf(outline, id)
   const callers = row.fanIn === 0 ? 'no callers' : plural(row.fanIn, 'caller')
-  if (line.has(UNREACHED)) return [`${row.fanIn === 0 ? callers : `${callers}, all unreached`}${outsideOf(row)}`]
+  if (line.has(UNREACHED)) return [`${row.fanIn === 0 ? callers : `${callers}, all unreached`}`]
   if (!line.has(UNKNOWN)) return []
-  return [`${row.untraced ? UNTRACED[row.untraced] : `${callers}, none from a starting point`}${outsideOf(row)}`]
+  return [`${row.untraced ? UNTRACED[row.untraced] : `${callers}, none from a starting point`}`]
 }
 
 export function cardOf(outline: Outline, id: string, list: FunctionList, project: string) {

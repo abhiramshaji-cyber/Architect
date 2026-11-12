@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 
@@ -21,13 +22,13 @@ function commonDir(files: string[]): string {
   return first.slice(0, at).join('/') || '.'
 }
 
-export function compiledFrom(root: string): (file: string) => string[] {
+function mappedBy(root: string, config: string): ((file: string) => string[]) | undefined {
   try {
-    const read = ts.readConfigFile(path.join(root, 'tsconfig.json'), ts.sys.readFile)
-    if (read.error !== undefined) return inPlace
+    const read = ts.readConfigFile(path.join(root, config), ts.sys.readFile)
+    if (read.error !== undefined) return undefined
     const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root)
     const outDir = parsed.options.outDir
-    if (outDir === undefined) return inPlace
+    if (outDir === undefined) return undefined
     const out = path.relative(root, outDir).split(path.sep).join('/')
     const inputs = parsed.fileNames
       .filter((file) => !/\.d\.[cm]?ts$/.test(file))
@@ -43,6 +44,17 @@ export function compiledFrom(root: string): (file: string) => string[] {
       return (EMITTED[ext] ?? [ext]).map((to) => `${stem}${to}`)
     }
   } catch {
-    return inPlace
+    return undefined
   }
+}
+
+export function compiledFrom(root: string): (file: string) => string[] {
+  let names: string[]
+  try {
+    names = fs.readdirSync(root).filter((name) => /^tsconfig(\.[\w-]+)?\.json$/.test(name))
+  } catch {
+    names = []
+  }
+  const maps = names.flatMap((name) => mappedBy(root, name) ?? [])
+  return (file) => [...inPlace(file), ...maps.flatMap((map) => map(file))]
 }

@@ -1,6 +1,7 @@
 import { isTestFile } from '../scan/starts'
 import type { CodeMap, Entry, EntryReason, FileEntry, FunctionFacts, Untraced } from '../../shared/types'
 import type { EntryFiles } from './entries'
+import { within } from './scope'
 
 export const REASONS: EntryReason[] = [
   'mcpTool',
@@ -79,9 +80,14 @@ export function entriesOf(map: CodeMap, entries: EntryFiles): Map<string, Entry>
   return best
 }
 
-function untracedOf(files: FileEntry[]): Map<string, Untraced> {
+function untracedOf(files: FileEntry[], opaque: string[]): Map<string, Untraced> {
   const marks = new Map<string, Untraced>()
   for (const file of files.filter((one) => !isTestFile(one.path))) {
+    if (opaque.some((dir) => within(file.path, dir))) {
+      file.functions.forEach((fn, at) => {
+        if (fn.exported) marks.set(`${file.path}\0${at}`, 'export')
+      })
+    }
     for (const { kind, calls } of file.starts ?? []) {
       if (kind !== 'value' && kind !== 'load') continue
       for (const call of calls) if (marks.get(`${call.file}\0${call.fn}`) !== 'value') marks.set(`${call.file}\0${call.fn}`, kind)
@@ -93,7 +99,7 @@ function untracedOf(files: FileEntry[]): Map<string, Untraced> {
 export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map)): FunctionFacts[] {
   const files = map.folders.flatMap((folder) => folder.files)
   const claimed = entriesOf(map, entries)
-  const untraced = untracedOf(files)
+  const untraced = untracedOf(files, entries.opaque ?? [])
   const callers = new Array<number>(edges.length).fill(0)
   for (const out of edges) for (const to of out) callers[to] = (callers[to] ?? 0) + 1
 

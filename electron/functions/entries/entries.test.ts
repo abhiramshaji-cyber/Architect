@@ -158,7 +158,7 @@ describe('entriesIn', () => {
 describe('declaredIn', () => {
   it('reads main and every bin, dropping a leading ./ and anything outside the package', () => {
     expect(declaredIn({ main: './src/index.ts', bin: { a: 'cli/a.js', b: './cli/b.js', c: '../up.js' } })).toEqual([
-      { reason: 'main', file: 'src/index.ts' },
+      { reason: 'main', file: 'src/index.ts', subpath: '.' },
       { reason: 'bin', file: 'cli/a.js' },
       { reason: 'bin', file: 'cli/b.js' },
     ])
@@ -168,12 +168,12 @@ describe('declaredIn', () => {
   it('reads every exports condition and subpath and the module field, each under its own reason', () => {
     const exports = { '.': { import: './dist/index.mjs', require: ['./dist/index.cjs'] }, './sub/*': './dist/sub/*.js', './x': null }
     expect(declaredIn({ exports, module: './dist/index.mjs' })).toEqual([
-      { reason: 'exports', file: 'dist/index.mjs' },
-      { reason: 'exports', file: 'dist/index.cjs' },
-      { reason: 'exports', file: 'dist/sub/*.js' },
-      { reason: 'module', file: 'dist/index.mjs' },
+      { reason: 'exports', file: 'dist/index.mjs', subpath: '.' },
+      { reason: 'exports', file: 'dist/index.cjs', subpath: '.' },
+      { reason: 'exports', file: 'dist/sub/*.js', subpath: './sub/*' },
+      { reason: 'module', file: 'dist/index.mjs', subpath: '.' },
     ])
-    expect(declaredIn({ exports: './lib.js' })).toEqual([{ reason: 'exports', file: 'lib.js' }])
+    expect(declaredIn({ exports: './lib.js' })).toEqual([{ reason: 'exports', file: 'lib.js', subpath: '.' }])
   })
 
   it('ignores a missing or malformed manifest', () => {
