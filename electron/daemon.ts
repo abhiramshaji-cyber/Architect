@@ -54,6 +54,7 @@ import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
+import { impactFor, impactSchema, type Impact } from './impact'
 
 const HISTORY_LIMIT = 200
 
@@ -208,7 +209,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   const projects = new Map<string, ProjectState>()
   const histories = createJournal((root) => path.join(cacheDir, 'history', `${cacheKey(root)}.json`), historyEntrySchema, HISTORY_LIMIT)
-  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema, HISTORY_LIMIT)
+  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema.extend({ impact: impactSchema.optional() }), HISTORY_LIMIT)
   let changeListener: ((root: string, architecture: Architecture) => void) | null = null
   let historyListener: ((entry: HistoryEntry) => void) | null = null
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null
@@ -782,7 +783,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     return { status: 'unknown', reason: `the architecture is stale: ${stale}. These rules come from the last version of architect.md that parsed. Fix architect.md and check again before relying on it.` }
   }
 
-  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null) {
+  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null, impact?: Impact) {
     verdicts.append(root, {
       id: randomUUID(),
       root,
@@ -791,6 +792,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       ...(req.to === undefined ? {} : { to: req.to }),
       ...(req.file === undefined ? {} : { file: req.file }),
       verdict,
+      ...(impact ? { impact } : {}),
       ...(stale === null ? {} : { stale: true as const }),
       ...(req.session ? { session: req.session } : {}),
     })
@@ -830,8 +832,9 @@ export function createDaemon(options: DaemonOptions = {}) {
             logVerdict(root, req, { status: 'unknown', reason: error }, stale)
             return { id: req.id, ok: false, error }
           }
-          logVerdict(root, req, verdict, stale)
-          return { id: req.id, ok: true, result: verdict }
+          const impact = await impactFor(req, root, state.architecture, readStoredMap(cacheDir, root)?.map ?? null)
+          logVerdict(root, req, verdict, stale, impact)
+          return { id: req.id, ok: true, result: { ...verdict, impact } }
         }
 
         if (req.op === 'propose_change') {
