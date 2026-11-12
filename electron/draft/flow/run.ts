@@ -9,19 +9,20 @@ export type ClaudeOutput = {
   stderr: string
 }
 
-export type ClaudeRun = (prompt: string, cwd: string, timeoutMs?: number, model?: string) => Promise<ClaudeOutput>
+export type ClaudeRun = (prompt: string, cwd: string, timeoutMs?: number, model?: string, signal?: AbortSignal) => Promise<ClaudeOutput>
 
-export const runClaude: ClaudeRun = (prompt, cwd, timeoutMs = TIMEOUT_MS, model) =>
+export const runClaude: ClaudeRun = (prompt, cwd, timeoutMs = TIMEOUT_MS, model, signal) =>
   new Promise((resolve) => {
     const options = {
       cwd,
       maxBuffer: MAX_OUTPUT,
       timeout: timeoutMs,
       windowsHide: true,
+      signal,
     }
-    const args = model ? ['--model', model, '--print', prompt] : ['--print', prompt]
+    const args = model ? ['--model', model, '--print'] : ['--print']
 
-    execFile('claude', args, options, (error, stdout, stderr) => {
+    const child = execFile('claude', args, options, (error, stdout, stderr) => {
       if (!error) return resolve({ code: 0, stdout, stderr })
 
       const failure = error as { code?: unknown; killed?: boolean }
@@ -34,4 +35,6 @@ export const runClaude: ClaudeRun = (prompt, cwd, timeoutMs = TIMEOUT_MS, model)
         stderr,
       })
     })
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(prompt)
   })
