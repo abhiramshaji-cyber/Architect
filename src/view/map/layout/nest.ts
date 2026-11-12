@@ -26,7 +26,7 @@ export function grouper(owners: Record<string, string> | null): Grouping {
   return { kind: 'component', of: (file) => owners[file] ?? UNOWNED }
 }
 
-export type SizedFile = { path: string; lines?: number }
+export type SizedFile = { path: string; lines?: number; code?: true }
 
 export function ownLines(rows: FunctionRow[]): number[] {
   const own = rows.map((row) => Math.max(0, row.lines))
@@ -116,8 +116,8 @@ export function nest(
     })
   })
 
-  for (const { path, lines } of files) {
-    if (lines === undefined || !Number.isFinite(lines)) continue
+  for (const { path, lines, code } of files) {
+    if (!code || lines === undefined || !Number.isFinite(lines)) continue
     const file = fileOf(path)
     const inside = file.children.reduce((sum, child) => sum + child.weight, 0)
     const rest = Math.max(0, lines - inside)

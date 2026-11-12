@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { folderOf, pickable, storeScope, storedScope } from './pick'
+import { folderOf, pickable, scopeHolding, storeScope, storedScope } from './pick'
 
 const folders = [
   { path: 'reporter/frontend', functions: 1204 },
@@ -61,5 +61,16 @@ describe('stored scope', () => {
     })
     expect(() => storeScope('/a', 'x')).not.toThrow()
     expect(storedScope('/a')).toBe('')
+  })
+})
+
+describe('scope holding a file', () => {
+  it('keeps a scope the file sits under at any depth, and widens to the project otherwise', () => {
+    expect(scopeHolding('src', 'src/a.ts')).toBe('src')
+    expect(scopeHolding('src', 'src/view/a.ts')).toBe('src')
+    expect(scopeHolding('src/view', 'src/a.ts')).toBe('')
+    expect(scopeHolding('src', 'srcs/a.ts')).toBe('')
+    expect(scopeHolding('src', 'a.ts')).toBe('')
+    expect(scopeHolding('', 'src/a.ts')).toBe('')
   })
 })

@@ -116,8 +116,8 @@ describe('shade outside functions', () => {
   const tree = nest(
     [],
     [
-      { path: 'a/types.ts', lines: 300 },
-      { path: 'b/two.ts', lines: 20 },
+      { path: 'a/types.ts', lines: 300, code: true },
+      { path: 'b/two.ts', lines: 20, code: true },
     ],
     null,
     'demo',
@@ -152,7 +152,7 @@ describe('shade outside functions', () => {
 
 describe('churnTop', () => {
   it('sets the scale from tiles on the map only, ignoring busier files without a tile', () => {
-    const tree = nest(rows, [{ path: 'a/one.ts', lines: 60 }], null, 'demo')
+    const tree = nest(rows, [{ path: 'a/one.ts', lines: 60, code: true }], null, 'demo')
     const churn = {
       days: 90,
       files: {

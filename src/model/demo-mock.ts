@@ -461,9 +461,8 @@ export function installMock() {
     async ownership(root) {
       return ownerships[root] ?? null
     },
-    async layers() {
-      return { contract: false, rows: [], cells: [] }
-    },
+    layers: async () => ({ contract: false, rows: [], cells: [] }),
+    flow: async () => Promise.reject(new Error('the flow is drawn from a scan, open a project in the app')),
     async recency() {
       return { functions: {}, components: {} }
     },

@@ -75,13 +75,13 @@ describe('scan', () => {
     expect(folder(map, '').files.map((f) => f.path)).toEqual(['a.ts'])
   })
 
-  it('counts the lines of code files only', async () => {
+  it('counts the lines of every file and marks the code files', async () => {
     const map = await scan(
       fixture({ 'a.ts': 'one\ntwo\n', 'b.tsx': 'one\ntwo\nthree', 'c.d.ts': 'x\n', 'd.md': '# x\n', 'e.ts': '' }),
     )
-    const lines = Object.fromEntries(folder(map, '').files.map((f) => [f.path, f.lines]))
+    const files = Object.fromEntries(folder(map, '').files.map((f) => [f.path, [f.lines, f.code]]))
 
-    expect(lines).toEqual({ 'a.ts': 2, 'b.tsx': 3, 'c.d.ts': undefined, 'd.md': undefined, 'e.ts': 0 })
+    expect(files).toEqual({ 'a.ts': [2, true], 'b.tsx': [3, true], 'c.d.ts': [1, undefined], 'd.md': [1, undefined], 'e.ts': [0, true] })
   })
 
   it('flattens every folder for O(1) lookup', async () => {
@@ -134,6 +134,13 @@ describe('scan', () => {
     const map = await scan(fixture({ 'readme.md': '# hi\n\nfunction fake() {}\n', 'a.ts': '' }))
 
     expect(names(map, 'readme.md')).toEqual([])
+  })
+
+  it('counts each file’s lines whether or not it ends in a newline', async () => {
+    const map = await scan(fixture({ 'empty.ts': '', 'one.ts': 'x', 'two.ts': 'a\nb\n', 'gap.ts': 'a\n\nb', 'blank.ts': '\n' }))
+    const lines = Object.fromEntries(folder(map, '').files.map((f) => [f.path, f.lines]))
+
+    expect(lines).toEqual({ 'blank.ts': 1, 'empty.ts': 0, 'gap.ts': 3, 'one.ts': 1, 'two.ts': 2 })
   })
 
   it('finds function declarations including nested and default', async () => {

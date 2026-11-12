@@ -47,6 +47,7 @@ import { createClaims } from './contract/claims'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
+import { flowIn } from './flow'
 import { layersOf } from './layers'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
@@ -1002,6 +1003,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       return ownership(scoped, architecture.components)
     },
     layers: async (root: string) => layersOf(loadProject(root).architecture, await mapOf(root)),
+    flow: async (root: string, ask: unknown) => flowIn(root, loadProject(root).architecture, await mapOf(root), ask),
     readSource,
     openSource,
     writeSource,
@@ -1037,11 +1039,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     setReview: review.setEnabled,
     decide: (id: string, approved: boolean, feedback?: string) => review.decide(id, approved, feedback, proposeChange),
     reviewDetail: (id: string) =>
-      review.detail(
-        id,
-        (root) => loadProject(root).architecture,
-        async (root) => listFunctions(root, await mapOf(root)).rows,
-      ),
+      review.detail(id, (root) => loadProject(root).architecture, async (root) => listFunctions(root, await mapOf(root)).rows),
     onReview: (fn: (state: ReviewState) => void) => {
       reviewListener = fn
     },

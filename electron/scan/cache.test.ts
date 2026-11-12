@@ -54,3 +54,44 @@ describe('stored starting point records', () => {
     }
   })
 })
+
+describe('stored call sites', () => {
+  const withSites = (sites: unknown, starts?: unknown): CodeMap | null => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-cache-'))
+    dirs.push(dir)
+    const fn = { name: 'a', line: 1, endLine: 2, description: '', calls: [], sites }
+    const map = { root: dir, scannedAt: 1, folders: [{ path: '', folders: [], files: [{ path: 'a.ts', functions: [fn], starts }] }] }
+    writeStoredMap(dir, dir, { map: map as CodeMap, cache: {} })
+    return readStoredMap(dir, dir)?.map ?? null
+  }
+
+  it('keeps sites and routed records that are well formed or absent', () => {
+    expect(withSites([{ file: 'a.ts', fn: 0, line: 3 }, { bridge: 'api.read', line: 4 }])).not.toBeNull()
+    expect(withSites(undefined, [{ kind: 'ipcHandler', calls: [], channel: 'x', line: 2, sites: [{ file: 'a.ts', fn: 0, line: 2 }] }])).not.toBeNull()
+    expect(withSites(undefined, [{ kind: 'bridge', calls: [{ file: 'a.ts', fn: 0 }], member: 'api.read', line: 1 }])).not.toBeNull()
+  })
+
+  it('drops a map whose sites or routed records are malformed', () => {
+    for (const bad of ['x', [{ file: 'a.ts', fn: 0 }], [{ bridge: 1, line: 2 }], [{ file: 'a.ts', fn: 0, line: 1.5 }]]) {
+      expect(withSites(bad)).toBeNull()
+    }
+    expect(withSites(undefined, [{ kind: 'ipcHandler', calls: [], channel: 3 }])).toBeNull()
+    expect(withSites(undefined, [{ kind: 'ipcHandler', calls: [], line: 'two' }])).toBeNull()
+    expect(withSites(undefined, [{ kind: 'bridge', calls: [], member: 'a', sites: [{}] }])).toBeNull()
+  })
+})
+
+describe('stored line counts', () => {
+  const withLines = (lines: unknown): CodeMap | null => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-cache-'))
+    dirs.push(dir)
+    const map = { root: dir, scannedAt: 1, folders: [{ path: '', folders: [], files: [{ path: 'a.ts', lines, functions: [] }] }] }
+    writeStoredMap(dir, dir, { map: map as CodeMap, cache: {} })
+    return readStoredMap(dir, dir)?.map ?? null
+  }
+
+  it('keeps a whole non negative count and drops anything else', () => {
+    for (const good of [0, 12, undefined]) expect(withLines(good)).not.toBeNull()
+    for (const bad of [-1, 1.5, '3', Number.NaN, null]) expect(withLines(bad)).toBeNull()
+  })
+})

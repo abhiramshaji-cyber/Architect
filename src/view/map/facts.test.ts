@@ -76,7 +76,7 @@ describe('factsFor', () => {
   })
 
   it('describes the lines outside every function', () => {
-    const sized = nest(rows, [{ path: 'a/one.ts', lines: 26 }], null, 'demo')
+    const sized = nest(rows, [{ path: 'a/one.ts', lines: 26, code: true }], null, 'demo')
     const rest = sized.children[0]?.children[0]?.children
       .find((c) => c.kind === 'file' && c.path === 'a/one.ts')
       ?.children.find((c) => c.kind === 'rest')

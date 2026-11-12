@@ -112,10 +112,10 @@ describe('nest', () => {
     const tree = nest(
       rows,
       [
-        { path: 'electron/git/log.ts', lines: 70 },
-        { path: 'shared/types.ts', lines: 600 },
-        { path: 'README.md' },
-        { path: 'src/view/A.tsx', lines: 10 },
+        { path: 'electron/git/log.ts', lines: 70, code: true },
+        { path: 'shared/types.ts', lines: 600, code: true },
+        { path: 'README.md', lines: 900 },
+        { path: 'src/view/A.tsx', lines: 10, code: true },
       ],
       ownership,
       'demo',
