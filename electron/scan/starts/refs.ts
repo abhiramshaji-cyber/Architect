@@ -5,7 +5,14 @@ export type Call = number | { name: string; root: string }
 
 export type Resolve = (expression: ts.Expression, at: ts.Node) => Call | undefined
 
-export type Code = { nested: Set<ts.Node>; resolve: Resolve; local: (node: ts.Node) => Call | undefined }
+export type Site = { call: Call; line: number } | { bridge: string; line: number }
+
+export type Code = { nested: Set<ts.Node>; resolve: Resolve; local: (node: ts.Node) => Call | undefined; sites: (node: ts.Node) => Site[] }
+
+export function lineOf(node: ts.Node): number {
+  const source = node.getSourceFile()
+  return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+}
 
 export function unwrapped(node: ts.Expression): ts.Expression {
   let at = node
@@ -69,4 +76,17 @@ export function handled(handler: ts.Node, code: Code): Call[] {
   if (isInline(value) || ts.isCallExpression(value)) return refsIn(value, code)
   const hit = isReference(value) ? code.resolve(value, value) : undefined
   return hit === undefined ? [] : [hit]
+}
+
+export function handlerSites(handler: ts.Node, code: Code, at: ts.Node): Site[] {
+  const line = lineOf(at)
+  if (code.nested.has(handler)) {
+    const self = code.local(handler)
+    return self === undefined ? [] : [{ call: self, line }]
+  }
+  if (!ts.isExpression(handler)) return []
+  const value = unwrapped(handler)
+  if (isInline(value) || ts.isCallExpression(value)) return code.sites(value)
+  const hit = isReference(value) ? code.resolve(value, value) : undefined
+  return hit === undefined ? [] : [{ call: hit, line }]
 }

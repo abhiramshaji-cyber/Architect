@@ -40,6 +40,7 @@ const architect: ArchitectApi = {
   listFunctions: (root, scope) => invoke('architect:list-functions', root, scope),
   ownership: (root) => invoke('architect:ownership', root),
   layers: (root) => invoke('architect:layers', root),
+  flow: (root, ask) => invoke('architect:flow', root, ask),
   recency: (root) => invoke('architect:recency', root),
   churn: (root, days) => invoke('architect:churn', root, days),
   coupling: (root, ask) => invoke('architect:coupling', root, ask),

@@ -32,6 +32,10 @@ owns: `electron/functions/**`
 Builds the Layers matrix: every call from a function in a file owned by one component to a file owned by another, each with the caller's and the callee's name and line, grouped into one cell per pair of components. A cell is allowed, forbidden or undrawn by the same check `architect check` applies to those calls, and a contract edge with no calls is a stale cell. Components are levelled by the longest path down the call graph from the components that call nobody, with every strongly connected group of components folded into one block on one level, so a cycle is the only thing above the diagonal. Without an `architect.md` the top level folders stand in for components. Fully deterministic, no model calls.
 owns: `electron/layers/**`
 
+### flow
+Draws the static call chain from one starting point as a sequence: each call site the scan recorded, in the order it appears in the caller's source, with the file and line it sits on. Lifelines are the `architect.md` components owning each file, or the top level folders without one. A function's calls are drawn once, the first time it is reached; reaching it again is marked as drawn above, reaching one still on the chain is marked as a cycle, and nothing is looped. The depth is capped, and a call cut by the cap is marked so it can be opened one more level. A call between two components whose edge is forbidden carries the reason. A renderer call through the preload bridge is joined to the ipcMain handler registered on the channel the bridge member sends on, as one hop, when the scan found both channel names as literals; anything else that crosses a process, and dynamic dispatch, is not followed. Only a function with a starting point reason can be drawn. Fully deterministic, no model calls.
+owns: `electron/flow/**`
+
 ### recency
 Works out when each function and each component last changed. Each function gets the newest commit across its own lines from git blame, each component the newest change across the files it owns and the functions it covers, and lines nobody has committed yet count as the newest of all. Fully deterministic, no model calls.
 owns: `electron/recency/**`
@@ -41,7 +45,7 @@ Works out how often each file and each function changed over a window of days, 9
 owns: `electron/churn/**`
 
 ### coupling
-Finds pairs of files that change together with no import between them. Co-change is counted twice, apart: from git commits in a window of 30 to 36500 days, 90 unless asked, skipping commits that touch more than a set number of files, 30 unless asked; and from the change history grouped by Claude Code session, which reaches only as far back as the history keeps. Each source gives a pair its shared changes and a confidence of shared changes over the fewer changes of the two files, and a pair is kept when either source reaches the minimum shared count and confidence, 3 and 50% unless asked. A pair is dropped when either file imports the other, directly or through a file that re-exports it, as the scan resolves them. Each kept pair carries the commits and sessions it shares. Fully deterministic, no model calls.
+Finds pairs of files that change together with no import between them. Co-change is counted twice, apart: from git commits in a window of 1 to 36500 days, 90 unless asked, skipping commits that touch more than a set number of files, 30 unless asked; and from the change history grouped by Claude Code session, which reaches only as far back as the history keeps. Each source gives a pair its shared changes and a confidence of shared changes over the fewer changes of the two files, and a pair is kept when either source reaches the minimum shared count and confidence, 3 and 50% unless asked. A pair is dropped when either file imports the other, directly or through a file that re-exports it, as the scan resolves them. Each kept pair carries the commits and sessions it shares. Fully deterministic, no model calls.
 owns: `electron/coupling/**`
 
 ### daemon
@@ -78,7 +82,7 @@ Spawns and owns pty processes in the main process, keyed by session id, and batc
 owns: `electron/pty/**`
 
 ### canvas
-React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Layers page draws the component matrix it is handed as a grid, outlines each cycle block, and lists a cell's calls to open them. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The Hotspots page plots each file or function by its lines against its commits over a 30, 90 or 365 day churn window, on log scales, and ranks the top 20 by lines over the most lines times commits over the most commits, with that formula and both maxima shown; a file opens in the editor and a function opens in Focus. The Coupling page lists the pairs it is handed with their shared commits and sessions, each file's share of its own changes and the commits and sessions behind them, and sets the window, the minimum shared count and confidence, and the bulk commit limit it asks with. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
+React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Layers page draws the component matrix it is handed as a grid, outlines each cycle block, and lists a cell's calls to open them. The Flow page picks a starting point and draws the flow it is handed as a plain SVG sequence diagram, one lifeline per component and one arrow per call, opening the call site when an arrow is clicked. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The Hotspots page plots each file or function by its lines against its commits over a 30, 90 or 365 day churn window, on log scales, and ranks the top 20 by lines over the most lines times commits over the most commits, with that formula and both maxima shown; a file opens in the editor and a function opens in Focus. The Map page is a squarified treemap of components (or top level folders when there is no contract), folders, files and functions, sized by lines of code (each file by its scanned lines, split into its functions and the lines outside them) and coloured by importance, churn, AI touched or unreached, with click to zoom, breadcrumbs back out and the facts on hover, laid out by a pure function and drawn on a canvas. The Coupling page lists the pairs it is handed with their shared commits and sessions, each file's share of its own changes and the commits and sessions behind them, and sets the window, the minimum shared count and confidence, and the bulk commit limit it asks with. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
 owns: `src/**`
 
 ### cli
@@ -118,6 +122,10 @@ owns: `lsp/**`
 - daemon -> review
 - daemon -> recency
 - daemon -> layers
+- daemon -> flow
+- flow -> types
+- flow -> graph
+- flow -> functions
 - cli -> layers
 - layers -> types
 - layers -> graph
@@ -177,6 +185,7 @@ owns: `lsp/**`
 - canvas -> journal : the renderer never reads the cache directory, history and verdicts arrive over the preload bridge
 - canvas -> agents : the renderer never writes AGENTS.md, the daemon writes them
 - canvas -> layers : the renderer never maps calls to components or levels them, the matrix arrives over the preload bridge
+- canvas -> flow : the renderer never walks the call graph, the drawn flow arrives over the preload bridge
 
 ## Packages
 
