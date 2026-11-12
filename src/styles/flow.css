@@ -1,0 +1,198 @@
+.flow {
+  --flow-forbidden: var(--danger);
+  --flow-ipc: var(--live);
+  --flow-mark: var(--age);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.flow-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-6);
+  border-bottom: 1px solid var(--line);
+}
+
+.flow-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.flow-picker select {
+  max-width: 520px;
+  font: inherit;
+  color: var(--text);
+  background: var(--raise);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.flow-depth {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+.flow-depth button {
+  width: 22px;
+  height: 22px;
+  color: var(--text);
+  background: var(--raise);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.flow-depth button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.flow-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.flow-tag::before {
+  content: '';
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--text-dim);
+}
+
+.flow-tag.forbidden::before {
+  border-color: var(--flow-forbidden);
+}
+.flow-tag.ipc::before {
+  border-top-style: dashed;
+  border-color: var(--flow-ipc);
+}
+.flow-tag.more::before {
+  display: none;
+}
+
+.flow-note {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-6) 0;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.flow-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3) var(--sp-6);
+}
+
+.flow-svg {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+
+.flow-lane line {
+  stroke: var(--text-faint);
+  stroke-dasharray: 3 4;
+}
+
+.flow-lane rect {
+  fill: var(--raise);
+  stroke: var(--border);
+}
+
+.flow-lane text {
+  fill: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+}
+
+.flow-active {
+  fill: var(--active-bg);
+  stroke: var(--active-border);
+}
+
+.flow-call [role='button'] {
+  cursor: pointer;
+  outline: none;
+}
+
+.flow-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+}
+
+.flow-line {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1.25;
+}
+
+.flow-head {
+  fill: var(--text-2);
+}
+
+.flow-label {
+  fill: var(--text);
+}
+
+.flow-call [role='button']:hover .flow-line,
+.flow-call [role='button']:focus-visible .flow-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.flow-call.ipc .flow-line {
+  stroke: var(--flow-ipc);
+  stroke-dasharray: 5 4;
+}
+
+.flow-call.ipc .flow-head {
+  fill: var(--flow-ipc);
+}
+
+.flow-call.forbidden .flow-line {
+  stroke: var(--flow-forbidden);
+  stroke-width: 2;
+}
+
+.flow-call.forbidden .flow-head,
+.flow-call.forbidden .flow-label {
+  fill: var(--flow-forbidden);
+}
+
+.flow-call.cycle .flow-label,
+.flow-call.repeat .flow-label {
+  fill: var(--flow-mark);
+}
+
+.flow-more {
+  cursor: pointer;
+}
+
+.flow-more rect {
+  fill: var(--raise);
+  stroke: var(--active-border);
+}
+
+.flow-more text {
+  fill: var(--text);
+}
+
+.flow-more:hover rect {
+  stroke: var(--accent);
+}

@@ -14,6 +14,11 @@ export function pickable(folders: ScopeFolder[], scope: string, query: string): 
     .filter((folder) => needle === '' || folder.label.toLowerCase().includes(needle))
 }
 
+export function scopeHolding(scope: string, file: string): string {
+  const folder = folderOf(file)
+  return scope === '' || folder === scope || folder.startsWith(`${scope}/`) ? scope : ''
+}
+
 const SCOPE_KEY = 'architect.functions.scope:'
 
 export function storedScope(root: string | null): string {

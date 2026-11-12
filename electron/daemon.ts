@@ -47,6 +47,7 @@ import { createClaims } from './contract/claims'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
+import { flowIn } from './flow'
 import { layersOf } from './layers'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
@@ -54,6 +55,7 @@ import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
+import { styleIn } from './rules/style'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
 import { watchContract } from './watch/contract'
@@ -994,6 +996,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       return ownership(scoped, architecture.components)
     },
     layers: async (root: string) => layersOf(loadProject(root).architecture, await mapOf(root)),
+    flow: async (root: string, ask: unknown) => flowIn(root, loadProject(root).architecture, await mapOf(root), ask),
     readSource,
     openSource,
     writeSource,
@@ -1010,6 +1013,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       return recencyOf(map, loadProject(root).architecture, blamed)
     },
     churn: async (root: string, days?: unknown) => churnOf(root, await mapOf(loadProject(root).root), days),
+    style: async (root: string) => styleIn(root, await mapOf(loadProject(root).root), loadProject(root).architecture),
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },
@@ -1029,11 +1033,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     setReview: review.setEnabled,
     decide: (id: string, approved: boolean, feedback?: string) => review.decide(id, approved, feedback, proposeChange),
     reviewDetail: (id: string) =>
-      review.detail(
-        id,
-        (root) => loadProject(root).architecture,
-        async (root) => listFunctions(root, await mapOf(root)).rows,
-      ),
+      review.detail(id, (root) => loadProject(root).architecture, async (root) => listFunctions(root, await mapOf(root)).rows),
     onReview: (fn: (state: ReviewState) => void) => {
       reviewListener = fn
     },

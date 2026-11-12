@@ -3,9 +3,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry } from '../../shared/types'
-import { calleeName, startsIn, type Call } from './starts'
-import { starred } from './exports'
+import { link, type Parsed, type Pending, type Raw } from './link'
+import { calleeName, lineOf, startsIn, type Call, type Site } from './starts'
 import { docOf, renderedTag, signatureOf } from './traits'
+import { isCode, lineCount } from '../rules/facts'
 
 export const IGNORED_DIRS = new Set([
   'node_modules',
@@ -288,46 +289,53 @@ function resolveCall(
   return undefined
 }
 
-function callsIn(
-  node: ts.Node,
-  self: string,
-  nested: Set<ts.Node>,
-  resolve: (name: string, at: ts.Node) => Call | undefined,
-): Call[] {
-  const found = new Map<string, Call>()
+function isFree(
+  root: string,
+  at: ts.Node,
+  byScope: Map<ts.Node, Map<string, number>>,
+  shadows: Map<ts.Node, Set<string>>,
+  imported: Map<string, ImportBinding | null>,
+): boolean {
+  for (let scope = scopeOf(at); scope !== undefined; scope = scopeOf(scope)) {
+    if (byScope.get(scope)?.has(root) || shadows.get(scope)?.has(root)) return false
+    if (ts.isSourceFile(scope) && imported.has(root)) return false
+  }
+  return true
+}
+
+type Resolver = { resolve: (name: string, at: ts.Node) => Call | undefined; free: (root: string, at: ts.Node) => boolean }
+
+function callsIn(node: ts.Node, self: string, nested: Set<ts.Node>, { resolve, free }: Resolver): Site[] {
+  const sites: Site[] = []
 
   const visit = (child: ts.Node): void => {
     if (child !== node && nested.has(child)) return
 
     const callee = ts.isCallExpression(child) ? child.expression : renderedTag(child)
-    if (callee !== undefined) {
-      const name = calleeName(callee, self)
-      const target = name === undefined ? undefined : resolve(name, child)
-      if (target !== undefined) found.set(typeof target === 'number' ? `#${target}` : `@${target.name}`, target)
+    const name = callee === undefined ? undefined : calleeName(callee, self)
+    const target = name === undefined ? undefined : resolve(name, child)
+    if (target !== undefined) sites.push({ call: target, line: lineOf(child) })
+    else if (name?.startsWith('window.') && name.split('.').length > 2 && free('window', child)) {
+      sites.push({ bridge: name.slice('window.'.length), line: lineOf(child) })
     }
 
     ts.forEachChild(child, visit)
   }
 
   visit(node)
+  return sites
+}
+
+function distinct(sites: Site[]): Call[] {
+  const found = new Map<string, Call>()
+  for (const site of sites) {
+    if ('call' in site) found.set(typeof site.call === 'number' ? `#${site.call}` : `@${site.call.name}`, site.call)
+  }
   return [...found.values()]
 }
 
-type Pending = { from: number; spec: string; key: string }
-
-type Parsed = {
-  functions: FunctionEntry[]
-  starts: FileStart[]
-  topLevel: Map<string, number>
-  exports: Map<string, string>
-  reexports: Map<string, { spec: string; name: string }>
-  stars: string[]
-  pending: Pending[]
-  specs: Set<string>
-}
-
 function empty(): Parsed {
-  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], specs: new Set() }
+  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], raw: new Map(), specs: new Set() }
 }
 
 function loadedSpec(node: ts.Node): string | undefined {
@@ -379,8 +387,10 @@ function parseFile(source: string, file: string): Parsed {
     const shadows = shadowsOf(sourceFile)
     const imported = importBindings(sourceFile)
     const resolve = (name: string, at: ts.Node) => resolveCall(name, at, byScope, shadows, imported)
-    const calls = found.map((f) => callsIn(f.node, f.owner, nested, resolve))
-    const opened = startsIn(sourceFile, found.map((f) => f.node), nested, resolve, imported)
+    const resolver: Resolver = { resolve, free: (root, at) => isFree(root, at, byScope, shadows, imported) }
+    const sites = found.map((f) => callsIn(f.node, f.owner, nested, resolver))
+    const sitesIn = (node: ts.Node) => callsIn(node, '', nested, resolver)
+    const opened = startsIn(sourceFile, found.map((f) => f.node), nested, resolve, imported, sitesIn)
 
     const order = found
       .map((f, i) => ({ f, i }))
@@ -401,28 +411,46 @@ function parseFile(source: string, file: string): Parsed {
       if (to !== undefined) topLevel.set(name, to)
     }
 
+    const importOf = (call: Exclude<Call, number>): { spec: string; key: string } | undefined => {
+      const binding = imported.get(call.root)
+      if (binding === null || binding === undefined) return undefined
+      const rest = call.name.slice(call.root.length)
+      const key = binding.name === null ? rest.slice(1) : binding.name + rest
+      return key === '' ? undefined : { spec: binding.spec, key }
+    }
+
     const pending: Pending[] = []
     const refsOf = (list: Call[], from: number): CallRef[] => {
       const refs: CallRef[] = []
       for (const call of list) {
-        if (typeof call === 'number') {
-          const to = rank.get(call)
-          if (to !== undefined) refs.push({ file, fn: to })
-          continue
-        }
-
-        const binding = imported.get(call.root)
-        if (binding === null || binding === undefined) continue
-
-        const rest = call.name.slice(call.root.length)
-        const key = binding.name === null ? rest.slice(1) : binding.name + rest
-        if (key !== '') pending.push({ from, spec: binding.spec, key })
+        const to = typeof call === 'number' ? rank.get(call) : undefined
+        const via = typeof call === 'number' ? undefined : importOf(call)
+        if (to !== undefined) refs.push({ file, fn: to })
+        if (via !== undefined) pending.push({ from, ...via })
       }
       return refs.sort((a, b) => a.fn - b.fn)
     }
 
-    const functions = order.map(({ f, i }, from) => ({ ...f.entry, calls: refsOf(calls[i] ?? [], from) }))
-    const starts: FileStart[] = opened.map(({ kind, calls }, k) => ({ kind, calls: refsOf(calls, functions.length + k) }))
+    const raw = new Map<number, Raw[]>()
+    const rawOf = (list: Site[], from: number): void => {
+      const placed = list.flatMap((site): Raw[] => {
+        if ('bridge' in site) return [site]
+        const to = typeof site.call === 'number' ? rank.get(site.call) : undefined
+        const via = typeof site.call === 'number' ? undefined : importOf(site.call)
+        if (to !== undefined) return [{ line: site.line, ref: { file, fn: to } }]
+        return via === undefined ? [] : [{ line: site.line, ...via }]
+      })
+      if (placed.length > 0) raw.set(from, placed)
+    }
+
+    const functions = order.map(({ f, i }, from) => {
+      rawOf(sites[i] ?? [], from)
+      return { ...f.entry, calls: refsOf(distinct(sites[i] ?? []), from) }
+    })
+    const starts: FileStart[] = opened.map(({ sites: handled, ...start }, k) => {
+      rawOf(handled ?? [], functions.length + k)
+      return { ...start, calls: refsOf(start.calls, functions.length + k) }
+    })
 
     // reexports
     if (reexports.size > 0 || stars.length > 0) {
@@ -436,112 +464,10 @@ function parseFile(source: string, file: string): Parsed {
       if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
     }
 
-    return { functions, starts, topLevel, exports, reexports, stars, pending, specs }
+    return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs }
   } catch {
     return empty()
   }
-}
-
-function resolutionOptions(root: string): ts.CompilerOptions {
-  const options: ts.CompilerOptions = {
-    allowJs: true,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  }
-
-  const config = path.join(root, 'tsconfig.json')
-  try {
-    const read = ts.readConfigFile(config, ts.sys.readFile)
-    if (read.error !== undefined || typeof read.config !== 'object' || read.config === null) return options
-    const parsed = ts.parseJsonConfigFileContent({ ...read.config, files: [], include: [] }, ts.sys, root)
-    return { ...options, baseUrl: parsed.options.baseUrl, paths: parsed.options.paths }
-  } catch {
-    return options
-  }
-}
-
-function realRoot(root: string): string {
-  try {
-    return fs.realpathSync(root)
-  } catch {
-    return root
-  }
-}
-
-function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> {
-  const options = resolutionOptions(root)
-  const cache = ts.createModuleResolutionCache(root, (name) => name, options)
-  const bases = [...new Set([root, realRoot(root)])]
-
-  const target = (from: string, spec: string): string | undefined => {
-    const hit = ts.resolveModuleName(spec, path.join(root, from), options, ts.sys, cache).resolvedModule
-    if (hit === undefined || hit.isExternalLibraryImport === true) return undefined
-
-    for (const base of bases) {
-      const relative = path.relative(base, hit.resolvedFileName).split(path.sep).join('/')
-      if (parsed.has(relative)) return relative
-    }
-
-    return undefined
-  }
-
-  const find = (file: string, key: string, seen: Set<string>): CallRef | undefined => {
-    const at = parsed.get(file)
-    if (at === undefined || key === '') return undefined
-
-    const mark = `${file}\0${key}`
-    if (seen.has(mark)) return undefined
-    seen.add(mark)
-
-    for (let cut = key.length; cut > 0; cut = key.lastIndexOf('.', cut - 1)) {
-      const prefix = key.slice(0, cut)
-      const rest = key.slice(cut)
-
-      const local = at.exports.get(prefix)
-      const fn = local === undefined ? undefined : at.topLevel.get(local + rest)
-      if (fn !== undefined) return { file, fn }
-
-      const via = at.reexports.get(prefix)
-      const to = via === undefined ? undefined : target(file, via.spec)
-      const hit =
-        via === undefined || to === undefined
-          ? undefined
-          : find(to, via.name === '*' ? rest.slice(1) : via.name + rest, seen)
-      if (hit !== undefined) return hit
-    }
-
-    for (const spec of at.stars) {
-      const to = target(file, spec)
-      const hit = to === undefined ? undefined : find(to, key, seen)
-      if (hit !== undefined) return hit
-    }
-
-    return undefined
-  }
-
-  for (const [file, at] of parsed) {
-    for (const { from, spec, key } of at.pending) {
-      const entry = at.functions[from] ?? at.starts[from - at.functions.length]
-      const to = target(file, spec)
-      const hit = to === undefined || entry === undefined ? undefined : find(to, key, new Set())
-      if (hit === undefined || entry === undefined) continue
-      if (entry.calls.some((c) => c.file === hit.file && c.fn === hit.fn)) continue
-      entry.calls.push(hit)
-    }
-
-    for (const entry of at.functions) {
-      entry.calls.sort((a, b) => a.file.localeCompare(b.file) || a.fn - b.fn)
-    }
-  }
-
-  starred(parsed, target)
-
-  const imports = new Map<string, string[]>()
-  for (const [file, at] of parsed) {
-    const resolved = [...at.specs].map((spec) => target(file, spec)).filter((to) => to !== undefined && to !== file)
-    imports.set(file, [...new Set(resolved as string[])].sort())
-  }
-  return imports
 }
 
 export function functionsIn(source: string, file: string): FunctionEntry[] {
@@ -598,7 +524,7 @@ async function walk(root: string, relative: string, { into, parsed, counter, dig
     const file = parseFile(source, child)
     parsed.set(child, file)
     digests.set(child, createHash('sha256').update(source).digest('hex'))
-    files.push({ path: child, functions: file.functions })
+    files.push({ path: child, lines: lineCount(source), ...(isCode(child) ? { code: true as const } : {}), functions: file.functions })
   }
 
   folders.sort((a, b) => a.localeCompare(b))
@@ -612,13 +538,14 @@ export async function scan(root: string, digests = new Map<string, string>()): P
   const parsed = new Map<string, Parsed>()
 
   await walk(root, '', { into: folders, parsed, counter: { seen: 0 }, digests })
-  const imports = link(root, parsed)
+  const links = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 
   for (const folder of folders) {
     for (const file of folder.files) {
-      const found = imports.get(file.path)
-      if (found !== undefined && found.length > 0) file.imports = found
+      const { imports = [], reexports = [] } = links.get(file.path) ?? {}
+      if (imports.length > 0) file.imports = imports
+      if (reexports.length > 0) file.reexports = reexports
       const starts = parsed.get(file.path)?.starts
       if (starts !== undefined && starts.length > 0) file.starts = starts
     }

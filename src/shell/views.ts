@@ -1,25 +1,33 @@
 import type { ComponentType } from 'react'
 import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
+import CouplingView from '../view/coupling/CouplingView'
 import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
+import FlowView from '../view/flow/FlowView'
 import LayersView from '../view/layers/LayersView'
 import FunctionsView from '../view/functions/FunctionsView'
+import MapView from '../view/map/MapView'
+import HotspotsView from '../view/hotspots/HotspotsView'
 import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'layers' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'functions' | 'map' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'coupling' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
   functions: { label: 'Functions', component: FunctionsView },
+  map: { label: 'Map', component: MapView },
   layers: { label: 'Layers', component: LayersView },
+  flow: { label: 'Flow', component: FlowView },
   contract: { label: 'Contract', component: ContractView },
   code: { label: 'Code', component: CodeView },
   diff: { label: 'Diff', component: DiffView },
   review: { label: 'Review', component: ReviewView },
   files: { label: 'Files', component: FilesView },
+  hotspots: { label: 'Hotspots', component: HotspotsView },
+  coupling: { label: 'Coupling', component: CouplingView },
   terminal: { label: 'Terminal', component: TerminalView },
   shell: { label: 'Shell', component: PlainShell },
   repos: { label: 'Repos', component: RepoPicker },

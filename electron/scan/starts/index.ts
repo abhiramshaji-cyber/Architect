@@ -2,14 +2,15 @@ import ts from 'typescript'
 import type { StartKind } from '../../../shared/types'
 import { bridgedIn } from './bridge'
 import { commandsIn } from './argv'
-import { handled, refsIn, type Call, type Code } from './refs'
+import { handled, handlerSites, lineOf, refsIn, type Call, type Code, type Site } from './refs'
 import { registrationsIn } from './register'
 
-export type { Call } from './refs'
+export type { Call, Site } from './refs'
+export { lineOf } from './refs'
 
 const REGISTERS = ['ipcMain', 'registerTool', 'McpServer', 'CallToolRequestSchema', 'command', 'action']
 
-export type Start = { kind: StartKind; calls: Call[] }
+export type Start = { kind: StartKind; calls: Call[]; channel?: string; member?: string; line?: number; sites?: Site[] }
 
 const TEST_FILE = /(^|\/)(__tests__|__mocks__)\/|\.(test|spec)\.[cm]?[jt]sx?$/
 
@@ -32,32 +33,38 @@ export function startsIn(
   nested: Set<ts.Node>,
   resolveName: (name: string, at: ts.Node) => Call | undefined,
   bindings: ReadonlyMap<string, { spec: string } | null>,
+  sites: (node: ts.Node) => Site[],
 ): Start[] {
   if (isTestFile(source.fileName)) return []
   const index = new Map(functions.map((node, at) => [node, at]))
   const code: Code = {
     nested,
     local: (node) => index.get(node),
+    sites,
     resolve: (expression, at) => {
       const name = calleeName(expression, '')
       return name === undefined ? undefined : resolveName(name, at)
     },
   }
   const imports = new Map([...bindings].map(([name, binding]) => [name, binding?.spec ?? '']))
-  const byKind = new Map<StartKind, Call[]>()
-  const add = (kind: StartKind, calls: Call[]) => {
-    const into = byKind.get(kind) ?? []
-    for (const call of calls) if (!into.includes(call)) into.push(call)
-    byKind.set(kind, into)
+  const byKind = new Map<string, Start>()
+  const add = (kind: StartKind, calls: Call[], extra: Omit<Start, 'kind' | 'calls'> = {}) => {
+    const key = `${kind}\0${extra.member ?? ''}\0${extra.channel ?? ''}`
+    const into = byKind.get(key) ?? { kind, calls: [], ...extra }
+    for (const call of calls) if (!into.calls.includes(call)) into.calls.push(call)
+    byKind.set(key, into)
   }
 
   const text = source.text
   add('load', refsIn(source, code))
   if (REGISTERS.some((word) => text.includes(word))) {
-    for (const { kind, handler } of registrationsIn(source, functions, code, imports)) add(kind, handled(handler, code))
+    for (const { kind, handler, call, channel } of registrationsIn(source, functions, code, imports)) {
+      const routed = channel === undefined ? {} : { channel, line: lineOf(call), sites: handlerSites(handler, code, call) }
+      add(kind, handled(handler, code), routed)
+    }
   }
   if (text.includes('argv')) for (const body of commandsIn(source)) add('cliCommand', refsIn(body, code))
-  if (text.includes('exposeIn')) add('bridge', bridgedIn(source, code))
+  if (text.includes('exposeIn')) for (const { calls, ...member } of bridgedIn(source, code, functions)) add('bridge', calls, member)
 
-  return [...byKind].flatMap(([kind, calls]) => (calls.length > 0 ? [{ kind, calls }] : []))
+  return [...byKind.values()].filter((start) => start.calls.length > 0 || start.channel !== undefined)
 }
