@@ -1,11 +1,11 @@
 import ts from 'typescript'
-import type { FunctionKind } from '../../shared/types'
+import type { Param, Signature } from '../../shared/types'
 
-const MAX_WORDS = 20
-
-const DIRECTIVE = /^(eslint|oxlint|prettier|istanbul|c8|biome|tslint|jshint|@ts-|#|copyright|license|spdx)\b/i
+const DIRECTIVE = /^(eslint|oxlint|prettier|istanbul|c8|biome|tslint|jshint|@ts-|#|copyright|license|spdx|<reference)\b/i
 
 const CODE = /[{};]|=>/
+
+type Comment = { line: boolean; doc: boolean; text: string }
 
 function anchorOf(node: ts.Node): ts.Node {
   const list = node.parent
@@ -26,52 +26,78 @@ function adjacent(node: ts.Node, source: ts.SourceFile): ts.CommentRange[] {
   return kept
 }
 
-function prose(raw: string): string {
-  const lines = raw
-    .replace(/^\/\*+|\*+\/$/g, '')
-    .split('\n')
-    .map((line) => line.replace(/^\s*(\/\/+|\*+)?\s?/, '').trim())
-  const tags = lines.findIndex((line) => line.startsWith('@'))
-  return (tags === -1 ? lines : lines.slice(0, tags))
-    .join(' ')
-    .replace(/\{@\w+\s+([^}|]+?)(?:\s*\|[^}]*)?\}/g, '$1')
-    .replace(/`/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+function commentOf(range: ts.CommentRange, source: ts.SourceFile): Comment {
+  const raw = source.text.slice(range.pos, range.end)
+  const line = range.kind === ts.SyntaxKind.SingleLineCommentTrivia
+  const inner = line ? raw.replace(/^\/+ ?/, '') : raw.slice(2, -2)
+  const text = line
+    ? inner.trimEnd()
+    : inner
+        .split(/\r?\n/)
+        .map((row) => row.replace(/^\s*\*? ?/, '').trimEnd())
+        .join('\n')
+        .trim()
+  return { line, doc: !line && /^\/\*\*[^/]/.test(raw), text }
 }
 
-function firstSentence(text: string): string {
-  const sentence = /^(.+?[.!?])(?:\s|$)/.exec(text)?.[1] ?? text
-  const words = sentence.split(' ')
-  const kept = words.length > MAX_WORDS ? `${words.slice(0, MAX_WORDS).join(' ')}…` : sentence
-  const capital = kept.charAt(0).toUpperCase() + kept.slice(1)
-  return /[.!?…]$/.test(capital) ? capital : `${capital}.`
+function merged(comments: Comment[]): Comment[] {
+  const blocks: Comment[] = []
+  for (const comment of comments) {
+    const last = blocks.at(-1)
+    if (comment.line && last?.line) last.text = `${last.text}\n${comment.text}`
+    else blocks.push({ ...comment })
+  }
+  return blocks
+}
+
+function authored(block: Comment): boolean {
+  if (block.text === '') return false
+  return block.doc || (/\s/.test(block.text) && !CODE.test(block.text))
 }
 
 export function docOf(node: ts.Node, source: ts.SourceFile): string | undefined {
-  const text = adjacent(anchorOf(node), source)
-    .map((range) => prose(source.text.slice(range.pos, range.end)))
-    .join(' ')
-    .trim()
-  if (text.split(' ').length < 2 || DIRECTIVE.test(text) || CODE.test(text)) return undefined
-  return firstSentence(text)
+  const comments = adjacent(anchorOf(node), source)
+    .map((range) => commentOf(range, source))
+    .filter((comment) => !DIRECTIVE.test(comment.text.trimStart()))
+  const text = merged(comments)
+    .filter(authored)
+    .map((block) => block.text)
+    .join('\n\n')
+  return text === '' ? undefined : text
 }
 
-function drawsJsx(node: ts.Node, nested: Set<ts.Node>): boolean {
-  const visit = (child: ts.Node): boolean => {
-    if (nested.has(child)) return false
-    if (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child) || ts.isJsxFragment(child)) return true
-    return ts.forEachChild(child, visit) ?? false
-  }
-  return ts.forEachChild(node, visit) ?? false
+function callableOf(node: ts.Node | undefined): ts.SignatureDeclaration | undefined {
+  return node !== undefined && ts.isFunctionLike(node) ? node : undefined
 }
 
-export function kindOf(node: ts.Node, nested: Set<ts.Node>): FunctionKind | undefined {
-  if (ts.isConstructorDeclaration(node)) return 'constructor'
-  if (ts.isGetAccessorDeclaration(node)) return 'getter'
-  if (ts.isSetAccessorDeclaration(node)) return 'setter'
-  if (drawsJsx(node, nested)) return 'component'
-  return ts.isClassLike(node.parent) ? 'method' : undefined
+function declaredFunction(node: ts.Node): ts.SignatureDeclaration | undefined {
+  if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node) || ts.isPropertyAssignment(node))
+    return callableOf(node.initializer)
+  if (ts.isExportAssignment(node)) return callableOf(node.expression)
+  return callableOf(node)
+}
+
+function written(node: ts.Node, source: ts.SourceFile): string {
+  return node.getText(source).replace(/\s+/g, ' ').trim()
+}
+
+function paramOf(param: ts.ParameterDeclaration, source: ts.SourceFile): Param {
+  const found: Param = { name: written(param.name, source) }
+  if (param.dotDotDotToken) found.rest = true
+  if (param.questionToken) found.optional = true
+  if (param.type) found.type = written(param.type, source)
+  if (param.initializer) found.value = written(param.initializer, source)
+  return found
+}
+
+export function signatureOf(node: ts.Node, source: ts.SourceFile): Signature | undefined {
+  const fn = declaredFunction(node)
+  if (fn === undefined) return undefined
+  const signature: Signature = { params: fn.parameters.map((param) => paramOf(param, source)) }
+  if (fn.typeParameters && fn.typeParameters.length > 0)
+    signature.generics = fn.typeParameters.map((type) => written(type, source)).join(', ')
+  if (fn.type) signature.returns = written(fn.type, source)
+  return signature
 }
 
 export function renderedTag(node: ts.Node): ts.Expression | undefined {

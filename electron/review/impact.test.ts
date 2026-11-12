@@ -35,7 +35,6 @@ const row = (name: string, fanIn: number): FunctionRow => ({
   exported: true,
   entry: false,
   importance: 4,
-  summary: '',
 })
 
 const architecture: Architecture = {

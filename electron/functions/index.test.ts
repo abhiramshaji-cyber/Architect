@@ -18,6 +18,7 @@ describe('functionsOf', () => {
   it('returns nothing for an empty project and a full row for a single function', () => {
     expect(functionsOf(mapOf([]), new Set())).toEqual({
       rows: [],
+      calls: [],
       tree: { starts: [], unreached: [], children: [], also: [] },
       scope: '',
       folders: [],
@@ -33,9 +34,25 @@ describe('functionsOf', () => {
         exported: false,
         entry: true,
         importance: 3,
-        summary: 'Loads the config. Starting point of the app.',
       },
     ])
+  })
+
+  it('carries the scanned signature and doc verbatim and leaves them out when the scan has none', () => {
+    const signature = { params: [{ name: 'root', type: 'string' }], returns: 'Config' }
+    const doc = 'Loads it.\n@param root where'
+    const { rows } = functionsOf(mapOf([{ path: 'a.ts', functions: [{ ...fn('load'), signature, doc }, fn('bare')] }]), new Set())
+    expect(rows[0]).toMatchObject({ signature, doc })
+    expect(rows[1]).not.toHaveProperty('signature')
+    expect(rows[1]).not.toHaveProperty('doc')
+  })
+
+  it('lists the calls between rows by row index', () => {
+    const map = mapOf([
+      { path: 'a.ts', functions: [fn('a', [{ file: 'b.ts', fn: 0 }, { file: 'b.ts', fn: 1 }]), fn('c')] },
+      { path: 'b.ts', functions: [fn('b', [{ file: 'a.ts', fn: 1 }]), fn('d')] },
+    ])
+    expect(functionsOf(map, new Set()).calls).toEqual([[2, 3], [], [1], []])
   })
 
   it('fills every row, keeps duplicate names apart and survives a cycle', () => {
@@ -49,7 +66,7 @@ describe('functionsOf', () => {
     ])
     const { rows } = functionsOf(map, new Set())
     expect(rows).toHaveLength(4)
-    expect(rows.every((row) => row.summary !== '' && row.importance >= 1 && row.importance <= 5)).toBe(true)
+    expect(rows.every((row) => row.importance >= 1 && row.importance <= 5)).toBe(true)
     expect(rows.map((row) => row.fanIn)).toEqual([0, 0, 2, 1])
     expect(rows[2]?.importance).toBeGreaterThan(rows[1]?.importance ?? 0)
   })
@@ -119,8 +136,7 @@ describe('functionsOf in a folder', () => {
       ['run', 0, 1],
       ['load', 1, 1],
     ])
-    expect(rows[0]?.summary).toBe('Runs it. Used only from outside this folder.')
-    expect(rows[1]?.summary).toBe('Loads it. Used in 1 place. Also used from outside this folder.')
+    expect(functionsOf(map, new Set(), 'app/core').calls).toEqual([[1], []])
     expect(functionsOf(map, new Set()).rows.every((row) => row.outside === undefined)).toBe(true)
   })
 
@@ -190,6 +206,7 @@ describe('functionsOf in a folder', () => {
   it('handles an empty folder, a missing folder and a path outside the project', () => {
     expect(functionsOf(map, new Set(), 'empty')).toEqual({
       rows: [],
+      calls: [],
       tree: { starts: [], unreached: [], children: [], also: [] },
       scope: 'empty',
       folders: [],

@@ -4,7 +4,6 @@ import type { CodeMap, FunctionList, FunctionRow } from '../../shared/types'
 import { declaredEntries, edgesOf, factsOf } from './facts'
 import { importanceOf } from './importance'
 import { foldersOf, scopeOf, subgraphOf, within } from './scope'
-import { sentenceOf } from './summary/sentence'
 import { treeOf } from './tree'
 
 function manifestOf(root: string): unknown {
@@ -34,12 +33,14 @@ export function indexOf(map: CodeMap, declared: Set<string>, scope: string): { r
     const entry = entries[keep[i] ?? -1]
     const outside = (facts[keep[i] ?? -1]?.fanIn ?? 0) - fact.fanIn
     if (!entry) return []
-    const row = {
+    const row: FunctionRow = {
       ...fact,
       importance: importance[i] ?? 1,
-      summary: sentenceOf(entry, fact, outside),
     }
-    return [outside > 0 ? { ...row, outside } : row]
+    if (entry.signature !== undefined) row.signature = entry.signature
+    if (entry.doc !== undefined) row.doc = entry.doc
+    if (outside > 0) row.outside = outside
+    return [row]
   })
   return { rows, calls: sub }
 }
@@ -49,6 +50,7 @@ export function functionsOf(map: CodeMap, declared: Set<string>, asked?: unknown
   const { rows, calls } = indexOf(map, declared, scope)
   return {
     rows,
+    calls,
     tree: treeOf(rows, calls, scope !== ''),
     scope,
     folders: foldersOf(map, scope),

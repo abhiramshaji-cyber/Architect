@@ -195,10 +195,12 @@ export type FunctionEntry = {
   calls: CallRef[]
   exported?: true
   doc?: string
-  kind?: FunctionKind
+  signature?: Signature
 }
 
-export type FunctionKind = 'component' | 'constructor' | 'getter' | 'setter' | 'method'
+export type Param = { name: string; type?: string; value?: string; optional?: true; rest?: true }
+
+export type Signature = { generics?: string; params: Param[]; returns?: string }
 
 export type FileEntry = { path: string; functions: FunctionEntry[]; imports?: string[] }
 
@@ -461,13 +463,18 @@ export type FunctionFacts = {
 
 export type Importance = 1 | 2 | 3 | 4 | 5
 
-export type FunctionRow = FunctionFacts & { importance: Importance; summary: string; outside?: number }
+export type FunctionRow = FunctionFacts & {
+  importance: Importance
+  signature?: Signature
+  doc?: string
+  outside?: number
+}
 
 export type FunctionTree = { starts: number[]; unreached: number[]; children: number[][]; also: number[] }
 
 export type ScopeFolder = { path: string; functions: number }
 
-export type FunctionList = { rows: FunctionRow[]; tree: FunctionTree; scope: string; folders: ScopeFolder[] }
+export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[] }
 
 export type CommitDraft = { title: string; description: string }
 

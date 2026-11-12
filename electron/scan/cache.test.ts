@@ -1,0 +1,36 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import type { CodeMap } from '../../shared/types'
+import { readStoredMap, writeStoredMap } from './cache'
+
+const dirs: string[] = []
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+})
+
+function stored(signature: unknown): CodeMap | null {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'architect-cache-'))
+  dirs.push(dir)
+  const fn = { name: 'a', line: 1, endLine: 2, description: '', calls: [], signature }
+  const map = { root: dir, scannedAt: 1, folders: [{ path: '', folders: [], files: [{ path: 'a.ts', functions: [fn] }] }] }
+  writeStoredMap(dir, dir, { map: map as CodeMap, cache: {} })
+  return readStoredMap(dir, dir)?.map ?? null
+}
+
+describe('stored signatures', () => {
+  it('keeps a map whose signatures are well formed or absent', () => {
+    expect(stored({ generics: 'T', params: [{ name: 'x', type: 'T', value: '1', optional: true }], returns: 'T' })).not.toBeNull()
+    expect(stored({ params: [] })).not.toBeNull()
+    expect(stored(undefined)).not.toBeNull()
+  })
+
+  it('drops a map holding a malformed signature', () => {
+    expect(stored({})).toBeNull()
+    expect(stored({ params: [{ type: 'T' }] })).toBeNull()
+    expect(stored({ params: [], returns: 3 })).toBeNull()
+    expect(stored('(x)')).toBeNull()
+  })
+})
