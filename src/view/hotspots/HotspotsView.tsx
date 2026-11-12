@@ -90,7 +90,7 @@ export default function HotspotsView({ show }: ViewProps) {
 
       <div className="fn-bar">
         <p className="fn-count" aria-live="polite">
-          {read?.error ? 'Could not read git history' : codeError ? 'Could not read the code map' : codeMap === null || codeBusy ? 'Scanning…' : items === null ? 'Reading git history…' : plural(items.length, unit)}
+          {read?.error ? 'Could not read git history' : codeError && !codeMap ? 'Could not read the code map' : codeMap === null || codeBusy ? 'Scanning…' : items === null ? 'Reading git history…' : plural(items.length, unit)}
         </p>
         <Choice label="Measure" keys={LEVELS} value={level} onPick={setLevel} />
         <Choice label="Window" keys={WINDOWS} value={days} onPick={setDays} />
