@@ -43,8 +43,10 @@ export function graphOf(map: CodeMap): Graph {
   const channels = channelsOf(files)
 
   const at = (file: string, fn: number): Node | undefined => {
-    const entry = byPath.get(file)?.functions[fn]
-    return entry && { key: `${file}#${fn}`, file, name: entry.name, line: entry.line, sites: entry.sites ?? [] }
+    const functions = byPath.get(file)?.functions ?? []
+    const entry = functions[fn]
+    const nth = functions.slice(0, fn).filter((other) => other.name === entry?.name).length
+    return entry && { key: `${file}#${entry.name}#${nth}`, file, name: entry.name, line: entry.line, sites: entry.sites ?? [] }
   }
 
   const hops = (site: CallSite): Hop[] => {

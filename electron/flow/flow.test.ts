@@ -68,10 +68,27 @@ describe('flowOf', () => {
   it('caps the depth, marks the cut call and opens it one more level on request', () => {
     const flow = flowOf(chain, new Map(), null, ask('a/main.ts', 'start', 1))
     expect(flow.steps.find((s) => s.callee === 'deep')?.more).toBe(true)
-    const opened = flowOf(chain, new Map(), null, ask('a/main.ts', 'start', 1, 3, ['b/lib.ts#1']))
+    const opened = flowOf(chain, new Map(), null, ask('a/main.ts', 'start', 1, 3, ['b/lib.ts#deep#0']))
     expect(summary(opened.steps)).toEqual(['helperx2', '.leaf', '..deep', '...deeper +', 'leaf repeat'])
-    const both = flowOf(chain, new Map(), null, ask('a/main.ts', 'start', 1, 3, ['b/lib.ts#1', 'b/lib.ts#2']))
+    const both = flowOf(chain, new Map(), null, ask('a/main.ts', 'start', 1, 3, ['b/lib.ts#deep#0', 'b/lib.ts#deeper#0']))
     expect(summary(both.steps)).toEqual(['helperx2', '.leaf', '..deep', '...deeper', '....deep cycle', 'leaf repeat'])
+  })
+
+  it('keeps an opened call opened when another function is added above it', () => {
+    const shifted = map(
+      file('a/main.ts', [['start', 1, [at('b/lib.ts', 1, 4)]]], [tool('a/main.ts', 0)]),
+      file('b/lib.ts', [
+        ['added', 1],
+        ['leaf', 3, [at('b/lib.ts', 2, 4)]],
+        ['deep', 6, [at('b/lib.ts', 3, 7)]],
+        ['deeper', 9],
+      ]),
+    )
+    expect(summary(flowOf(shifted, new Map(), null, ask('a/main.ts', 'start', 1, 2, ['b/lib.ts#deep#0'])).steps)).toEqual([
+      'leaf',
+      '.deep',
+      '..deeper',
+    ])
   })
 
   it('marks recursion once and never loops', () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FlowAsk, FunctionList } from '../../../shared/types'
+import type { FlowAsk } from '../../../shared/types'
 import { folderName } from '../../model/layout'
 import { loadCodeMap, openFile, useProject } from '../../model/store'
 import type { ViewProps } from '../../shell/views'
@@ -17,10 +17,9 @@ export default function FlowView({ show }: ViewProps) {
   const { list, error: listError } = useFunctions(currentRoot, codeMap, '')
   const [picked, setPicked] = useState<Start | null>(null)
   const [depth, setDepth] = useState(DEPTH)
-  const [opened, setOpened] = useState<{ list: FunctionList | null; keys: string[] }>({ list: null, keys: [] })
+  const [open, setOpen] = useState<string[]>([])
   const start = picked && list ? refound(list.rows, picked) : null
-  const open = opened.list === list ? opened.keys : []
-  const ask: FlowAsk | null = start ? { ...start, depth, open } : null
+  const ask: FlowAsk | null = start ? { file: start.file, name: start.name, line: start.line, depth, open } : null
   const { flow, error } = useFlow(currentRoot, list, architecture, ask)
 
   useEffect(() => {
@@ -29,6 +28,7 @@ export default function FlowView({ show }: ViewProps) {
 
   useEffect(() => {
     setPicked(null)
+    setOpen([])
   }, [currentRoot])
 
   const showLatest = useRef(show)
@@ -37,17 +37,10 @@ export default function FlowView({ show }: ViewProps) {
     openFile(file, line)
     showLatest.current('files')
   }, [])
-  const onExpand = useCallback(
-    (key: string) =>
-      setOpened((held) => {
-        const keys = held.list === list ? held.keys : []
-        return { list, keys: keys.includes(key) ? keys : [...keys, key] }
-      }),
-    [list],
-  )
+  const onExpand = useCallback((key: string) => setOpen((keys) => (keys.includes(key) ? keys : [...keys, key])), [])
   const onPick = (next: Start | null) => {
     setPicked(next)
-    setOpened({ list, keys: [] })
+    setOpen([])
   }
 
   if (!currentRoot) return null

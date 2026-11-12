@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FunctionRow } from '../../../shared/types'
-import { refound } from './Picker'
+import { refound, startOf } from './Picker'
 
 const row = (name: string, line: number, entry = true): FunctionRow => ({
   file: 'a.ts',
@@ -14,17 +14,22 @@ const row = (name: string, line: number, entry = true): FunctionRow => ({
   importance: 1,
 })
 
-describe('refound', () => {
-  it('follows a starting point that moved after an edit', () => {
-    expect(refound([row('go', 14)], { file: 'a.ts', name: 'go', line: 10 })).toEqual({ file: 'a.ts', name: 'go', line: 14 })
+describe('picking a starting point again after an edit', () => {
+  it('follows the same function when lines are added above it', () => {
+    const before = [row('go', 10), row('other', 20)]
+    const held = startOf(before, before[0]!)
+    expect(refound([row('go', 14), row('other', 24)], held)?.line).toBe(14)
   })
 
-  it('picks the nearest of several with the same name', () => {
-    expect(refound([row('go', 2), row('go', 30), row('go', 12)], { file: 'a.ts', name: 'go', line: 10 })?.line).toBe(12)
+  it('keeps the second of two namesakes the second, however far both moved', () => {
+    const before = [row('run', 10), row('run', 50)]
+    const held = startOf(before, before[1]!)
+    expect(refound([row('run', 75), row('run', 35)], held)?.line).toBe(75)
   })
 
   it('lets go of one that is gone or no longer a starting point', () => {
-    expect(refound([row('other', 10)], { file: 'a.ts', name: 'go', line: 10 })).toBeNull()
-    expect(refound([row('go', 10, false)], { file: 'a.ts', name: 'go', line: 10 })).toBeNull()
+    const held = startOf([row('go', 10)], row('go', 10))
+    expect(refound([row('other', 10)], { ...held })).toBeNull()
+    expect(refound([row('go', 10, false)], held)).toBeNull()
   })
 })

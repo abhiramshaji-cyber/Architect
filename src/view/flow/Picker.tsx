@@ -1,15 +1,18 @@
 import type { FunctionList, FunctionRow } from '../../../shared/types'
 import { REASON } from '../functions/tree/outline'
 
-export type Start = { file: string; name: string; line: number }
+export type Start = { file: string; name: string; nth: number }
 
-export function refound(rows: FunctionRow[], held: Start): Start | null {
-  const same = rows.filter((row) => row.entry && row.file === held.file && row.name === held.name)
-  const near = same.reduce<FunctionRow | undefined>(
-    (best, row) => (!best || Math.abs(row.line - held.line) < Math.abs(best.line - held.line) ? row : best),
-    undefined,
-  )
-  return near ? { file: near.file, name: near.name, line: near.line } : null
+const namesakes = (rows: FunctionRow[], file: string, name: string) =>
+  rows.filter((row) => row.file === file && row.name === name).sort((a, b) => a.line - b.line)
+
+export function startOf(rows: FunctionRow[], row: FunctionRow): Start {
+  return { file: row.file, name: row.name, nth: namesakes(rows, row.file, row.name).indexOf(row) }
+}
+
+export function refound(rows: FunctionRow[], held: Start): FunctionRow | null {
+  const row = namesakes(rows, held.file, held.name)[held.nth]
+  return row?.entry ? row : null
 }
 
 type PickerProps = { list: FunctionList; picked: Start | null; onPick: (start: Start | null) => void }
@@ -17,12 +20,10 @@ type PickerProps = { list: FunctionList; picked: Start | null; onPick: (start: S
 export default function Picker({ list, picked, onPick }: PickerProps) {
   const groups = list.tree.groups.filter((group) => group.members.length > 0)
   const start = picked && refound(list.rows, picked)
-  const at = start
-    ? list.rows.findIndex((row) => row.file === start.file && row.name === start.name && row.line === start.line)
-    : -1
+  const at = start ? list.rows.indexOf(start) : -1
   const choose = (value: string) => {
     const row = value === '' ? undefined : list.rows[Number(value)]
-    onPick(row ? { file: row.file, name: row.name, line: row.line } : null)
+    onPick(row ? startOf(list.rows, row) : null)
   }
 
   return (
