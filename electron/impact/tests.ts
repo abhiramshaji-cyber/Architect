@@ -73,22 +73,29 @@ function exposedBy(fns: Fn[], files: FileEntry[]): Map<string, number[]> {
   }))
 }
 
-type Hit = { via: 'call' | 'import'; at: string; reaches: string; unchecked?: string }
+type Hit = { via: 'touched' | 'call' | 'import'; at: string; reaches: string; unchecked?: string }
 
-export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string } | undefined): { total: number; listed: TestReach[]; notes: string[] } {
+export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string }[]): { total: number; listed: TestReach[]; notes: string[] } {
   const found = new Map<string, Hit>()
 
   for (const node of [...reach.depth.keys()].sort((a, b) => a - b)) {
     const fn = fns[node]
-    if (fn === undefined || !fn.test || reach.depth.get(node) === 0 || found.has(fn.file)) continue
+    if (fn === undefined || !fn.test || found.has(fn.file)) continue
+    if (reach.depth.get(node) === 0) {
+      found.set(fn.file, { via: 'touched', at: at(fn), reaches: at(fn) })
+      continue
+    }
     const reached = fns[reachedOf(fns, reach, node)]
     if (reached && !reached.test) found.set(fn.file, { via: 'call', at: at(fn), reaches: at(reached) })
   }
 
+  for (const spot of added) if (isTestFile(spot.file) && !found.has(spot.file)) found.set(spot.file, { via: 'touched', at: `${spot.file}:${spot.line}`, reaches: `${spot.file}:${spot.line}` })
+
   const exposed = exposedBy(fns, files)
   const named = (fn: { name: string }, names: string[] | null) => names === null || names.includes(fn.name.split('.')[0] ?? '')
+  const reachable = (target: string) => added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
   for (const file of files) {
-    if (!isTestFile(file.path) || found.has(file.path) || (file.imports ?? []).length === 0) continue
+    if (!isTestFile(file.path) || found.has(file.path) || !(file.imports ?? []).some(reachable)) continue
     const loaded = importsOf(root, file.path)
     for (const target of file.imports ?? []) {
       const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === bare(target))
@@ -96,7 +103,8 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
       const hit = ways.flatMap((way) => {
         const index = (exposed.get(target) ?? []).find((i) => reach.depth.has(i) && fns[i]?.test === false && named(fns[i] as Fn, way.names))
         const reached = index === undefined ? undefined : fns[index]
-        const fresh = added && target === added.file && named(added, way.names) ? `${added.file}:${added.line}` : undefined
+        const spot = added.find((one) => one.file === target && named(one, way.names))
+        const fresh = spot ? `${spot.file}:${spot.line}` : undefined
         return reached || fresh ? [{ way, reaches: reached ? at(reached) : (fresh as string) }] : []
       })[0]
       if (hit === undefined) continue

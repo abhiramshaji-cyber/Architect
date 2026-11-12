@@ -8,7 +8,7 @@ type Body = { name: string; key: string; line: number; endLine: number; text: st
 
 const ORDER: Change['change'][] = ['changed', 'removed', 'added']
 
-const holds = (outer: Span, inner: Span) => outer.endLine > inner.endLine || (outer.endLine === inner.endLine && outer.line < inner.line)
+const holds = (outer: Span, inner: Span) => outer.endLine > inner.endLine || (outer.endLine === inner.endLine && outer.line < inner.line && inner.line < outer.endLine)
 
 export function keysOf(fns: Span[]): string[] {
   const open: (Span & { key: string })[] = []

@@ -10,7 +10,7 @@ const entrySchema = z.object({ kind: z.string(), file: z.string(), depth: z.numb
 
 const componentSchema = z.object({ id: z.string().nullable(), functions: z.number().int().nonnegative(), entries: z.number().int().nonnegative(), first: z.string() })
 
-const testSchema = z.object({ file: z.string(), via: z.enum(['call', 'import']), at: z.string(), reaches: z.string() })
+const testSchema = z.object({ file: z.string(), via: z.enum(['touched', 'call', 'import']), at: z.string(), reaches: z.string() })
 
 export const impactSchema = z.object({
   status: z.enum(['done', 'timeout', 'failed']),

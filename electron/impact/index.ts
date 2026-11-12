@@ -49,8 +49,9 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   notes.push(...changes.filter((change) => change.change === 'changed' && change.shares.length > 0).map((change) => `${change.name} at ${file}:${change.line} shares a line with ${change.shares.join(', ')}; the scan gives lines, not columns, so an edit on that line counts as a change to each`))
   const seeds = changes.flatMap((change) => {
     if (change.change === 'added') return []
-    const index = scanned.indexOf(change.key)
-    if (index >= 0 && offset >= 0) return [offset + index]
+    const base = change.key.slice(0, change.key.lastIndexOf('#') + 1)
+    const same = scanned.flatMap((key, index) => (key.startsWith(base) && !key.slice(base.length).includes('/') ? [index] : []))
+    if (same.length > 0 && offset >= 0) return same.map((index) => offset + index)
     notes.push(`${change.name} at ${file}:${change.line} is not in the scan (the scan skips this path, or the file changed after the scan), so its callers are not counted`)
     return []
   })
@@ -68,7 +69,7 @@ function edgeSeeds(from: string, to: string, architecture: Architecture, fns: Fn
 }
 
 function componentsOf(architecture: Architecture, fns: Fn[], reach: Reach, added: Spot[], entries: Impact['entries']['listed']): Impact['components'] {
-  const hits = [...[...reach.depth.keys()].flatMap((node) => (fns[node] && !fns[node].test ? [{ ...fns[node], entry: false }] : [])), ...added.map((spot) => ({ ...spot, entry: false })), ...entries.map((entry) => ({ file: entry.file, line: 0, entry: true }))]
+  const hits = [...[...reach.depth.keys()].flatMap((node) => (fns[node] && (!fns[node].test || reach.depth.get(node) === 0) ? [{ ...fns[node], entry: false }] : [])), ...added.map((spot) => ({ ...spot, entry: false })), ...entries.map((entry) => ({ file: entry.file, line: 0, entry: true }))]
   hits.sort((a, b) => Number(a.entry) - Number(b.entry) || a.file.localeCompare(b.file) || a.line - b.line)
   const found = ownership([...new Set(hits.map((hit) => hit.file))], architecture.components)
   const owners = new Map<string, string[]>([...found.owned.map((entry): [string, string[]] => [entry.path, [entry.owner]]), ...found.multi.map((entry): [string, string[]] => [entry.path, entry.owners])])
@@ -92,7 +93,7 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
   const both = file !== undefined && content !== undefined && from !== undefined && to !== undefined ? [`impact is worked out from ${file}; the edge ${from} -> ${to} is answered by the verdict only`] : []
 
   const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds)
-  const tests = testsOf(root, fns, files, reach, seeded.added[0])
+  const tests = testsOf(root, fns, files, reach, seeded.added)
   return {
     status: 'done',
     touched: { total: seeded.touched.length, listed: seeded.touched.slice(0, LISTED) },
@@ -106,10 +107,9 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
 
 function current(root: string, map: CodeMap): boolean {
   const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path)).filter((file) => CODE.test(file))]
-  return paths.every((entry) => {
-    const stat = fs.statSync(path.join(root, entry), { throwIfNoEntry: false })
-    return stat !== undefined && stat.ctimeMs < map.scannedAt - SETTLE_MS
-  })
+  const settled = (stat: fs.Stats | undefined) => stat !== undefined && stat.ctimeMs < map.scannedAt - SETTLE_MS
+  const manifest = fs.statSync(path.join(root, 'package.json'), { throwIfNoEntry: false })
+  return (manifest === undefined || settled(manifest)) && paths.every((entry) => settled(fs.statSync(path.join(root, entry), { throwIfNoEntry: false })))
 }
 
 const scans = new Map<string, Promise<CodeMap>>()

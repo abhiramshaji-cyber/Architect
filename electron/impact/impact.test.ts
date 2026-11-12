@@ -260,3 +260,30 @@ describe('line endings', () => {
     expect(changesOf('x.ts', 'function f() {\r\n  return 1\r\n}\r\n', 'function f() {\n  return 1\n}\n').changes).toEqual([])
   })
 })
+
+describe('cases the reviews found', () => {
+  it('checks every added function against the tests, counts callers of an overload, and lists an edited test file', async () => {
+    const { root, map, architecture } = await project({
+      ...FILES,
+      'api/over.ts': 'export function o(x: string): string\nexport function o(x: number): number\nexport function o(x: unknown) {\n  return x\n}\n',
+      'api/use.ts': "import { o } from './over'\n\nexport function use() {\n  return o(1)\n}\n",
+      'api/new.test.ts': "import { second } from './route'\n",
+    })
+    const added = impactOf(edit(root, 'api/route.ts', 'export function route', 'export function first() {}\n\nexport function second() {}\n\nexport function route'), root, architecture, map)
+    expect(added.tests.listed).toEqual([{ file: 'api/new.test.ts', via: 'import', at: 'api/new.test.ts:1', reaches: 'api/route.ts:5' }])
+
+    const overload = impactOf(edit(root, 'api/over.ts', 'o(x: string): string', 'o(x: string): number'), root, architecture, map)
+    expect(overload.callers.listed.map((caller) => caller.at)).toEqual(['api/use.ts:3'])
+
+    const tested = impactOf(edit(root, 'api/handler.test.ts', 'return cached()', 'return cached() + 1'), root, architecture, map)
+    expect(tested.tests.listed).toEqual([{ file: 'api/handler.test.ts', via: 'touched', at: 'api/handler.test.ts:3', reaches: 'api/handler.test.ts:3' }])
+    expect(tested.components.map((component) => component.id)).toEqual(['api'])
+  })
+
+  it('keeps a function starting on the closing line of another apart from it', () => {
+    const before = 'const a = () => {\n  return 1\n}; const b = () => 2\n'
+    const { changes } = changesOf('x.ts', before, before.replace('=> 2', '=> 3'))
+    expect(changes.map((change) => `${change.key} ${change.change} ${change.shares.join(',')}`)).toEqual(['/a#0 changed b', '/b#0 changed a'])
+  })
+
+})
