@@ -33,8 +33,12 @@ Works out when each function and each component last changed. Each function gets
 owns: `electron/recency/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), the per project change history, and the guarded read, write and directory listing of project files.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), the per project change history, the per project record of every check_change verdict, and the guarded read, write and directory listing of project files.
 owns: `electron/daemon.ts`
+
+### journal
+A capped, newest first list of records per project kept as one JSON file each in the cache directory. Rows are validated against a schema on load and any that fail are dropped, and every write replaces the file whole so a crash never leaves half a list. Holds the change history and the check_change verdicts.
+owns: `electron/journal/**`
 
 ### review
 Opt in change review. Persists the on or off switch, holds contract proposals and Claude Code edits waiting on the engineer, keeps proposals across a restart, wakes the waiting caller with approve, deny or the engineer's feedback, and drops an edit whose hook went away. Rebuilds the file an edit would produce and works out its impact: the components that own it, the functions added, removed or changed in it, and the before and after diff, or for a proposal the architecture it would leave behind. A switch that is off answers every edit at once.
@@ -74,6 +78,7 @@ owns: `lsp/**`
 - daemon -> functions
 - daemon -> review
 - daemon -> recency
+- daemon -> journal
 - recency -> types
 - recency -> graph
 - recency -> git
@@ -116,6 +121,7 @@ owns: `lsp/**`
 - canvas -> recency : the renderer never reads git history, when each function and component last changed arrives over the preload bridge
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
 - bridge -> review : the hook only forwards an edit over the socket and prints the answer, the queue lives in the app
+- canvas -> journal : the renderer never reads the cache directory, history and verdicts arrive over the preload bridge
 
 ## Packages
 

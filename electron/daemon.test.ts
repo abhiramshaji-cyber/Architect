@@ -1745,6 +1745,53 @@ ${h2} Packages
     );
     c.close();
   });
+
+  it("records one verdict per check_change, stale answers included, and keeps them across a restart", async () => {
+    writeArchitect(tmpRoot, good);
+    await daemonOn(tmpRoot);
+
+    const c = await client(socketPath);
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db", session: "s-1" });
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "db", to: "api" });
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "ghost", session: "" });
+    writeArchitect(tmpRoot, broken);
+    await settle();
+    await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db", session: "s-2" });
+    c.close();
+    await daemon.close();
+
+    daemon = createDaemon({ socketPath });
+    const records = daemon.verdicts(tmpRoot);
+    expect(records.map(({ from, to, verdict, stale, session }) => ({ from, to, status: verdict.status, stale, session }))).toEqual([
+      { from: "api", to: "db", status: "unknown", stale: true, session: "s-2" },
+      { from: "api", to: "ghost", status: "unknown-component", stale: undefined, session: undefined },
+      { from: "db", to: "api", status: "forbidden", stale: undefined, session: undefined },
+      { from: "api", to: "db", status: "allowed", stale: undefined, session: "s-1" },
+    ]);
+    expect(records.every((r) => r.root === tmpRoot && typeof r.id === "string" && r.at > 0)).toBe(true);
+    expect(records[0]?.verdict).toMatchObject({ reason: expect.stringContaining(`line ${badLine}`) });
+    expect(records[1]?.verdict).toEqual({ status: "unknown-component", ids: ["ghost"] });
+    expect(records[2]?.verdict).toEqual({ status: "forbidden", reason: "layers only point down" });
+  });
+
+  it("records an error answer as an unknown verdict when the file never parsed", async () => {
+    writeArchitect(tmpRoot, broken);
+    await daemonOn(tmpRoot);
+
+    const c = await client(socketPath);
+    const res = await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db" });
+    c.close();
+
+    expect(res.ok).toBe(false);
+    expect(daemon.verdicts(tmpRoot)).toEqual([
+      expect.objectContaining({
+        from: "api",
+        to: "db",
+        stale: true,
+        verdict: { status: "unknown", reason: expect.stringContaining(`line ${badLine}`) },
+      }),
+    ]);
+  });
 });
 
 describe("source watcher", () => {
