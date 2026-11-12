@@ -1,5 +1,5 @@
 import type { Churn } from '../../../../shared/recency'
-import type { FunctionList, FunctionTree, HistoryEntry } from '../../../../shared/types'
+import type { FunctionList, FunctionTree, HistoryEntry, StyleFile } from '../../../../shared/types'
 import type { Facts, Sessions } from './shade'
 
 export function unreachedOf(tree: FunctionTree): Set<number> {
@@ -33,12 +33,18 @@ export function sessionsOf(history: HistoryEntry[]): Sessions {
   return found
 }
 
-export function gather(list: FunctionList, churn: Churn | null, history: HistoryEntry[]): Facts {
+export function gather(
+  list: FunctionList,
+  churn: Churn | null,
+  history: HistoryEntry[],
+  style: StyleFile[] | null,
+): Facts {
   return {
     rows: list.rows,
     unreached: unreachedOf(list.tree),
     churn,
     sessions: sessionsOf(history),
     recorded: history.filter((entry) => entry.source === 'code').length,
+    style: style ? new Map(style.map((file) => [file.path, file.failing])) : null,
   }
 }

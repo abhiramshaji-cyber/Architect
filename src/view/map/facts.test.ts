@@ -33,6 +33,7 @@ const facts: Facts = {
   },
   sessions: new Map([['a/one.ts', [{ session: 's1', at: 0 }]]]),
   recorded: 12,
+  style: null,
 }
 
 const tree = nest(rows, [], null, 'demo')
@@ -83,5 +84,28 @@ describe('factsFor', () => {
     const told = rest ? factsFor(rest, facts) : null
     expect(told?.kind).toBe('lines outside functions')
     expect(Object.fromEntries(told?.lines ?? []).lines).toBe('6 in a/one.ts not inside any function')
+  })
+
+  it('lists the failing rules of a file and the score of a group', () => {
+    const style = new Map([
+      [
+        'a/one.ts',
+        [{ rule: 'lines' as const, line: 201, message: '250 lines, the limit is 200', grandfathered: true }],
+      ],
+      ['a/two.ts', []],
+    ])
+    const withStyle = { ...facts, style }
+    expect(Object.fromEntries(factsFor(find('main'), withStyle).lines)['fails lines']).toBe(
+      'line 201: 250 lines, the limit is 200, allowed only by a grandfathered limit',
+    )
+    expect(Object.fromEntries(factsFor(find('two.ts'), withStyle).lines).style).toBe('passes every rule')
+    const group = Object.fromEntries(factsFor(find('a'), withStyle).lines)
+    expect(group['style score']).toBe('50%, 1 of 2 files pass')
+    expect(group['passing per rule']).toBe('lines 1, files 2, names 2, jobs 2')
+    expect(Object.fromEntries(factsFor(find('two.ts'), { ...facts, style: new Map() }).lines).style).toBe(
+      'not checked, the rules skip this file',
+    )
+    expect(Object.fromEntries(factsFor(find('a'), { ...facts, style: new Map() }).lines).style).toBe('no checked files')
+    expect(factsFor(find('a'), facts).lines.some(([name]) => name.startsWith('style'))).toBe(false)
   })
 })

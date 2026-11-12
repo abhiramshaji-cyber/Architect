@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, FileStart, FunctionEntry } from '../../../shared/types'
-import { starred } from './exports'
+import { linked, type Links } from './exports'
 import { placeSites, type Raw } from './sites'
 
 export type { Raw } from './sites'
@@ -47,7 +47,7 @@ function realRoot(root: string): string {
   }
 }
 
-export function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> {
+export function link(root: string, parsed: Map<string, Parsed>): Map<string, Links> {
   const options = resolutionOptions(root)
   const cache = ts.createModuleResolutionCache(root, (name) => name, options)
   const bases = [...new Set([root, realRoot(root)])]
@@ -118,12 +118,5 @@ export function link(root: string, parsed: Map<string, Parsed>): Map<string, str
     })
   }
 
-  starred(parsed, target)
-
-  const imports = new Map<string, string[]>()
-  for (const [file, at] of parsed) {
-    const resolved = [...at.specs].map((spec) => target(file, spec)).filter((to) => to !== undefined && to !== file)
-    imports.set(file, [...new Set(resolved as string[])].sort())
-  }
-  return imports
+  return linked(parsed, target)
 }

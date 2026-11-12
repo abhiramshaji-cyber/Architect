@@ -12,6 +12,8 @@ import {
   type PtySpec,
   type PullDraft,
 } from '../../shared/types'
+import { conventionsOf, promoteConvention, suggestedConventions, switchConventions } from '../conventions'
+import { couplingOf } from '../coupling'
 import type { createDaemon } from '../daemon'
 import * as message from '../draft/message'
 import * as diff from '../git/diff'
@@ -44,7 +46,13 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R |
   handleIn<A, R>(channel, (_window, ...args) => fn(...args))
 }
 
-export function wireIpc(daemon: ReturnType<typeof createDaemon>) {
+export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: string) {
+  const project = (root: string) => async () => ({
+    root,
+    map: daemon.codeMap(root) ?? (await daemon.rescan(root)),
+    architecture: (await daemon.open(root)).architecture,
+  })
+
   handle('architect:projects', () => daemon.projects())
   handle('architect:create-contract', (root: string) => daemon.createContract(root))
   handle('architect:draft-contract', (root: string) => daemon.draftContract(root))
@@ -70,6 +78,14 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>) {
   handle('architect:flow', (root: string, ask: unknown) => daemon.flow(root, ask))
   handle('architect:recency', (root: string) => daemon.recency(root))
   handle('architect:churn', (root: string, days?: unknown) => daemon.churn(root, days))
+  handle('architect:coupling', async (root: string, ask?: unknown) =>
+    couplingOf(root, daemon.codeMap(root) ?? (await daemon.rescan(root)), daemon.history(root), ask),
+  )
+  handle('architect:style', (root: string) => daemon.style(root))
+  handle('architect:conventions', (root: string) => conventionsOf(settingsDir, project(root)))
+  handle('architect:set-conventions', (root: string, enabled: boolean) => switchConventions(settingsDir, enabled === true, project(root)))
+  handle('architect:suggest-conventions', (root: string) => suggestedConventions(settingsDir, project(root)))
+  handle('architect:promote-convention', (root: string, rule: string) => promoteConvention(settingsDir, root, String(rule)))
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
   )

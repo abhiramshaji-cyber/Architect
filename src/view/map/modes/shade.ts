@@ -1,8 +1,9 @@
 import { type Churn, changeKey } from '../../../../shared/recency'
-import type { FunctionRow } from '../../../../shared/types'
+import type { FunctionRow, StyleFile } from '../../../../shared/types'
 import type { MapNode } from '../layout/nest'
+import { styleShade } from './style'
 
-export type ModeId = 'importance' | 'churn' | 'touched' | 'unreached'
+export type ModeId = 'importance' | 'churn' | 'touched' | 'unreached' | 'style'
 
 export type Sessions = Map<string, { session: string; at: number }[]>
 
@@ -12,6 +13,7 @@ export type Facts = {
   churn: Churn | null
   sessions: Sessions
   recorded: number
+  style: Map<string, StyleFile['failing']> | null
 }
 
 export function busiestOf(counts: number[]): number {
@@ -41,12 +43,14 @@ export function leafValues(mode: ModeId, facts: Facts, busiest: number): (number
   if (mode === 'importance') return rows.map((row) => (row.importance - 1) / 4)
   if (mode === 'unreached') return rows.map((_, at) => (facts.unreached.has(at) ? 1 : 0))
   if (mode === 'touched') return rows.map((row) => (facts.sessions.has(row.file) ? 1 : 0))
+  if (mode === 'style') return rows.map(() => null)
   if (!churn) return rows.map(() => null)
   const top = Math.log1p(busiest)
   return rows.map((row) => (top > 0 ? Math.log1p(churnOf(row, churn)) / top : 0))
 }
 
 export function shade(root: MapNode, mode: ModeId, facts: Facts): Map<string, number | null> {
+  if (mode === 'style') return styleShade(root, facts.style)
   const busiest = mode === 'churn' ? churnTop(root, facts) : 0
   const leaves = leafValues(mode, facts, busiest)
   const values = new Map<string, number | null>()

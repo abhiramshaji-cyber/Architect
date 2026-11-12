@@ -1,6 +1,8 @@
 import type { ComponentType } from 'react'
 import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
+import ConventionsView from '../view/conventions/ConventionsView'
+import CouplingView from '../view/coupling/CouplingView'
 import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
 import FlowView from '../view/flow/FlowView'
@@ -13,7 +15,7 @@ import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'map' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'replay' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'functions' | 'map' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'coupling' | 'conventions' | 'replay' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
@@ -27,6 +29,8 @@ export const views: Record<ViewId, { label: string; component: ComponentType<Vie
   review: { label: 'Review', component: ReviewView },
   files: { label: 'Files', component: FilesView },
   hotspots: { label: 'Hotspots', component: HotspotsView },
+  coupling: { label: 'Coupling', component: CouplingView },
+  conventions: { label: 'Conventions', component: ConventionsView },
   replay: { label: 'Replay', component: ReplayView },
   terminal: { label: 'Terminal', component: TerminalView },
   shell: { label: 'Shell', component: PlainShell },

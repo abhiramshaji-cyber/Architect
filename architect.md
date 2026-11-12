@@ -21,7 +21,7 @@ Shells out to the gh CLI for the GitHub credential, reads the account's repos, a
 owns: `electron/github/**`
 
 ### draft
-Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its functions and their own doc comments, and candidate edges aggregated from real call refs. Also asks it for a commit title and description from a staged diff, and for a pull request title and body from the account's own `pr` instructions read off disk. Every reply is a JSON object that is parsed, scrubbed of attribution and validated before it is offered, and nothing it writes is ever submitted on its own.
+Asks the Claude Code binary for a first `architect.md`, from a bounded summary of the scan: one entry per top level source folder with a sample of its functions and their own doc comments, and candidate edges aggregated from real call refs. Also asks it for a commit title and description from a staged diff, and for a pull request title and body from the account's own `pr` instructions read off disk. Also asks it, only when the engineer clicks for it, for conventions the code follows, from the scanned file paths and function names, the components and the rules in force; a suggestion is kept only when it names files the scan found, and it carries at most one rule line. Every reply is a JSON object that is parsed, scrubbed of attribution and validated before it is offered, and nothing it writes is ever submitted on its own.
 owns: `electron/draft/**`
 
 ### functions
@@ -44,16 +44,25 @@ owns: `electron/recency/**`
 Works out how often each file and each function changed over a window of days, 90 unless asked otherwise. A file gets the commits that touched it and the lines added and removed, read from git numstat along the first parent line of HEAD and followed across renames. A function gets the commits that changed its lines, found the way `git log -L` finds them: its current lines are traced back through any uncommitted edit and then one commit at a time, so each step costs only that commit's changes. Files deleted since, and older files that once had the same name, are left out, and a read that git could not finish is flagged rather than cached. Fully deterministic, no model calls.
 owns: `electron/churn/**`
 
+### coupling
+Finds pairs of files that change together with no import between them. Co-change is counted twice, apart: from git commits in a window of 1 to 36500 days, 90 unless asked, skipping commits that touch more than a set number of files, 30 unless asked; and from the change history grouped by Claude Code session, which reaches only as far back as the history keeps. Each source gives a pair its shared changes and a confidence of shared changes over the fewer changes of the two files, and a pair is kept when either source reaches the minimum shared count and confidence, 3 and 50% unless asked. A pair is dropped when either file imports the other, directly or through a file that re-exports it, as the scan resolves them. Each kept pair carries the commits and sessions it shares. Fully deterministic, no model calls.
+owns: `electron/coupling/**`
+
+### conventions
+Learned conventions, optional and off unless the engineer turns them on, persisted as one setting. While off it reads no code and calls no model. When on, it measures each component (or top level folder without a contract) and offers a lines, jobs or files rule set to the largest count found there whenever every file or folder in it sits below the limit in force, with the count and the files behind it; on request it passes the AI suggestions from draft through the same checks. Every rule line, measured or suggested, is parsed by the rules syntax and audited against the code, listing the violations it would add and the ones it would lift. A suggestion is only ever added to the Rules section of `architect.md`, as its last line, when the engineer adds it, and nothing it finds reaches the Functions page or the Tree.
+owns: `electron/conventions/**`
+
 ### daemon
 Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files, and answering where a new function belongs.
 owns: `electron/daemon.ts`
+owns: `electron/watch/**`
 
 ### journal
 A capped, newest first list of records per project kept as one JSON file each in the cache directory. Rows are validated against a schema on load and any that fail are dropped, and every write replaces the file whole so a crash never leaves half a list. Holds the change history, the check_change verdicts and the rule runs.
 owns: `electron/journal/**`
 
 ### rules
-Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Also suggests splits, never applying them: a file over its lines or jobs limit, or over the project wide one when a later line grandfathers it, gets one file per connected group of exported functions in a folder named after it behind the same entry file, each file named after the most common leading word of its group's names or left unnamed with the tie that stopped it, and a function longer and more called than the split thresholds gets the extraction points its parse shows: compound statements, block callbacks and inner functions at the top of its body. Fully deterministic, no model calls.
+Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Also scores style per file for the Map: every checked file with each rule it fails and the file:line evidence, where a limit only a path specific rule line relaxes counts as a failure and is marked grandfathered, so drift stays visible. Also suggests splits, never applying them: a file over its lines or jobs limit, or over the project wide one when a later line grandfathers it, gets one file per connected group of exported functions in a folder named after it behind the same entry file, each file named after the most common leading word of its group's names or left unnamed with the tie that stopped it, and a function longer and more called than the split thresholds gets the extraction points its parse shows: compound statements, block callbacks and inner functions at the top of its body. Fully deterministic, no model calls.
 owns: `electron/rules/**`
 
 ### agents
@@ -78,7 +87,7 @@ Spawns and owns pty processes in the main process, keyed by session id, and batc
 owns: `electron/pty/**`
 
 ### canvas
-React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Layers page draws the component matrix it is handed as a grid, outlines each cycle block, and lists a cell's calls to open them. The Flow page picks a starting point and draws the flow it is handed as a plain SVG sequence diagram, one lifeline per component and one arrow per call, opening the call site when an arrow is clicked. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The Hotspots page plots each file or function by its lines against its commits over a 30, 90 or 365 day churn window, on log scales, and ranks the top 20 by lines over the most lines times commits over the most commits, with that formula and both maxima shown; a file opens in the editor and a function opens in Focus. The Map page is a squarified treemap of components (or top level folders when there is no contract), folders, files and functions, sized by lines of code (each file by its scanned lines, split into its functions and the lines outside them) and coloured by importance, churn, AI touched or unreached, with click to zoom, breadcrumbs back out and the facts on hover, laid out by a pure function and drawn on a canvas. The Replay page lays the git commits, the change history entries and the check_change verdicts of a 30, 90 or 365 day window (the newest 1000 commits at most) on one timeline in time order, and scrubbing or playing it lights on the Map treemap the files each step changed, or every tile of a component a contract change touched, with files changed earlier in the window faint; rejected verdicts are marks on the timeline, and when the change history or the verdict record is at its limit, the part of the timeline before its oldest kept entry is shaded. It reads only the stored git log, history and verdicts, never rescans a past revision. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
+React Flow diagram, the file tree and CodeMirror editor, the contract rail holding edits and the change history, and the live highlighting of what just changed. The Layers page draws the component matrix it is handed as a grid, outlines each cycle block, and lists a cell's calls to open them. The Flow page picks a starting point and draws the flow it is handed as a plain SVG sequence diagram, one lifeline per component and one arrow per call, opening the call site when an arrow is clicked. The Functions page lists, arranges as a call tree, or focuses on one function with its callers to the left and its callees to the right, all from the call edges it is handed. The Hotspots page plots each file or function by its lines against its commits over a 30, 90 or 365 day churn window, on log scales, and ranks the top 20 by lines over the most lines times commits over the most commits, with that formula and both maxima shown; a file opens in the editor and a function opens in Focus. The Map page is a squarified treemap of components (or top level folders when there is no contract), folders, files and functions, sized by lines of code (each file by its scanned lines, split into its functions and the lines outside them) and coloured by importance, churn, AI touched, unreached or style (the share of checked files failing a rule, with a per component breakdown of passing files over checked files and each failing file:line), with click to zoom, breadcrumbs back out and the facts on hover, laid out by a pure function and drawn on a canvas. The Conventions page, off until the engineer turns it on, lists the measured conventions and, when asked, the AI suggestions, each labelled as measured or as an AI suggestion with the rule line, what it would flag or lift, and a button that adds the rule; it is the only page that shows them. The Coupling page lists the pairs it is handed with their shared commits and sessions, each file's share of its own changes and the commits and sessions behind them, and sets the window, the minimum shared count and confidence, and the bulk commit limit it asks with. The Replay page lays the git commits, the change history entries and the check_change verdicts of a 30, 90 or 365 day window (the newest 1000 commits at most) on one timeline in time order, and scrubbing or playing it lights on the Map treemap the files each step changed, or every tile of a component a contract change touched, with files changed earlier in the window faint; rejected verdicts are marks on the timeline, and when the change history or the verdict record is at its limit, the part of the timeline before its oldest kept entry is shaded. It reads only the stored git log, history and verdicts, never rescans a past revision. The project store in `src/model/store.ts` holds the per project state and the panels subscribe to it. The shell in `src/shell` is a binary pane tree, a leaf holding one registered view or a split of two, persisted per project root.
 owns: `src/**`
 
 ### cli
@@ -126,6 +135,13 @@ owns: `lsp/**`
 - layers -> types
 - layers -> graph
 - daemon -> churn
+- app -> coupling
+- app -> conventions
+- conventions -> types
+- conventions -> rules
+- conventions -> draft
+- coupling -> types
+- coupling -> git
 - churn -> types
 - churn -> git
 - daemon -> journal
@@ -170,6 +186,8 @@ owns: `lsp/**`
 - canvas -> github : the renderer never shells out to gh and never holds a token, repos and branches arrive over the preload bridge
 - canvas -> draft : the renderer never spawns the claude binary, a drafted contract arrives over the preload bridge
 - canvas -> functions : the renderer never ranks or arranges functions itself, the ranked list and its call tree arrive over the preload bridge
+- canvas -> coupling : the renderer never counts co-changes itself, the kept pairs and their evidence arrive over the preload bridge
+- canvas -> conventions : the renderer never measures conventions or writes a rule itself, both go over the preload bridge
 - canvas -> recency : the renderer never reads git history, when each function and component last changed arrives over the preload bridge
 - canvas -> churn : the renderer never reads git history, how often each file and function changed arrives over the preload bridge
 - canvas -> review : the renderer never decides a change or reads the queue itself, pending changes and their impact arrive over the preload bridge
@@ -225,7 +243,7 @@ owns: `lsp/**`
 - lines: 597 `src/model/store.ts`
 - lines: 630 `electron/scan/scan.ts`
 - lines: 649 `shared/types.ts`
-- lines: 653 `src/model/demo-mock.ts`
+- lines: 656 `src/model/demo-mock.ts`
 - lines: 1049 `electron/daemon.ts`
 - files: 6 `scripts`
 - files: 7 `shared`
