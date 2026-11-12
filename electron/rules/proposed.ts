@@ -56,7 +56,13 @@ function onDisk(target: string): string {
   }
 }
 
-export function checkFile(cacheDir: string, root: string, architecture: Architecture, file: string, content: string): RuleViolation[] {
+export function proposedFile(
+  root: string,
+  rules: RuleEntry[] | undefined,
+  scope: string | undefined,
+  file: string,
+  content: string,
+): { relative: string; violations: RuleViolation[] } {
   const relative = path.relative(onDisk(root), onDisk(path.resolve(root, file))).split(path.sep).join('/')
   if (relative === '' || relative.startsWith('../') || relative === '..' || path.isAbsolute(relative)) {
     throw new Error(`${file} is outside the project at ${root}`)
@@ -66,8 +72,11 @@ export function checkFile(cacheDir: string, root: string, architecture: Architec
   const before = factsOf(relative, () => readText(path.join(root, relative)), parse)
   const scanned = relative.split('/').slice(0, -1).every((part) => !IGNORED_DIRS.has(part) && !part.startsWith('.'))
   const after = scanned ? factsOf(relative, () => content, parse) : null
-  const violations = after ? proposedViolations(architecture.rules, architecture.scope, filesBeside(root, relative), before, after) : []
+  return { relative, violations: after ? proposedViolations(rules, scope, filesBeside(root, relative), before, after) : [] }
+}
 
+export function checkFile(cacheDir: string, root: string, architecture: Architecture, file: string, content: string): RuleViolation[] {
+  const { relative, violations } = proposedFile(root, architecture.rules, architecture.scope, file, content)
   recordRuns(cacheDir, root, 'check_change', violations, relative)
   return violations
 }

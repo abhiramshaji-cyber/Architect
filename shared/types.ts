@@ -235,6 +235,7 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('review_edit'), cwd: z.string(), change: codeChangeSchema }),
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('write_agents'), cwd: z.string() }),
+  z.object({ id: z.string(), op: z.literal('where'), cwd: z.string(), calls: z.array(z.string()), callers: z.array(z.string()), name: z.string().optional(), file: z.string().optional() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
   z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string() }).extend({
     session: z.string().optional(),
