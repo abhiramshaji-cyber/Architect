@@ -2468,7 +2468,7 @@ describe("check_change rules", () => {
   it("keeps checking rules and says so when the contract is stale", async () => {
     await ask({ file: "api/a.ts", content: "export const a = 1\n" });
     writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")).replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await vi.waitFor(() => expect(daemon.projects()[0]?.contract.status).toBe("invalid"), { timeout: 5000 });
 
     const alone = await ask({ file: "api/a.ts", content: "export const a = 1\n" });
     expect(alone.ok && alone.result).toMatchObject({ status: "unknown", reason: expect.stringMatching(/stale/) });
@@ -2542,7 +2542,7 @@ describe("write_agents", () => {
     const c = await client(socketPath);
     await c.request({ op: "get_architecture", cwd: tmpRoot });
     writeArchitect(tmpRoot, fixture(component("api")).replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await vi.waitFor(() => expect(daemon.projects()[0]?.contract.status).toBe("invalid"), { timeout: 5000 });
     const res = await c.request({ op: "write_agents", cwd: tmpRoot });
     expect(res).toMatchObject({ ok: false, error: expect.stringContaining("malformed dependency") });
     expect(fs.existsSync(agents("api"))).toBe(false);
