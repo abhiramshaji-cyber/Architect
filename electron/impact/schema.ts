@@ -6,7 +6,7 @@ const callerSchema = z.object({ name: z.string(), at: z.string(), depth: z.numbe
 
 const depthSchema = z.object({ depth: z.number().int().positive(), count: z.number().int().positive(), first: z.string() })
 
-const entrySchema = z.object({ kind: z.string(), file: z.string(), depth: z.number().int().positive(), calls: z.string() })
+const entrySchema = z.object({ kind: z.string(), file: z.string(), line: z.number().int().positive().optional(), depth: z.number().int().positive(), calls: z.string() })
 
 const componentSchema = z.object({ id: z.string().nullable(), functions: z.number().int().nonnegative(), entries: z.number().int().nonnegative(), first: z.string() })
 

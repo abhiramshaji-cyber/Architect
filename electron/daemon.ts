@@ -751,11 +751,11 @@ export function createDaemon(options: DaemonOptions = {}) {
     return drafted
   }
 
-  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null, impact?: Impact) {
+  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null, impact?: Impact, at = Date.now()) {
     verdicts.append(root, {
       id: randomUUID(),
       root,
-      at: Date.now(),
+      at,
       ...(req.from === undefined ? {} : { from: req.from }),
       ...(req.to === undefined ? {} : { to: req.to }),
       ...(req.file === undefined ? {} : { file: req.file }),
@@ -800,8 +800,9 @@ export function createDaemon(options: DaemonOptions = {}) {
             logVerdict(root, req, { status: 'unknown', reason: error }, stale)
             return { id: req.id, ok: false, error }
           }
+          const at = Date.now()
           const impact = await impactFor(req, root, state.architecture, stale, readStoredMap(cacheDir, root)?.map ?? null)
-          logVerdict(root, req, verdict, stale, impact)
+          logVerdict(root, req, verdict, stale, impact, at)
           return { id: req.id, ok: true, result: { ...verdict, impact } }
         }
 

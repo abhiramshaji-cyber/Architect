@@ -145,8 +145,7 @@ async function mapOf(root: string, stored: CodeMap | null): Promise<CodeMap> {
   const last = held ? await held.catch(() => null) : null
   if (last && current(root, last)) return last
   if (scans.get(root) === held) {
-    const started = Date.now()
-    scans.set(root, scan(root).then((map) => ({ ...map, scannedAt: started })))
+    scans.set(root, scan(root))
   }
   return scans.get(root) as Promise<CodeMap>
 }

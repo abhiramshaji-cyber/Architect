@@ -140,7 +140,7 @@ describe('impactOf', () => {
     const impact = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, map)
     expect(impact.entries).toEqual({ total: 1, listed: [{ kind: 'load', file: 'api/start.ts', depth: 5, calls: 'lib/top.ts:3 top' }] })
     expect(impact.components[0]).toEqual({ id: 'api', functions: 2, entries: 1, first: 'api/handler.ts:3' })
-    expect(impact.notes).toContain('an entry is code outside any function that calls in (a file loaded at start, an MCP tool, an IPC handler, a CLI command); the scan gives its file, not a line')
+    expect(impact.notes).toContain('an entry is code outside any function that calls in (a file loaded at start, an MCP tool, an IPC handler, a CLI command); the scan gives its file, and its line when the start has one')
   })
 
   it('ends on a call cycle and reports a new function with no callers', async () => {
@@ -315,7 +315,7 @@ describe('renamed re-exports and test callbacks', () => {
     const constant = impactOf(edit(root, 'store/limit.ts', 'LIMIT = 5', 'LIMIT = 6'), root, architecture, map)
     expect(constant.callers.listed).toEqual([{ name: 'cap', at: 'api/cap.ts:3', depth: 1, calls: 'store/limit.ts top level code' }])
     expect(constant.tests.listed).toEqual([{ file: 'api/cap.test.ts', via: 'import', at: 'api/cap.test.ts:1', reaches: 'store/limit.ts' }])
-    expect(constant.notes[0]).toBe('code outside every function in store/limit.ts changed (LIMIT), so its 0 functions that use those names count as touched, and the 1 functions that use those names in the 1 files that import them, directly or through a re-export, count as its callers')
+    expect(constant.notes[0]).toBe('code outside every function in store/limit.ts changed (LIMIT), so its 0 functions that use those names count as touched, and the 1 functions that use those names, or values built from them, in the 1 files that import them, directly or through a re-export, count as its callers')
 
     const typed = impactOf(edit(root, 'store/limit.ts', 'a: number', 'a: string'), root, architecture, map)
     expect(typed.callers.listed.map((caller) => caller.name)).toEqual(['shape'])
@@ -453,15 +453,30 @@ describe('renamed re-exports and test callbacks', () => {
       'c/index.ts': "import { LIMIT } from '../a/y'\nexport { LIMIT }\n",
       'c/use.ts': "import { LIMIT } from './index'\n\nexport function use() {\n  return LIMIT\n}\n",
       'd/u.ts': "import { LIMIT } from '../a/y'\n\nexport const DOUBLE = LIMIT * 2\n",
+      'e/v.ts': "import { DOUBLE } from '../d/u'\n\nexport function v() {\n  return DOUBLE\n}\n",
+      'f/log.ts': "import { LIMIT } from '../a/y'\n\nconsole.log(LIMIT)\n",
     })
     const limit = impactOf(edit(root, 'a/y.ts', 'LIMIT = 3', 'LIMIT = 5'), root, architecture, map)
     expect(limit.tests.listed.map((test) => test.file)).toEqual(['b/x.test.ts'])
-    expect(limit.notes[0]).toContain('1 of those files name it in no function (d/u.ts)')
+    expect(limit.callers.listed.map((caller) => caller.name)).toContain('v')
+    expect(limit.notes[0]).toContain('1 of those files name it in no function or top level value (f/log.ts)')
     const moved = impactOf(edit(root, 'c/index.ts', "from '../a/y'", "from '../a/z'"), root, architecture, map)
     expect(moved.callers.listed.map((caller) => caller.name)).toEqual(['use'])
     const late = impactOf(edit(root, 'a/y.ts', 'LIMIT = 3', 'LIMIT = 5'), root, architecture, map, 0)
     expect(late.status).toBe('timeout')
     expect(late.notes[0]).toBe('the time limit was reached while reading importers and tests, so the counts are partial')
+  })
+
+  it('follows a value built from a changed one, and counts the methods of a class when one of its fields changes', async () => {
+    const { root, map, architecture } = await project({
+      'a/c.ts': 'const LIMIT = 5\nconst DOUBLE = LIMIT * 2\n\nexport function cap(items: number[]) {\n  return items.slice(0, DOUBLE)\n}\n\nexport class Store {\n  limit = 5\n  take(items: number[]) {\n    return items.slice(0, this.limit)\n  }\n}\n',
+      'b/b.ts': "import { cap } from '../a/c'\n\nexport function first() {\n  return cap([1])\n}\n",
+    })
+    const limit = impactOf(edit(root, 'a/c.ts', 'LIMIT = 5', 'LIMIT = 6'), root, architecture, map)
+    expect(limit.touched.listed.map((touch) => `${touch.name} ${touch.change}`)).toEqual(['cap uses'])
+    expect(limit.callers.listed.map((caller) => caller.name)).toEqual(['first'])
+    const field = impactOf(edit(root, 'a/c.ts', 'limit = 5', 'limit = 6'), root, architecture, map)
+    expect(field.touched.listed.map((touch) => `${touch.name} ${touch.change}`)).toEqual(['Store.take uses'])
   })
 
   it('caps the notes and names a few functions per note', async () => {

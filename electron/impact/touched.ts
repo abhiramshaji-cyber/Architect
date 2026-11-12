@@ -118,20 +118,27 @@ function declared(statement: ts.Statement): Declared {
   return { kind: 'local', bindings: [...(clause.name ? ([[clause.name.text, `${from} default`]] as [string, string][]) : []), ...space, ...named] }
 }
 
-function topLevel(text: string, file: string): { declared: Map<string, string>; local: Map<string, string>; module: string[]; code: string[] } {
+function topLevel(text: string, file: string): { declared: Map<string, string>; local: Map<string, string>; module: string[]; code: string[]; refs: Map<string, Set<string>> } {
   const source = sourceOf(file, text)
   const lines = new Set(functionsIn(text, file).map((fn) => fn.line))
   const named = (kid: ts.Node, parent: ts.Node) => kid === bodyOf(parent) && lines.has(lineOf(parent, source))
-  const [declaredNames, local, module, code] = [new Map<string, string>(), new Map<string, string>(), [] as string[], [] as string[]]
+  const [declaredNames, local, module, code, refs] = [new Map<string, string>(), new Map<string, string>(), [] as string[], [] as string[], new Map<string, Set<string>>()]
   for (const statement of source.statements) {
     const found = declared(statement)
     if (found.kind === 'function') continue
     if (found.kind === 'module') module.push(shape(statement, source, named))
     else if (found.kind === 'code') code.push(shape(statement, source, named))
     else if (found.kind === 'local') for (const [name, from] of found.bindings) local.set(name, from)
-    else for (const name of found.names) declaredNames.set(name, shape(statement, source, named))
+    else {
+      const words = new Set<string>()
+      shape(statement, source, () => false, words)
+      for (const name of found.names) {
+        declaredNames.set(name, shape(statement, source, named))
+        refs.set(name, words)
+      }
+    }
   }
-  return { declared: declaredNames, local, module: module.sort(), code: code.sort() }
+  return { declared: declaredNames, local, module: module.sort(), code: code.sort(), refs }
 }
 
 export type Outside = { names: string[]; locals: string[]; code: boolean } | 'all'
@@ -140,10 +147,23 @@ function outsideOf(file: string, before: string, after: string): Outside {
   const [old, next] = [topLevel(before, file), topLevel(after, file)]
   if (old.module.join('\n') !== next.module.join('\n')) return 'all'
   const differ = (a: Map<string, string>, b: Map<string, string>, kept: boolean) => [...new Set([...a.keys(), ...b.keys()])].filter((name) => a.get(name) !== b.get(name) && (!kept || a.has(name))).sort()
-  return { names: differ(old.declared, next.declared, false), locals: differ(old.local, next.local, true), code: old.code.join('\n') !== next.code.join('\n') }
+  const [names, locals] = [differ(old.declared, next.declared, false), differ(old.local, next.local, true)]
+  return { names: [...new Set([...names, ...derivedOf(file, after, [...names, ...locals])])].sort(), locals, code: old.code.join('\n') !== next.code.join('\n') }
 }
 
-export const usersOf = (file: string, text: string, names: string[]) => [...bodies(text, file).values()].filter((body) => names.some((name) => body.words.has(name))).map((body) => body.key)
+export function derivedOf(file: string, text: string, seeds: string[]): string[] {
+  const { refs } = topLevel(text, file)
+  const found = new Set(seeds)
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const [name, words] of refs) if (!found.has(name) && [...found].some((seed) => words.has(seed))) grew = Boolean(found.add(name))
+  }
+  return [...found].filter((name) => !seeds.includes(name)).sort()
+}
+
+const using = (body: Body, names: string[]) => names.some((name) => body.words.has(name) || body.name.startsWith(`${name}.`))
+
+export const usersOf = (file: string, text: string, names: string[]) => [...bodies(text, file).values()].filter((body) => using(body, names)).map((body) => body.key)
 
 export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: Outside; uses: (names: string[]) => string[] } {
   const old = bodies(before, file)
@@ -165,5 +185,5 @@ export function changesOf(file: string, before: string, after: string): { change
   }
 
   const order = (entry: Change) => ORDER.indexOf(entry.change)
-  return { changes: found.sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outsideOf(file, before, after), uses: (names) => [...next.values()].filter((body) => names.some((name) => body.words.has(name))).map((body) => body.key) }
+  return { changes: found.sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outsideOf(file, before, after), uses: (names) => [...next.values()].filter((body) => using(body, names)).map((body) => body.key) }
 }

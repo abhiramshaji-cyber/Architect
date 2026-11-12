@@ -4,7 +4,7 @@ import type { Caller, Entry, Impact } from './schema'
 
 export type Reach = { depth: Map<number, number>; parent: Map<number, number> }
 
-type Start = { file: string; kind: string; calls: number[] }
+type Start = { file: string; kind: string; line?: number; calls: number[] }
 
 export const LIST_DEPTH = 3
 
@@ -51,7 +51,7 @@ function reachOf(edges: number[][], seeds: number[]): Reach {
 function startsOf(fns: Fn[], files: FileEntry[]): Start[] {
   const index = refIndex(fns)
   return files.flatMap((file) =>
-    (file.starts ?? []).filter((start) => start.kind !== 'exports').map((start) => ({ file: file.path, kind: start.kind, calls: start.calls.flatMap((call) => index(call) ?? []) })),
+    (file.starts ?? []).filter((start) => start.kind !== 'exports').map((start) => ({ file: file.path, kind: start.kind, ...(start.line === undefined ? {} : { line: start.line }), calls: start.calls.flatMap((call) => index(call) ?? []) })),
   )
 }
 
@@ -84,14 +84,14 @@ export function callersOf(fns: Fn[], files: FileEntry[], edges: number[][], seed
   const entries = starts
     .flatMap((start, i): Entry[] => {
       const depth = reach.depth.get(fns.length + i)
-      return depth === undefined ? [] : [{ kind: start.kind, file: start.file, depth, calls: callee(fns.length + i) }]
+      return depth === undefined ? [] : [{ kind: start.kind, file: start.file, ...(start.line === undefined ? {} : { line: start.line }), depth, calls: callee(fns.length + i) }]
     })
     .sort((a, b) => a.depth - b.depth || a.file.localeCompare(b.file) || a.kind.localeCompare(b.kind))
   const notes = [
     ...(found.length > listed.length ? [`${found.length - listed.length} of ${found.length} callers are counted in depths but not listed; the list stops at depth ${LIST_DEPTH} or ${LISTED} callers`] : []),
     ...(depths.length > DEPTHS ? [`callers reach depth ${depths.length}; depths past ${DEPTHS} are counted in total but not shown`] : []),
     ...(entries.length > LISTED ? [`${entries.length - LISTED} of ${entries.length} entries are counted but not listed`] : []),
-    ...(entries.length > 0 ? ['an entry is code outside any function that calls in (a file loaded at start, an MCP tool, an IPC handler, a CLI command); the scan gives its file, not a line'] : []),
+    ...(entries.length > 0 ? ['an entry is code outside any function that calls in (a file loaded at start, an MCP tool, an IPC handler, a CLI command); the scan gives its file, and its line when the start has one'] : []),
   ]
   return {
     reach,
