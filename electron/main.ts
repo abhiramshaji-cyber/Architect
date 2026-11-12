@@ -4,6 +4,7 @@ import { SOCKET_PATH } from '../shared/socket'
 import type { Architecture, CodeMap, HistoryEntry, ProjectSummary, ReviewState } from '../shared/types'
 import { wireIpc } from './app/ipc'
 import { launchArgs } from './app/launch'
+import { opensAtLogin } from './app/login'
 import { broadcast, createWindow, killEveryPty, openFolders, openRoot, tabs } from './app/windows'
 import { createDaemon } from './daemon'
 import { loginPath } from './env'
@@ -77,7 +78,14 @@ app.whenReady().then(async () => {
     return
   }
 
-  app.setLoginItemSettings({ openAtLogin: true })
+  const run = {
+    packaged: app.isPackaged,
+    exePath: process.execPath,
+    socketPath,
+    platform: process.platform,
+    localAppData: process.env.LOCALAPPDATA,
+  }
+  if (opensAtLogin(run)) app.setLoginItemSettings({ openAtLogin: true })
   started = true
   openFolders(pending.splice(0))
 })
