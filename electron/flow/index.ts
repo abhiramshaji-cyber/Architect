@@ -15,20 +15,20 @@ const askSchema = z.object({
 })
 
 function stepOf(walked: Walked, lanes: ReturnType<typeof lanesOf>): FlowStep {
-  const { caller, hop, line, times, depth, mark, more } = walked
+  const { caller, hop, lines, depth, mark, more } = walked
   const target = hop.node
-  const forbidden = lanes.forbidden(caller.file, target.file)
+  const forbidden = hop.ipc === undefined ? lanes.forbidden(caller.file, target.file) : undefined
   return {
     key: target.key,
     from: lanes.of(caller.file),
     to: lanes.of(target.file),
     file: caller.file,
-    line,
+    line: lines[0] ?? caller.line,
     callee: target.name,
     target: target.file,
     targetLine: target.line,
     depth,
-    times,
+    lines,
     ...(mark ? { mark } : {}),
     ...(more ? { more } : {}),
     ...(hop.ipc === undefined ? {} : { ipc: hop.ipc }),

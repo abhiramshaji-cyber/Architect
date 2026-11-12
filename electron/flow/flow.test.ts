@@ -26,10 +26,10 @@ const tool = (file: string, fn: number): FileStart => ({ kind: 'mcpTool', calls:
 
 const ask = (file: string, name: string, line: number, depth = 3, open: string[] = []) => ({ file, name, line, depth, open })
 
-const summary = (steps: { callee: string; depth: number; times: number; mark?: string; more?: true }[]) =>
+const summary = (steps: { callee: string; depth: number; lines: number[]; mark?: string; more?: true }[]) =>
   steps.map(
     (s) =>
-      `${'.'.repeat(s.depth)}${s.callee}${s.times > 1 ? `x${s.times}` : ''}${s.mark ? ` ${s.mark}` : ''}${s.more ? ' +' : ''}`,
+      `${'.'.repeat(s.depth)}${s.callee}${s.lines.length > 1 ? `x${s.lines.length}` : ''}${s.mark ? ` ${s.mark}` : ''}${s.more ? ' +' : ''}`,
   )
 
 describe('flowOf', () => {
@@ -53,7 +53,15 @@ describe('flowOf', () => {
     const flow = flowOf(chain, new Map(), null, ask('a/main.ts', 'start', 1))
     expect(summary(flow.steps)).toEqual(['helperx2', '.leaf', '..deep +', 'leaf repeat'])
     expect(flow.lanes).toEqual(['a', 'b'])
-    expect(flow.steps[0]).toMatchObject({ from: 'a', to: 'a', file: 'a/main.ts', line: 3, target: 'a/main.ts', targetLine: 10 })
+    expect(flow.steps[0]).toMatchObject({
+      from: 'a',
+      to: 'a',
+      file: 'a/main.ts',
+      line: 3,
+      lines: [3, 5],
+      target: 'a/main.ts',
+      targetLine: 10,
+    })
     expect(flow.entry).toEqual({ reason: 'mcpTool', file: 'a/main.ts' })
   })
 
@@ -141,6 +149,47 @@ describe('flowOf', () => {
       { callee: 'api:read', channel: 'api:read', from: 'ui', to: 'main', line: 2, depth: 0 },
       { callee: 'read', channel: undefined, from: 'main', to: 'main', line: 7, depth: 1 },
     ])
+  })
+
+  it('offers no expand on a call whose sites lead nowhere the scan can follow', () => {
+    const fns: Fn[] = [
+      ['main', 1, [at('d.ts', 1, 2), at('d.ts', 2, 3)]],
+      ['reload', 5, [{ bridge: 'location.reload', line: 6 }]],
+      ['mid', 9, [at('d.ts', 3, 10)]],
+      ['end', 12],
+    ]
+    const flow = flowOf(map(file('d.ts', fns, [tool('d.ts', 0)])), new Map(), null, ask('d.ts', 'main', 1, 1))
+    expect(summary(flow.steps)).toEqual(['reload', 'mid +'])
+  })
+
+  it('never marks an ipc hop forbidden, the bridge is the route the contract allows', () => {
+    const contract = parse(
+      [
+        '# Architecture',
+        '## Components',
+        '### ui',
+        'owns: `ui/**`',
+        '### main',
+        'owns: `main/**`',
+        '## Forbidden',
+        '- ui -> main : only through the bridge',
+      ].join('\n'),
+    )
+    const ipc = map(
+      file('main/ipc.ts', [], [{ kind: 'ipcHandler', calls: [], channel: 'api:read', line: 7, sites: [] }]),
+      file(
+        'preload/index.ts',
+        [['api.read', 2]],
+        [{ kind: 'bridge', calls: [{ file: 'preload/index.ts', fn: 0 }], member: 'api.read', channel: 'api:read', line: 2 }],
+      ),
+      file(
+        'ui/view.ts',
+        [['load', 1, [{ bridge: 'api.read', line: 2 }]]],
+        [{ kind: 'mcpTool', calls: [{ file: 'ui/view.ts', fn: 0 }] }],
+      ),
+    )
+    const flow = flowOf(ipc, new Map(), contract, ask('ui/view.ts', 'load', 1))
+    expect(flow.steps.map((step) => [step.callee, step.ipc, step.forbidden])).toEqual([['api:read', 'api:read', undefined]])
   })
 
   it('stops at the step limit and says so', () => {

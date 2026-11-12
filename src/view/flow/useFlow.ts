@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Architecture, CodeMap, Flow, FlowAsk } from '../../../shared/types'
+import type { Architecture, Flow, FlowAsk, FunctionList } from '../../../shared/types'
 
 export type Found = { flow: Flow | null; error: string | null }
 
@@ -7,7 +7,7 @@ const EMPTY: Found = { flow: null, error: null }
 
 export function useFlow(
   root: string | null,
-  codeMap: CodeMap | null | undefined,
+  list: FunctionList | null,
   architecture: Architecture | null,
   ask: FlowAsk | null,
 ): Found {
@@ -19,7 +19,7 @@ export function useFlow(
   }, [root, key])
 
   useEffect(() => {
-    if (!root || !ask || codeMap === undefined) return
+    if (!root || !ask || !list) return
     let live = true
     window.architect.flow(root, ask).then(
       (flow) => {
@@ -32,7 +32,7 @@ export function useFlow(
     return () => {
       live = false
     }
-  }, [root, codeMap, architecture, key])
+  }, [root, list, architecture, key])
 
   return found
 }

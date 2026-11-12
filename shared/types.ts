@@ -69,7 +69,7 @@ export type LayerCell = { from: string; to: string; status: LayerStatus; verdict
 export type LayerRow = { id: string; level: number; block: number }
 export type Layers = { contract: boolean; rows: LayerRow[]; cells: LayerCell[] }
 export type FlowAsk = { file: string; name: string; line: number; depth: number; open: string[] }
-export type FlowStep = { key: string; from: string; to: string; file: string; line: number; callee: string; target: string; targetLine: number; depth: number; times: number; mark?: 'cycle' | 'repeat'; more?: true; ipc?: string; forbidden?: string }
+export type FlowStep = { key: string; from: string; to: string; file: string; line: number; callee: string; target: string; targetLine: number; depth: number; lines: number[]; mark?: 'cycle' | 'repeat'; more?: true; ipc?: string; forbidden?: string }
 export type Flow = { start: string; file: string; line: number; entry: Entry; lane: string; lanes: string[]; steps: FlowStep[]; depth: number; contract: boolean; cut: boolean }
 
 export const proposalSchema = z.discriminatedUnion('kind', [

@@ -7,14 +7,14 @@ type DiagramProps = { flow: Flow; onOpen: (file: string, line: number) => void; 
 const LOOP = 26
 
 function labelOf(step: FlowStep): string {
-  const times = step.times > 1 ? ` ×${step.times}` : ''
+  const times = step.lines.length > 1 ? ` ×${step.lines.length}` : ''
   const ipc = step.ipc === undefined ? '' : ' (ipc)'
   const mark = step.mark === 'cycle' ? ' ↻ cycle' : step.mark === 'repeat' ? ' ↑ drawn above' : ''
   return `${step.callee}${ipc}${times}${mark}`
 }
 
 function titleOf(step: FlowStep): string {
-  const lines = [`${step.file}:${step.line} calls ${step.callee} at ${step.target}:${step.targetLine}`]
+  const lines = [`${step.file}:${step.lines.join(', ')} calls ${step.callee} at ${step.target}:${step.targetLine}`]
   if (step.ipc !== undefined) lines.push(`over ipc channel ${step.ipc}`)
   if (step.forbidden !== undefined) lines.push(`forbidden by architect.md: ${step.forbidden}`)
   return lines.join('\n')

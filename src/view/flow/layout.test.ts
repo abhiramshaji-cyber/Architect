@@ -12,7 +12,7 @@ const step = (from: string, to: string, depth: number): FlowStep => ({
   target: 't.ts',
   targetLine: 1,
   depth,
-  times: 1,
+  lines: [1],
 })
 
 const flowOf = (lanes: string[], steps: FlowStep[]): Flow => ({
