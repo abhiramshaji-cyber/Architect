@@ -21,6 +21,7 @@ const list = (rows: FunctionRow[], calls: number[][]): FunctionList => ({
   tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
   scope: '',
   folders: [],
+  owners: {},
 })
 
 describe('callersOf', () => {

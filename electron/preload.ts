@@ -39,7 +39,9 @@ const architect: ArchitectApi = {
   rescan: (root) => invoke('architect:rescan', root),
   listFunctions: (root, scope) => invoke('architect:list-functions', root, scope),
   ownership: (root) => invoke('architect:ownership', root),
+  layers: (root) => invoke('architect:layers', root),
   recency: (root) => invoke('architect:recency', root),
+  churn: (root, days) => invoke('architect:churn', root, days),
   readSource: (root, file, from, length) =>
     invoke('architect:read-source', root, file, from, length),
   openSource: (root, file) => invoke('architect:open-source', root, file),

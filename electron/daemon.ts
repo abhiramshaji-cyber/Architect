@@ -47,8 +47,10 @@ import { createClaims } from './contract/claims'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
+import { layersOf } from './layers'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
+import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
@@ -1002,14 +1004,15 @@ export function createDaemon(options: DaemonOptions = {}) {
       const scoped = architecture.scope ? files.filter((file) => file.startsWith(`${architecture.scope}/`)) : files
       return ownership(scoped, architecture.components)
     },
+    layers: async (root: string) => layersOf(loadProject(root).architecture, await mapOf(root)),
     readSource,
     openSource,
     writeSource,
     readTree,
     rescan: rescanProject,
     listFunctions: async (root: string, scope?: unknown): Promise<FunctionList> => {
-      loadProject(root)
-      return listFunctions(root, await mapOf(root), scope)
+      const { architecture } = loadProject(root)
+      return listFunctions(root, await mapOf(root), scope, architecture)
     },
     recency: async (root: string): Promise<Recency> => {
       loadProject(root)
@@ -1017,6 +1020,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       const blamed = await blameFiles(root, map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
       return recencyOf(map, loadProject(root).architecture, blamed)
     },
+    churn: async (root: string, days?: unknown) => churnOf(root, await mapOf(loadProject(root).root), days),
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },

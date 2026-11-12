@@ -378,15 +378,9 @@ export function installMock() {
     async history(root) {
       return historyByRoot[root] ?? []
     },
-    async verdicts() {
-      return []
-    },
+    verdicts: async () => [],
     async edits(root) {
-      return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({
-        id,
-        status,
-        title: architecture.title
-      }))
+      return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({ id, status, title: architecture.title }))
     },
     async edit(root, id) {
       return findEdit(root, id)
@@ -467,9 +461,13 @@ export function installMock() {
     async ownership(root) {
       return ownerships[root] ?? null
     },
+    async layers() {
+      return { contract: false, rows: [], cells: [] }
+    },
     async recency() {
       return { functions: {}, components: {} }
     },
+    churn: async () => ({ days: 90, files: {}, functions: {} }),
     async rescan(root) {
       const scanned = mockCodeMap(root)
       codeMaps[root] = scanned
@@ -532,7 +530,7 @@ export function installMock() {
       const unreached = rows.flatMap((_, at) => (placed.has(at) ? [] : [at]))
       const links = calls.map((out) => out.flatMap((call) => index.get(`${call.file}:${call.fn}`) ?? []))
       const also = rows.map((row, at) => Math.max(0, row.fanIn - (starts.includes(at) || unreached.includes(at) ? 0 : 1)))
-      return { rows, calls: links, tree: { starts, groups: [], unreached, children, also }, scope: '', folders: [] }
+      return { rows, calls: links, tree: { starts, groups: [], unreached, children, also }, scope: '', folders: [], owners: {} }
     },
     onTouch() {},
     async ptySpawn() {

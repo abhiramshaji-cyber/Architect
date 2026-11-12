@@ -68,12 +68,7 @@ export type AgentsReport = { written: string[]; unchanged: string[]; removed: st
 
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
-export type SourceWindow = {
-  from: number
-  lines: string[]
-  total: number
-  error: SourceError | null
-}
+export type SourceWindow = { from: number; lines: string[]; total: number; error: SourceError | null }
 
 export type SourceFile = { text: string; hash: string; error: SourceError | null }
 
@@ -93,6 +88,12 @@ export type Ownership = {
   multi: { path: string; owners: string[] }[]
   dead: { component: string; pattern: string }[]
 }
+
+export type LayerStatus = 'allowed' | 'forbidden' | 'undrawn' | 'stale' | 'free'
+export type LayerCall = { file: string; line: number; fn: string; target: string; targetLine: number; targetFn: string }
+export type LayerCell = { from: string; to: string; status: LayerStatus; verdict?: Verdict; calls: LayerCall[] }
+export type LayerRow = { id: string; level: number; block: number }
+export type Layers = { contract: boolean; rows: LayerRow[]; cells: LayerCell[] }
 
 export const proposalSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
@@ -151,10 +152,7 @@ export const verdictRecordSchema = z.object({
 
 export type VerdictRecord = z.infer<typeof verdictRecordSchema>
 
-export type Decision =
-  | { status: 'approved' }
-  | { status: 'rejected'; reason: string }
-  | { status: 'pending'; id: string }
+export type Decision = { status: 'approved' } | { status: 'rejected'; reason: string } | { status: 'pending'; id: string }
 
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -237,11 +235,7 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('write_agents'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('where'), cwd: z.string(), calls: z.array(z.string()), callers: z.array(z.string()), name: z.string().optional(), file: z.string().optional() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
-  z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string() }).extend({
-    session: z.string().optional(),
-    file: z.string().optional(),
-    digest: z.string().optional(),
-  }),
+  z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string(), session: z.string().optional(), file: z.string().optional(), digest: z.string().optional() }),
 ])
 
 export type Request = z.infer<typeof requestSchema>
@@ -549,7 +543,7 @@ export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unreached: 
 
 export type ScopeFolder = { path: string; functions: number }
 
-export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[] }
+export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; owners: Record<string, string> }
 
 export type CommitDraft = { title: string; description: string }
 
@@ -588,7 +582,9 @@ export type ArchitectApi = {
   getCodeMap(root: string): Promise<CodeMap | null>
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
+  layers(root: string): Promise<Layers>
   recency(root: string): Promise<Recency>
+  churn(root: string, days?: number): Promise<import('./recency').Churn>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
   openSource(root: string, file: string): Promise<SourceFile>
   writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>
