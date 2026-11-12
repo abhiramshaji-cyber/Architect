@@ -60,20 +60,23 @@ export function importsOf(root: string, test: string, types = false): Loaded[] |
   return found
 }
 
-export function aliasesOf(root: string, file: string): Map<string, string> {
-  const aliases = new Map<string, string>()
+type Exported = { exported: string; original: string; local: boolean }
+
+function exportsOf(root: string, file: string): Exported[] {
   let text: string
   try {
     text = fs.readFileSync(path.join(root, file), 'utf8')
   } catch {
-    return aliases
+    return []
   }
-  for (const statement of sourceOf(file, text).statements) {
-    if (!ts.isExportDeclaration(statement) || !statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue
-    for (const element of statement.exportClause.elements) if (element.propertyName) aliases.set(element.name.text, element.propertyName.text)
-  }
-  return aliases
+  return sourceOf(file, text).statements.flatMap((statement) =>
+    ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)
+      ? statement.exportClause.elements.map((element) => ({ exported: element.name.text, original: (element.propertyName ?? element.name).text, local: statement.moduleSpecifier === undefined }))
+      : [],
+  )
 }
+
+export const aliasesOf = (root: string, file: string) => new Map(exportsOf(root, file).filter((one) => one.exported !== one.original).map((one) => [one.exported, one.original]))
 
 function reachedOf(fns: Fn[], reach: Reach, node: number): number {
   let current = node
@@ -166,10 +169,10 @@ export function importersOf(root: string, file: string, names: string[] | 'all',
       const hits = ways.length === 0 ? [{ forwards: false }] : ways.filter((way) => wanted === 'all' || way.names === null || way.names.some((name) => wanted.includes(name)))
       if (hits.length === 0) continue
       found.add(entry.path)
-      if (!hits.some((hit) => hit.forwards) || seen.has(entry.path)) continue
+      const passed = exportsOf(root, entry.path).filter((one) => wanted === 'all' || wanted.includes(one.original))
+      if ((!hits.some((hit) => hit.forwards) && !passed.some((one) => one.local)) || seen.has(entry.path)) continue
       seen.add(entry.path)
-      const aliases = [...aliasesOf(root, entry.path)].filter(([, original]) => wanted === 'all' || wanted.includes(original)).map(([alias]) => alias)
-      queue.push({ target: entry.path, wanted: wanted === 'all' ? 'all' : [...wanted, ...aliases] })
+      queue.push({ target: entry.path, wanted: wanted === 'all' ? 'all' : [...new Set([...wanted, ...passed.map((one) => one.exported)])] })
     }
   }
   return found

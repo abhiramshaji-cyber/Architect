@@ -288,7 +288,7 @@ describe('cases the reviews found', () => {
   it('keeps a function starting on the closing line of another apart from it', () => {
     const before = 'const a = () => {\n  return 1\n}; const b = () => 2\n'
     const { changes } = changesOf('x.ts', before, before.replace('=> 2', '=> 3'))
-    expect(changes.map((change) => `${change.key} ${change.change} ${change.shares.join(',')}`)).toEqual(['/a#0 changed b', '/b#0 changed a'])
+    expect(changes.map((change) => `${change.key} ${change.change} ${change.shares.join(',')}`)).toEqual(['/b#0 changed a'])
   })
 
 })
@@ -355,7 +355,7 @@ describe('renamed re-exports and test callbacks', () => {
     expect(fresh.notes).toEqual([])
   })
 
-  it('counts an edit inside a top level callback, and credits a shared line to the outer function too', async () => {
+  it('counts an edit inside a top level callback, and credits an edit on a shared line to the function that holds that code', async () => {
     const { root, map, architecture } = await project({
       'src/main.ts': "import { work } from './work'\n\nregister('go', () => {\n  return work(1)\n})\n",
       'src/work.ts': 'export function work(n: number) {\n  return n\n}\n',
@@ -367,9 +367,30 @@ describe('renamed re-exports and test callbacks', () => {
     expect(callback.callers.listed.map((caller) => caller.name)).toEqual(['boot'])
     expect(callback.notes[0]).toMatch(/^code outside every function in src\/main.ts changed \(code that runs when the file loads, such as a handler it registers\)/)
     const shared = impactOf(edit(root, 'src/outer.ts', 'compute(', 'Math.max('), root, architecture, map)
-    expect(shared.touched.listed.map((touch) => touch.name)).toEqual(['outer', 'go'])
+    expect(shared.touched.listed.map((touch) => touch.name)).toEqual(['outer'])
     expect(shared.callers.listed.map((caller) => caller.name)).toEqual(['user'])
     expect(changesOf('x.ts', "function q() {\n  return 'a'\n}\n", 'function q() {\n  return "a"\n}\n').changes).toEqual([])
+  })
+
+  it('reads templates, regular expressions and JSX by their syntax, so an edit after them still counts', () => {
+    const cases: [string, string, string, string][] = [
+      ['x.ts', 'function f(dir: string) {\n  const pattern = `${dir}/*.ts`\n  const limit = 10\n  return [pattern, limit]\n}\n', 'limit = 10', 'limit = 99'],
+      ['x.ts', 'function f(proto: string, host: string) {\n  return `${proto}://${host}/v1`\n}\n', '/v1', '/v2'],
+      ['x.ts', 'function f(host: string) {\n  return `${host}//api/v1`\n}\n', 'v1', 'v2'],
+      ['x.tsx', 'function F() {\n  return <p>see https://old.example.com</p>\n}\n', 'old', 'new'],
+      ['x.ts', 'function f(s: string) {\n  const r = /a\\/*b/\n  return s.replace(r, "1")\n}\n', '"1"', '"2"'],
+    ]
+    for (const [file, before, from, to] of cases) expect(changesOf(file, before, before.replace(from, to)).changes.map((change) => change.name)).toEqual([file.endsWith('x') ? 'F' : 'f'])
+  })
+
+  it('follows a barrel that imports a value and exports it again', async () => {
+    const { root, map, architecture } = await project({
+      'src/a.ts': 'export const LIMIT = 3\n',
+      'src/index.ts': "import { LIMIT } from './a'\nexport { LIMIT as CAP }\n",
+      'src/e.ts': "import { CAP } from './index'\n\nexport function useCap() {\n  return CAP\n}\n",
+    })
+    const impact = impactOf(edit(root, 'src/a.ts', 'LIMIT = 3', 'LIMIT = 4'), root, architecture, map)
+    expect(impact.callers.listed.map((caller) => caller.name)).toEqual(['useCap'])
   })
 
   it('caps the notes and names a few functions per note', async () => {

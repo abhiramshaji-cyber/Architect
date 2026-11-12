@@ -25,17 +25,34 @@ export function keysOf(fns: Span[]): string[] {
   })
 }
 
-function bodies(source: string, file: string): Map<string, Body> {
-  const lines = source.split(/\r?\n/)
-  const fns = functionsIn(source, file)
+const lineOf = (node: ts.Node, source: ts.SourceFile) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+
+const bodyOf = (node: ts.Node) => (ts.isFunctionLike(node) ? (node as { body?: ts.Node }).body : undefined)
+
+function nodesByLine(source: ts.SourceFile): Map<number, ts.Node[]> {
+  const found = new Map<number, ts.Node[]>()
+  const visit = (node: ts.Node): void => {
+    if (bodyOf(node)) found.set(lineOf(node, source), [...(found.get(lineOf(node, source)) ?? []), node])
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return found
+}
+
+function bodies(text: string, file: string): Map<string, Body> {
+  const source = sourceOf(file, text)
+  const fns = functionsIn(text, file)
   const keys = keysOf(fns)
+  const nodes = nodesByLine(source)
+  const named = new Set(fns.map((fn) => fn.line))
   return new Map(
     fns.map((fn, i) => {
       const key = keys[i] ?? ''
-      const inner = fns.filter((_, j) => (keys[j] ?? '').startsWith(`${key}/`))
-      const own = (line: number) => !inner.some((child) => child.line < line && line < child.endLine)
-      const text = tokens(lines.slice(fn.line - 1, fn.endLine).filter((_, at) => own(fn.line + at)).join('\n'))
-      return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text, words: new Set(text.split(' ')) }]
+      const own = nodes.get(fn.line) ?? []
+      const inner = (kid: ts.Node, parent: ts.Node) => kid === bodyOf(parent) && !own.includes(parent) && named.has(lineOf(parent, source))
+      const words = new Set<string>()
+      const shaped = own.length > 0 ? own.map((node) => shape(node, source, inner, words)).join(' | ') : text.split(/\r?\n/).slice(fn.line - 1, fn.endLine).join('\n')
+      return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text: shaped, words }]
     }),
   )
 }
@@ -45,19 +62,15 @@ function sharing(all: Map<string, Body>, body: Body): string[] {
   return [...all.values()].filter((other) => other !== body && !related(other) && other.line <= body.endLine && body.line <= other.endLine).map((other) => other.name)
 }
 
-function tokens(text: string): string {
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text)
-  const found: string[] = []
-  for (let kind = scanner.scan(); kind !== ts.SyntaxKind.EndOfFileToken; kind = scanner.scan()) found.push(kind === ts.SyntaxKind.StringLiteral ? JSON.stringify(scanner.getTokenValue()) : scanner.getTokenText())
-  return found.join(' ')
-}
+const isReference = (node: ts.Identifier) => !((ts.isPropertyAccessExpression(node.parent) || ts.isPropertyAssignment(node.parent) || ts.isPropertyDeclaration(node.parent) || ts.isMethodDeclaration(node.parent)) && node.parent.name === node)
 
-function shape(node: ts.Node, source: ts.SourceFile, named: Set<number>): string {
-  const scanned = ts.isFunctionLike(node) && named.has(source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1)
-  const body = scanned ? (node as { body?: ts.Node }).body : undefined
+function shape(node: ts.Node, source: ts.SourceFile, skip: (kid: ts.Node, parent: ts.Node) => boolean, words?: Set<string>): string {
   const kids = node.getChildren(source)
-  if (kids.length === 0) return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? JSON.stringify(node.text) : node.getText(source)
-  return kids.filter((kid) => kid !== body).map((kid) => shape(kid, source, named)).join(' ')
+  if (kids.length === 0) {
+    if (words && ts.isIdentifier(node) && isReference(node)) words.add(node.text)
+    return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? JSON.stringify(node.text) : node.getText(source)
+  }
+  return kids.filter((kid) => !skip(kid, node)).map((kid) => shape(kid, source, skip, words)).join(' ')
 }
 
 const isFunction = (node: ts.Node | undefined) => node !== undefined && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
@@ -92,7 +105,8 @@ function declared(statement: ts.Statement): Declared {
 
 function topLevel(text: string, file: string): { declared: Map<string, string>; local: Map<string, string>; module: string[]; code: string[] } {
   const source = sourceOf(file, text)
-  const named = new Set(functionsIn(text, file).map((fn) => fn.line))
+  const lines = new Set(functionsIn(text, file).map((fn) => fn.line))
+  const named = (kid: ts.Node, parent: ts.Node) => kid === bodyOf(parent) && lines.has(lineOf(parent, source))
   const [declaredNames, local, module, code] = [new Map<string, string>(), new Map<string, string>(), [] as string[], [] as string[]]
   for (const statement of source.statements) {
     const found = declared(statement)
