@@ -15,7 +15,6 @@ import {
   type Edit,
   type EditSummary,
   type FunctionList,
-  type Layers,
   type Recency,
   type HistoryEntry,
   historyEntrySchema,
@@ -51,6 +50,7 @@ import { listFunctions } from './functions'
 import { layersOf } from './layers'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
+import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
@@ -1001,7 +1001,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       const scoped = architecture.scope ? files.filter((file) => file.startsWith(`${architecture.scope}/`)) : files
       return ownership(scoped, architecture.components)
     },
-    layers: async (root: string): Promise<Layers> => layersOf(loadProject(root).architecture, await mapOf(root)),
+    layers: async (root: string) => layersOf(loadProject(root).architecture, await mapOf(root)),
     readSource,
     openSource,
     writeSource,
@@ -1017,6 +1017,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       const blamed = await blameFiles(root, map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
       return recencyOf(map, loadProject(root).architecture, blamed)
     },
+    churn: async (root: string, days?: unknown) => churnOf(root, await mapOf(loadProject(root).root), days),
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },

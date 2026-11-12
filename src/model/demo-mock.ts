@@ -378,9 +378,7 @@ export function installMock() {
     async history(root) {
       return historyByRoot[root] ?? []
     },
-    async verdicts() {
-      return []
-    },
+    verdicts: async () => [],
     async edits(root) {
       return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({ id, status, title: architecture.title }))
     },
@@ -469,6 +467,7 @@ export function installMock() {
     async recency() {
       return { functions: {}, components: {} }
     },
+    churn: async () => ({ days: 90, files: {}, functions: {} }),
     async rescan(root) {
       const scanned = mockCodeMap(root)
       codeMaps[root] = scanned
