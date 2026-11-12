@@ -545,7 +545,7 @@ export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unreached: 
 
 export type ScopeFolder = { path: string; functions: number }
 
-export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[] }
+export type FunctionList = { rows: FunctionRow[]; calls: number[][]; tree: FunctionTree; scope: string; folders: ScopeFolder[]; owners: Record<string, string> }
 
 export type CommitDraft = { title: string; description: string }
 
