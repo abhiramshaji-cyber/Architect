@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FunctionRow } from '../../../shared/types'
-import { keyOf, placeOf, resolve, walk } from './history'
+import { keyOf, placeOf, resolve, settled, walk } from './history'
 
 const row = (name: string, file = 'a.ts', line = 1): FunctionRow => ({
   file,
@@ -61,5 +61,29 @@ describe('resolve', () => {
     expect(resolve(rows, keyOf(row('run', 'a.ts', 5)))).toBe(-1)
     expect(resolve(rows, keyOf(row('gone')))).toBe(-1)
     expect(resolve([], 'junk')).toBe(-1)
+  })
+})
+
+describe('settled', () => {
+  const rows = [row('run'), row('load', 'b.ts', 4)]
+  const alone = (now: string) => ({ back: [], now, forward: [] })
+
+  it('drops a lone remembered function the whole project no longer has', () => {
+    expect(settled(alone(keyOf(row('gone'))), rows, '')).toBeNull()
+  })
+
+  it('keeps a function that still resolves, even after its line moved', () => {
+    const found = alone(keyOf(row('run')))
+    expect(settled(found, rows, '')).toBe(found)
+    const moved = alone(keyOf(row('load', 'b.ts', 40)))
+    expect(settled(moved, rows, '')).toBe(moved)
+  })
+
+  it('keeps a trail with history, a narrowed scope, or no trail at all', () => {
+    const gone = keyOf(row('gone'))
+    const walked = { back: [keyOf(row('run'))], now: gone, forward: [] }
+    expect(settled(walked, rows, '')).toBe(walked)
+    expect(settled(alone(gone), rows, 'src')).toEqual(alone(gone))
+    expect(settled(null, rows, '')).toBeNull()
   })
 })

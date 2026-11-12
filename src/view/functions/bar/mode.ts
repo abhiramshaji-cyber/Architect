@@ -6,7 +6,7 @@ export const MODES: { key: Mode; label: string }[] = [
   { key: 'focus', label: 'Focus' },
 ]
 
-const slotOf = (root: string) => `architect.functions.mode:${root}`
+const slotOf = (root: string, part = 'mode') => `architect.functions.${part}:${root}`
 
 export function storedMode(root: string | null): Mode {
   try {
@@ -20,5 +20,19 @@ export function storedMode(root: string | null): Mode {
 export function storeMode(root: string | null, mode: Mode) {
   try {
     if (root) localStorage.setItem(slotOf(root), mode)
+  } catch {}
+}
+
+export function storedFocus(root: string | null): string | null {
+  try {
+    return root ? localStorage.getItem(slotOf(root, 'focus')) : null
+  } catch {
+    return null
+  }
+}
+
+export function storeFocus(root: string | null, key: string) {
+  try {
+    if (root) localStorage.setItem(slotOf(root, 'focus'), key)
   } catch {}
 }

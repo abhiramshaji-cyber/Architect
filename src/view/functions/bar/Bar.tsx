@@ -27,7 +27,7 @@ type BarProps = {
   onQuery: (query: string) => void
 }
 
-function Choice<K extends string>({ label, keys, value, onPick }: { label: string; keys: { key: K; label: string }[]; value: K; onPick: (key: K) => void }) {
+export function Choice<K extends string>({ label, keys, value, onPick }: { label: string; keys: { key: K; label: string }[]; value: K; onPick: (key: K) => void }) {
   return (
     <div className="fn-sort" role="group" aria-label={label}>
       {keys.map(({ key, label: text }) => (

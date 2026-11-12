@@ -1060,7 +1060,7 @@ describe("code map migration", () => {
     fs.writeFileSync(
       path.join(tmpRoot, ".architect", "map.json"),
       JSON.stringify({
-        version: 8,
+        version: 9,
         map: {
           root: tmpRoot,
           scannedAt: 1,

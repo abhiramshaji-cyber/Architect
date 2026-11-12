@@ -523,7 +523,7 @@ async function walk(root: string, relative: string, { into, parsed, counter, dig
     const file = parseFile(source, child)
     parsed.set(child, file)
     digests.set(child, createHash('sha256').update(source).digest('hex'))
-    files.push({ path: child, functions: file.functions })
+    files.push({ path: child, lines: source.split('\n').length - (source === '' || source.endsWith('\n') ? 1 : 0), functions: file.functions })
   }
 
   folders.sort((a, b) => a.localeCompare(b))
