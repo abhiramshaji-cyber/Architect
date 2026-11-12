@@ -587,7 +587,7 @@ export type ArchitectApi = {
   gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
   gitDistance(root: string): Promise<GitResult<BaseDistance>>
-  gitCommits(root: string, since: number): Promise<GitResult<Commit[]>>
+  gitCommits(root: string, since: number, limit?: number): Promise<GitResult<Commit[]>>
   gitChanges(root: string): Promise<GitResult<DiffChanges>>
   gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
   gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
