@@ -492,6 +492,7 @@ export type FunctionRow = FunctionFacts & {
   doc?: string
   outsideCallers?: number
   outsideCallees?: number
+  recursive?: true
 }
 
 export type FunctionTree = { starts: number[]; unreached: number[]; children: number[][]; also: number[] }

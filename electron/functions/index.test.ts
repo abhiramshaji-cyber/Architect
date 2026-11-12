@@ -47,6 +47,17 @@ describe('functionsOf', () => {
     expect(rows[1]).not.toHaveProperty('doc')
   })
 
+  it('marks a function that calls itself and keeps the self call out of the counts', () => {
+    const map = mapOf([
+      { path: 'a.ts', functions: [fn('walk', [{ file: 'a.ts', fn: 0 }, { file: 'b.ts', fn: 0 }]), fn('flat', [{ file: 'b.ts', fn: 0 }])] },
+      { path: 'b.ts', functions: [fn('walk', [{ file: 'a.ts', fn: 0 }])] },
+    ])
+    const { rows, calls } = functionsOf(map, new Set())
+    expect(rows.map((row) => row.recursive)).toEqual([true, undefined, undefined])
+    expect(rows[0]).toMatchObject({ fanIn: 1, fanOut: 1 })
+    expect(calls).toEqual([[2], [2], [0]])
+  })
+
   it('lists the calls between rows by row index', () => {
     const map = mapOf([
       { path: 'a.ts', functions: [fn('a', [{ file: 'b.ts', fn: 0 }, { file: 'b.ts', fn: 1 }]), fn('c')] },

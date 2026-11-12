@@ -16,6 +16,7 @@ type TreeProps = {
   project: string
   onOpen: (row: FunctionRow) => void
   onRelated: (at: number, way: Way) => void
+  onFocus: (at: number) => void
 }
 
 const nodeTypes = { card: Card }
@@ -71,7 +72,7 @@ function Keep({
   return null
 }
 
-export default function FunctionTree({ list, query, project, onOpen, onRelated }: TreeProps) {
+export default function FunctionTree({ list, query, project, onOpen, onRelated, onFocus }: TreeProps) {
   const { rows, tree } = list
   const outline = useMemo(() => outlineOf(tree), [tree])
   const [overrides, setOverrides] = useState(() => new Map<string, boolean>())
@@ -143,10 +144,11 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated }
             onToggle,
             onOpen,
             onRelated,
+            onFocus,
           },
         }
       }),
-    [shown, spots, rows, tree, outline, overrides, forced, hits, focus, project, onToggle, onOpen, onRelated],
+    [shown, spots, rows, tree, outline, overrides, forced, hits, focus, project, onToggle, onOpen, onRelated, onFocus],
   )
 
   const edges = useMemo<Edge[]>(

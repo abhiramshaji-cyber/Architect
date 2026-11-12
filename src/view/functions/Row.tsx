@@ -16,9 +16,10 @@ type RowProps = {
   onOpen: (row: FunctionRow) => void
   onScope: (scope: string) => void
   onRelated: (at: number, way: Way) => void
+  onFocus: (at: number) => void
 }
 
-export default memo(function Row({ row, at, change, step, onOpen, onScope, onRelated }: RowProps) {
+export default memo(function Row({ row, at, change, step, onOpen, onScope, onRelated, onFocus }: RowProps) {
   const folder = folderOf(row.file)
   const hint = describeChange(change, Date.now())
   return (
@@ -66,7 +67,7 @@ export default memo(function Row({ row, at, change, step, onOpen, onScope, onRel
             </span>
           )}
           <span className="fn-foot">
-            <Facts row={row} at={at} onRelated={onRelated} />
+            <Facts row={row} at={at} onRelated={onRelated} onFocus={onFocus} />
             {row.exported && <span className="fn-badge">exported</span>}
           </span>
         </span>
