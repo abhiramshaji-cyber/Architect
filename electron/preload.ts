@@ -43,6 +43,7 @@ const architect: ArchitectApi = {
   flow: (root, ask) => invoke('architect:flow', root, ask),
   recency: (root) => invoke('architect:recency', root),
   churn: (root, days) => invoke('architect:churn', root, days),
+  style: (root) => invoke('architect:style', root),
   readSource: (root, file, from, length) =>
     invoke('architect:read-source', root, file, from, length),
   openSource: (root, file) => invoke('architect:open-source', root, file),

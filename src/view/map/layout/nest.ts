@@ -72,7 +72,9 @@ function branch(
 
 function settle(node: MapNode): number {
   if (node.children.length > 0) {
-    node.children = node.children.filter((child) => settle(child) > 0)
+    node.children = node.children.filter(
+      (child) => settle(child) > 0 || (child.kind !== 'function' && child.kind !== 'rest'),
+    )
     node.children.sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label))
     node.weight = node.children.reduce((sum, child) => sum + child.weight, 0)
   }

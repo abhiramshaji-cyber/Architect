@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Churn } from '../../../shared/recency'
-import type { CodeMap, FunctionList } from '../../../shared/types'
+import type { CodeMap, FunctionList, StyleFile } from '../../../shared/types'
 import { useProject } from '../../model/store'
 import { type MapNode, nest } from './layout/nest'
 import { gather } from './modes/gather'
@@ -11,6 +11,7 @@ export type MapData = {
   facts: Facts | null
   error: string | null
   churnError: string | null
+  styleError: string | null
   grouped: 'components' | 'folders'
 }
 
@@ -44,12 +45,14 @@ function useAsked<T>(
 const askChurn = (root: string): Promise<Churn> => window.architect.churn(root)
 const askList = (root: string): Promise<FunctionList> => window.architect.listFunctions(root, '')
 const askMap = (root: string): Promise<CodeMap | null> => window.architect.getCodeMap(root)
+const askStyle = (root: string): Promise<StyleFile[]> => window.architect.style(root)
 
 export function useMap(): MapData {
   const { currentRoot, codeMap, architecture, history } = useProject()
   const asked = useAsked(currentRoot, codeMap !== undefined, askList, codeMap, architecture)
   const list = asked.value
   const churn = useAsked(currentRoot, codeMap !== undefined, askChurn, codeMap)
+  const style = useAsked(currentRoot, list !== null, askStyle, list)
   const scanned = useAsked(currentRoot, list !== null && codeMap === null, askMap, list)
   const project = currentRoot?.split(/[\\/]/).filter(Boolean).pop() ?? ''
   const map = codeMap ?? scanned.value
@@ -59,7 +62,10 @@ export function useMap(): MapData {
     () => (list && map ? nest(list.rows, files, architecture ? list.owners : null, project) : null),
     [list, map, files, architecture, project],
   )
-  const facts = useMemo(() => (list ? gather(list, churn.value, history) : null), [list, churn.value, history])
+  const facts = useMemo(
+    () => (list ? gather(list, churn.value, history, style.value) : null),
+    [list, churn.value, history, style.value],
+  )
 
   return {
     tree,
@@ -69,6 +75,7 @@ export function useMap(): MapData {
       scanned.error ??
       (scanned.answered && !map ? 'The scan has no stored code map for this project.' : null),
     churnError: churn.error,
+    styleError: style.error,
     grouped: architecture ? 'components' : 'folders',
   }
 }

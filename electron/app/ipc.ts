@@ -70,6 +70,7 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>) {
   handle('architect:flow', (root: string, ask: unknown) => daemon.flow(root, ask))
   handle('architect:recency', (root: string) => daemon.recency(root))
   handle('architect:churn', (root: string, days?: unknown) => daemon.churn(root, days))
+  handle('architect:style', (root: string) => daemon.style(root))
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
   )

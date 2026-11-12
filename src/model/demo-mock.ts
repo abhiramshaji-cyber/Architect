@@ -467,6 +467,7 @@ export function installMock() {
       return { functions: {}, components: {} }
     },
     churn: async () => ({ days: 90, files: {}, functions: {} }),
+    style: async () => [],
     async rescan(root) {
       const scanned = mockCodeMap(root)
       codeMaps[root] = scanned

@@ -41,6 +41,7 @@ const facts = (over: Partial<Facts> = {}): Facts => ({
   churn: { days: 90, files: {}, functions: { 'a/one.ts:1:top': 7, 'b/two.ts:1:lone': 1 } },
   sessions: new Map([['b/two.ts', [{ session: 's', at: 1 }]]]),
   recorded: 1,
+  style: null,
   ...over,
 })
 
@@ -170,13 +171,18 @@ describe('churnTop', () => {
 describe('gather', () => {
   it('collects the rows, the whole unreached bucket and the session files', () => {
     const tree: FunctionTree = { starts: [0], groups: [], unreached: [2], children: [[1], [], []], also: [] }
-    const found = gather({ rows, calls: [], tree, scope: '', folders: [], owners: {} }, null, [
-      entry({ session: 's', changed: ['codefile:b/two.ts'] }),
-    ])
+    const found = gather(
+      { rows, calls: [], tree, scope: '', folders: [], owners: {} },
+      null,
+      [entry({ session: 's', changed: ['codefile:b/two.ts'] })],
+      [{ path: 'b/two.ts', failing: [] }],
+    )
     expect([...found.unreached]).toEqual([2])
     expect([...found.sessions.keys()]).toEqual(['b/two.ts'])
     expect(found.churn).toBeNull()
     expect(found.recorded).toBe(1)
+    expect(found.style?.get('b/two.ts')).toEqual([])
+    expect(gather({ rows, calls: [], tree, scope: '', folders: [], owners: {} }, null, [], null).style).toBeNull()
   })
 })
 

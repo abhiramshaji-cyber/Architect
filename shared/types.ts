@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ruleViolationSchema, type RuleEntry } from './rules/rules'
+import { ruleViolationSchema, type RuleEntry, type StyleFile } from './rules/rules'
 import type { SplitSuggestion } from './rules/split'
 
 export * from './rules/rules'
@@ -563,6 +563,7 @@ export type ArchitectApi = {
   flow(root: string, ask: FlowAsk): Promise<Flow>
   recency(root: string): Promise<Recency>
   churn(root: string, days?: number): Promise<import('./recency').Churn>
+  style(root: string): Promise<StyleFile[]>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
   openSource(root: string, file: string): Promise<SourceFile>
   writeSource(root: string, file: string, text: string, baseline: string): Promise<WriteResult>
