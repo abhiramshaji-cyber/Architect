@@ -92,4 +92,13 @@ describe('writeAgents', () => {
     })
     expect(fs.readdirSync(away)).toEqual([])
   })
+
+  it('never writes through an AGENTS.md that is a link, even one whose target is missing', () => {
+    const root = project(['src/api'])
+    const away = project([])
+    fs.symlinkSync(path.join(away, 'escaped.md'), path.join(root, 'src', 'api', 'AGENTS.md'))
+
+    expect(writeAgents(root, arch(['api']))).toMatchObject({ written: [], kept: ['src/api/AGENTS.md'] })
+    expect(fs.existsSync(path.join(away, 'escaped.md'))).toBe(false)
+  })
 })

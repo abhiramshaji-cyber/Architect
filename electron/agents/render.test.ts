@@ -14,8 +14,8 @@ describe('renderAgents placement', () => {
   it('places each component at the folder its globs share when it owns that whole folder', () => {
     const arch = architecture([
       component('api', ['src/api/**']),
-      component('db', ['src/db/**/*.ts', 'src/db/migrate/*.sql']),
-      component('ui', ['web/**', '!web/legacy/**']),
+      component('db', ['src/db/**', 'src/db/migrate/*.sql', '!other/**']),
+      component('ui', ['web/**']),
       component('scoped', ['packages/@acme/ui/**']),
     ])
     expect(folders(arch)).toEqual({ api: 'src/api', db: 'src/db', ui: 'web', scoped: 'packages/@acme/ui' })
@@ -33,7 +33,9 @@ describe('renderAgents placement', () => {
       component('built', ['dist/**']),
       component('hidden', ['.github/**']),
       component('one', ['shared/**']),
-      component('two', ['shared/**/*.ts']),
+      component('two', ['shared/**']),
+      component('typed', ['lib/**/*.ts']),
+      component('carved', ['site/**', '!site/legacy/**']),
     ])
     expect(renderAgents(arch)).toEqual({
       placed: [],
@@ -49,6 +51,8 @@ describe('renderAgents placement', () => {
         { component: 'hidden', reason: '.github is a folder Architect does not scan' },
         { component: 'one', reason: 'it shares shared with two' },
         { component: 'two', reason: 'it shares shared with one' },
+        { component: 'typed', reason: 'it owns files in lib but not the whole folder' },
+        { component: 'carved', reason: 'it owns files in site but not the whole folder' },
       ],
     })
   })

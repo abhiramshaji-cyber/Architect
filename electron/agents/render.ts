@@ -28,7 +28,9 @@ function placeOf(component: Component): { folder: string } | { reason: string } 
   const folder = shared.join('/')
   if (folder === '') return { reason: 'its globs share no folder below the project root' }
   if (shared.some((part) => IGNORED_DIRS.has(part) || part.startsWith('.'))) return { reason: `${folder} is a folder Architect does not scan` }
-  if (!bases.some((base) => base.dirs.join('/') === folder && /^\*\*(\/|$)/.test(base.rest))) return { reason: `it owns files in ${folder} but not the whole folder` }
+  const whole = bases.some((base) => base.dirs.join('/') === folder && base.rest === '**')
+  const carved = component.owns.some((glob) => glob.startsWith('!') && `${globRoot(glob.slice(1)).dirs.join('/')}/`.startsWith(`${folder}/`))
+  if (!whole || carved) return { reason: `it owns files in ${folder} but not the whole folder` }
   return { folder }
 }
 

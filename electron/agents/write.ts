@@ -56,6 +56,7 @@ export function writeAgents(root: string, architecture: Architecture): AgentsRep
     const existing = readText(target)
     if (!fs.existsSync(path.join(root, folder))) report.unplaced.push({ component, reason: `${folder} does not exist` })
     else if (!inside(root, folder)) report.unplaced.push({ component, reason: `${folder} leads outside the project` })
+    else if (fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) report.kept.push(relative)
     else if (existing === text) report.unchanged.push(relative)
     else if (fs.existsSync(target) && !existing?.startsWith(MARKER)) report.kept.push(relative)
     else {
