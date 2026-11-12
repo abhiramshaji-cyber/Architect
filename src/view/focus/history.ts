@@ -2,7 +2,7 @@ import type { FunctionRow } from '../../../shared/types'
 
 export type Trail = { back: string[]; now: string; forward: string[] }
 
-export function keyOf(row: FunctionRow): string {
+export function keyOf(row: Pick<FunctionRow, 'file' | 'line' | 'name'>): string {
   return `${row.file}\0${row.line}\0${row.name}`
 }
 

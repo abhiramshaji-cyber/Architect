@@ -9,13 +9,18 @@ import { keyOf, walk, type Trail } from '../focus/history'
 import { useRecency } from '../recency/useRecency'
 import type { ViewProps } from '../../shell/views'
 import Bar from './bar/Bar'
-import { storeMode, storedMode, type Mode } from './bar/mode'
+import { storeFocus, storeMode, storedFocus, storedMode, type Mode } from './bar/mode'
 import Row from './Row'
 import { arrange, changeOf, type SortKey } from './order'
 import { storeScope, storedScope } from './scope/pick'
 import FunctionTree from './tree/FunctionTree'
 import { useFunctions } from './useFunctions'
 import Related, { useRelated } from './facts/Related'
+
+function storedTrail(root: string | null): Trail | null {
+  const now = storedFocus(root)
+  return now ? walk(null, { to: now }) : null
+}
 
 export default function FunctionsView({ show }: ViewProps) {
   const { currentRoot, codeMap } = useProject()
@@ -24,7 +29,7 @@ export default function FunctionsView({ show }: ViewProps) {
   const rows = list?.rows ?? null
   const shownScope = list?.scope ?? scope
   const [mode, setMode] = useState<Mode>(() => storedMode(currentRoot))
-  const [trail, setTrail] = useState<Trail | null>(null)
+  const [trail, setTrail] = useState(() => storedTrail(currentRoot))
   const [sort, setSort] = useState<SortKey>('importance')
   const [query, setQuery] = useState('')
   const needle = useDeferredValue(query)
@@ -39,7 +44,7 @@ export default function FunctionsView({ show }: ViewProps) {
   useEffect(() => {
     setMode(storedMode(currentRoot))
     setScope(storedScope(currentRoot))
-    setTrail(null)
+    setTrail(storedTrail(currentRoot))
   }, [currentRoot])
 
   const pickScope = useCallback(
@@ -65,9 +70,10 @@ export default function FunctionsView({ show }: ViewProps) {
   const onTrail = useCallback(
     (next: Trail) => {
       setTrail(next)
+      storeFocus(currentRoot, next.now)
       related.close()
     },
-    [related.close],
+    [currentRoot, related.close],
   )
 
   const onFocus = useCallback(
@@ -75,10 +81,11 @@ export default function FunctionsView({ show }: ViewProps) {
       const row = rows?.[at]
       if (!row) return
       setTrail((prev) => walk(prev, { to: keyOf(row) }))
+      storeFocus(currentRoot, keyOf(row))
       related.close()
       pickMode('focus')
     },
-    [rows, related.close, pickMode],
+    [currentRoot, rows, related.close, pickMode],
   )
 
   const placed = useMemo(
