@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Architecture, CodeMap, FunctionEntry } from '../../shared/types'
-import { codeDiff, contractDiff, isEmpty } from './history'
+import type { Architecture, CodeMap, FunctionEntry, HistoryEntry } from '../../shared/types'
+import { attribute, codeDiff, contractDiff, isEmpty, reclaim } from './history'
 
 const architecture = (components: [string, string][], edges: [string, string][] = []): Architecture => ({
   title: 't',
@@ -83,5 +83,191 @@ describe('codeDiff', () => {
     const before = map({ 'src/x.ts': ['one'], 'srcs/y.ts': ['two'] })
     const after = map({ 'src/x.ts': ['one', 'two'], 'srcs/y.ts': ['two'] })
     expect(codeDiff(before, after).changed).toEqual(['codefile:src/x.ts', 'folder:src'])
+  })
+})
+
+describe('attribute', () => {
+  const before = map({ 'a/x.ts': ['x'], 'b/y.ts': ['y'] })
+
+  it('gives every change to the one session that touched its file', () => {
+    const after = map({ 'a/x.ts': ['x', 'x2'], 'b/y.ts': ['y'] })
+    const touches = [{ file: 'a/x.ts', session: 's1' }]
+
+    expect(attribute(codeDiff(before, after, ['a/x.ts']), touches)).toEqual([
+      { added: [], changed: ['codefile:a/x.ts', 'folder:a'], removed: [], file: 'a/x.ts', session: 's1' },
+    ])
+  })
+
+  it('records a change nobody touched with no session and no file', () => {
+    const after = map({ 'a/x.ts': ['x'], 'b/y.ts': ['y', 'y2'] })
+
+    expect(attribute(codeDiff(before, after), [])).toEqual([
+      { added: [], changed: ['codefile:b/y.ts', 'folder:b'], removed: [] },
+    ])
+  })
+
+  it('splits one rescan into an entry per session and one for the rest', () => {
+    const after = map({ 'a/x.ts': ['x', 'x2'], 'b/y.ts': ['y', 'y2'], 'c/z.ts': ['z'] })
+    const touches = [
+      { file: 'a/x.ts', session: 's1' },
+      { file: 'b/y.ts', session: 's2' },
+    ]
+
+    expect(attribute(codeDiff(before, after, ['a/x.ts', 'b/y.ts']), touches)).toEqual([
+      { added: ['folder:c', 'codefile:c/z.ts'], changed: [], removed: [] },
+      { added: [], changed: ['codefile:a/x.ts', 'folder:a'], removed: [], file: 'a/x.ts', session: 's1' },
+      { added: [], changed: ['codefile:b/y.ts', 'folder:b'], removed: [], file: 'b/y.ts', session: 's2' },
+    ])
+  })
+
+  it.each([
+    ['two sessions', [{ session: 's1' }, { session: 's2' }]],
+    ['a session and a hook without one', [{ session: 's1' }, {}]],
+    ['a hook without one and then a session', [{}, { session: 's1' }]],
+    ['three touches that disagree once', [{ session: 's1' }, { session: 's2' }, { session: 's2' }]],
+  ])('never guesses a session when %s touched the same file', (_name, sessions) => {
+    const after = map({ 'a/x.ts': ['x', 'x2'], 'b/y.ts': ['y'] })
+    const touches = sessions.map((s) => ({ file: 'a/x.ts', ...s }))
+
+    expect(attribute(codeDiff(before, after, ['a/x.ts']), touches)).toEqual([
+      { added: [], changed: ['codefile:a/x.ts', 'folder:a'], removed: [], file: 'a/x.ts' },
+    ])
+  })
+
+  it('keeps a session when the same session touched a file twice', () => {
+    const after = map({ 'a/x.ts': ['x', 'x2'], 'b/y.ts': ['y'] })
+    const touches = [
+      { file: 'a/x.ts', session: 's1' },
+      { file: 'a/x.ts', session: 's1' },
+    ]
+
+    expect(attribute(codeDiff(before, after, ['a/x.ts']), touches)[0]?.session).toBe('s1')
+  })
+
+  it('leaves a folder with no session when two sessions changed files inside it', () => {
+    const start = map({ 'a/x.ts': ['x'], 'a/w.ts': ['w'] })
+    const after = map({ 'a/x.ts': ['x', 'x2'], 'a/w.ts': ['w', 'w2'] })
+    const touches = [
+      { file: 'a/x.ts', session: 's1' },
+      { file: 'a/w.ts', session: 's2' },
+    ]
+
+    expect(attribute(codeDiff(start, after, ['a/x.ts', 'a/w.ts']), touches)).toEqual([
+      { added: [], changed: ['folder:a'], removed: [] },
+      { added: [], changed: ['codefile:a/x.ts'], removed: [], file: 'a/x.ts', session: 's1' },
+      { added: [], changed: ['codefile:a/w.ts'], removed: [], file: 'a/w.ts', session: 's2' },
+    ])
+  })
+
+  it('gives a removed file and its removed folder to the session that deleted it', () => {
+    const after = map({ 'b/y.ts': ['y'] })
+
+    expect(attribute(codeDiff(before, after, ['a/x.ts']), [{ file: 'a/x.ts', session: 's1' }])).toEqual([
+      { added: [], changed: [], removed: ['folder:a', 'codefile:a/x.ts'], file: 'a/x.ts', session: 's1' },
+    ])
+  })
+
+  it('returns nothing for an empty diff', () => {
+    expect(attribute(codeDiff(before, before), [{ file: 'a/x.ts', session: 's1' }])).toEqual([])
+  })
+})
+
+describe('attribute order', () => {
+  it('puts the session that touched last at the end so its file is the newest', () => {
+    const before = map({ 'a.ts': ['a'], 'b.ts': ['b'], 'c.ts': ['c'] })
+    const after = map({ 'a.ts': ['a', 'a2'], 'b.ts': ['b', 'b2'], 'c.ts': ['c', 'c2'] })
+    const touches = [
+      { file: 'a.ts', session: 's1' },
+      { file: 'b.ts', session: 's2' },
+      { file: 'c.ts', session: 's1' },
+    ]
+
+    expect(attribute(codeDiff(before, after, ['a.ts', 'b.ts', 'c.ts']), touches).map((g) => [g.session, g.file])).toEqual([
+      ['s2', 'b.ts'],
+      ['s1', 'c.ts'],
+    ])
+  })
+
+  it('puts an ambiguous file touched last at the end', () => {
+    const before = map({ 'a.ts': ['a'], 'b.ts': ['b'] })
+    const after = map({ 'a.ts': ['a', 'a2'], 'b.ts': ['b', 'b2'] })
+    const touches = [
+      { file: 'b.ts', session: 's1' },
+      { file: 'a.ts', session: 's1' },
+      { file: 'a.ts', session: 's2' },
+    ]
+
+    expect(attribute(codeDiff(before, after, ['a.ts', 'b.ts']), touches).map((g) => [g.session, g.file])).toEqual([
+      ['s1', 'b.ts'],
+      [undefined, 'a.ts'],
+    ])
+  })
+})
+
+describe('reclaim', () => {
+  const entry = (fields: Partial<HistoryEntry>): HistoryEntry => ({
+    id: 'e1',
+    root: '/r',
+    at: 10,
+    source: 'code',
+    added: [],
+    changed: [],
+    removed: [],
+    ...fields,
+  })
+  const always = () => true
+
+  it('gives a whole unreported entry to the session, keeping its id', () => {
+    const found = entry({ changed: ['codefile:a/x.ts', 'folder:a'] })
+
+    expect(reclaim([found], 'a/x.ts', 's1', always)).toEqual({
+      found,
+      parts: [{ ...found, file: 'a/x.ts', session: 's1' }],
+    })
+  })
+
+  it('splits out only the reported file and leaves the rest unreported', () => {
+    const found = entry({ changed: ['codefile:a/x.ts', 'codefile:b/y.ts', 'folder:a', 'folder:b'] })
+    const result = reclaim([found], 'a/x.ts', 's1', always)
+
+    expect(result?.parts).toEqual([
+      { ...found, id: expect.any(String), changed: ['codefile:a/x.ts', 'folder:a'], file: 'a/x.ts', session: 's1' },
+      { ...found, changed: ['codefile:b/y.ts', 'folder:b'] },
+    ])
+    expect(result?.parts[0]?.id).not.toBe('e1')
+  })
+
+  it('keeps the file of the remainder unless it was the reported one', () => {
+    const found = entry({ changed: ['codefile:x.ts', 'codefile:y.ts'], file: 'y.ts' })
+    expect(reclaim([found], 'x.ts', 's1', always)?.parts[1]).toMatchObject({ changed: ['codefile:y.ts'], file: 'y.ts' })
+
+    const same = entry({ changed: ['codefile:x.ts', 'codefile:y.ts'], file: 'x.ts' })
+    expect(reclaim([same], 'x.ts', 's1', always)?.parts[1]).not.toHaveProperty('file')
+  })
+
+  it.each([
+    ['no entry has the file', [entry({ changed: ['codefile:b.ts'] })]],
+    ['the newest entry with the file already has a session', [entry({ changed: ['codefile:x.ts'], session: 's0' }), entry({ id: 'e2', changed: ['codefile:x.ts'] })]],
+    ['only a contract entry names it', [entry({ source: 'contract', changed: ['codefile:x.ts'] })]],
+  ])('claims nothing when %s', (_name, entries) => {
+    expect(reclaim(entries, 'x.ts', 's1', always)).toBeNull()
+  })
+
+  it('claims nothing whose scan did not see the reported content', () => {
+    expect(reclaim([entry({ changed: ['codefile:x.ts'] })], 'x.ts', 's1', () => false)).toBeNull()
+  })
+
+  it('takes the newest entry that saw the reported content, past newer ones that did not', () => {
+    const newest = entry({ id: 'new', changed: ['codefile:x.ts'] })
+    const older = entry({ id: 'old', changed: ['codefile:x.ts'] })
+
+    expect(reclaim([newest, older], 'x.ts', 's1', (e) => e.id === 'old')?.found).toBe(older)
+  })
+
+  it('claims nothing when the entry that saw the content already has a session', () => {
+    const newest = entry({ id: 'new', changed: ['codefile:x.ts'] })
+    const owned = entry({ id: 'old', changed: ['codefile:x.ts'], session: 's0' })
+
+    expect(reclaim([newest, owned], 'x.ts', 's1', (e) => e.id === 'old')).toBeNull()
   })
 })

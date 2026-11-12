@@ -32,17 +32,25 @@ export function createJournal<T>(fileOf: (root: string) => string, schema: z.Zod
     return entries
   }
 
-  function append(root: string, entry: T): T[] {
-    const entries = [entry, ...list(root)].slice(0, limit)
-    loaded.set(root, entries)
+  function save(root: string, entries: T[]): T[] {
+    const kept = entries.slice(0, limit)
+    loaded.set(root, kept)
 
     try {
-      persist(fileOf(root), JSON.stringify(entries))
+      persist(fileOf(root), JSON.stringify(kept))
     } catch (err) {
       console.error(`could not persist ${fileOf(root)}:`, err instanceof Error ? err.message : String(err))
     }
-    return entries
+    return kept
   }
 
-  return { list, append }
+  const append = (root: string, entry: T): T[] => save(root, [entry, ...list(root)])
+
+  function replace(root: string, old: T, next: T[]): T[] {
+    const entries = list(root)
+    const at = entries.indexOf(old)
+    return at < 0 ? entries : save(root, [...entries.slice(0, at), ...next, ...entries.slice(at + 1)])
+  }
+
+  return { list, append, replace }
 }

@@ -71,6 +71,24 @@ describe('createJournal', () => {
     expect(createJournal(fileOf, rowSchema, 5).list('/a')).toEqual([])
   })
 
+  it('replaces one row with several in place and persists the result', () => {
+    const journal = createJournal(fileOf, rowSchema, 4)
+    for (const n of [1, 2, 3]) journal.append('/a', { n })
+    const middle = journal.list('/a')[1]!
+
+    expect(journal.replace('/a', middle, [{ n: 20 }, { n: 21 }])).toEqual([{ n: 3 }, { n: 20 }, { n: 21 }, { n: 1 }])
+    expect(createJournal(fileOf, rowSchema, 4).list('/a')).toEqual([{ n: 3 }, { n: 20 }, { n: 21 }, { n: 1 }])
+  })
+
+  it('caps after a replace and leaves the list alone when the row is gone', () => {
+    const journal = createJournal(fileOf, rowSchema, 3)
+    for (const n of [1, 2, 3]) journal.append('/a', { n })
+    const newest = journal.list('/a')[0]!
+
+    expect(journal.replace('/a', newest, [{ n: 30 }, { n: 31 }])).toEqual([{ n: 30 }, { n: 31 }, { n: 2 }])
+    expect(journal.replace('/a', { n: 99 }, [{ n: 0 }])).toEqual([{ n: 30 }, { n: 31 }, { n: 2 }])
+  })
+
   it('keeps the row in memory and leaves no temporary file when the disk write fails', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     fs.writeFileSync(path.join(dir, 'rows'), 'a file where the folder should be')

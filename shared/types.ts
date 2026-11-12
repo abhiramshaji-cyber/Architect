@@ -114,6 +114,7 @@ export const historyEntrySchema = z.object({
   changed: z.array(z.string()),
   removed: z.array(z.string()),
   file: z.string().optional(),
+  session: z.string().optional(),
 })
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>
@@ -235,13 +236,10 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('list_edits'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('write_agents'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
-  z.object({
-    id: z.string(),
-    op: z.literal('session-event'),
-    cwd: z.string(),
-    event: z.string(),
+  z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string() }).extend({
     session: z.string().optional(),
     file: z.string().optional(),
+    digest: z.string().optional(),
   }),
 ])
 

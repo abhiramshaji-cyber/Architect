@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
@@ -561,13 +562,9 @@ function yieldToLoop() {
   return new Promise<void>((resolve) => setImmediate(resolve))
 }
 
-async function walk(
-  root: string,
-  relative: string,
-  into: FolderEntry[],
-  parsed: Map<string, Parsed>,
-  counter: { seen: number },
-): Promise<void> {
+type Walked = { into: FolderEntry[]; parsed: Map<string, Parsed>; counter: { seen: number }; digests: Map<string, string> }
+
+async function walk(root: string, relative: string, { into, parsed, counter, digests }: Walked): Promise<void> {
   const absolute = relative ? path.join(root, relative) : root
 
   let entries: fs.Dirent[]
@@ -586,7 +583,7 @@ async function walk(
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue
       folders.push(child)
-      await walk(root, child, into, parsed, counter)
+      await walk(root, child, { into, parsed, counter, digests })
       continue
     }
 
@@ -600,6 +597,7 @@ async function walk(
 
     const file = parseFile(source, child)
     parsed.set(child, file)
+    digests.set(child, createHash('sha256').update(source).digest('hex'))
     files.push({ path: child, functions: file.functions })
   }
 
@@ -609,11 +607,11 @@ async function walk(
   into.push({ path: relative, folders, files })
 }
 
-export async function scan(root: string): Promise<CodeMap> {
+export async function scan(root: string, digests = new Map<string, string>()): Promise<CodeMap> {
   const folders: FolderEntry[] = []
   const parsed = new Map<string, Parsed>()
 
-  await walk(root, '', folders, parsed, { seen: 0 })
+  await walk(root, '', { into: folders, parsed, counter: { seen: 0 }, digests })
   const imports = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 

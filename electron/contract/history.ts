@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Architecture, CodeMap, HistoryEntry } from '../../shared/types'
 
 export type Diff = Pick<HistoryEntry, 'added' | 'changed' | 'removed'>
@@ -47,4 +48,70 @@ export function codeDiff(before: CodeMap | null, after: CodeMap, touched: string
     (id) => id.startsWith('folder:') && !diff.added.includes(id) && moved.some((p) => p.startsWith(`${nodePath(id)}/`)),
   )
   return { ...diff, changed: [...diff.changed, ...folders] }
+}
+
+export type Touch = { file: string; session?: string; at?: number; digest?: string }
+
+export type Attributed = Diff & { file?: string; session?: string }
+
+function sessionsOf(touches: Touch[]): Map<string, string | undefined> {
+  const sessions = new Map<string, string | undefined>()
+  for (const { file, session } of touches) {
+    sessions.set(file, sessions.has(file) && sessions.get(file) !== session ? undefined : session)
+  }
+  return sessions
+}
+
+export function attribute(diff: Diff, touches: Touch[]): Attributed[] {
+  const sessions = sessionsOf(touches)
+  const files = [...diff.added, ...diff.changed, ...diff.removed].filter((id) => id.startsWith('codefile:')).map(nodePath)
+
+  function sessionOf(id: string): string | undefined {
+    const where = nodePath(id)
+    if (id.startsWith('codefile:')) return sessions.get(where)
+    const under = new Set(files.filter((file) => file.startsWith(`${where}/`)).map((file) => sessions.get(file)))
+    return under.size === 1 ? [...under][0] : undefined
+  }
+
+  const groups = new Map<string | undefined, Attributed>()
+  for (const kind of ['added', 'changed', 'removed'] as const) {
+    for (const id of diff[kind]) {
+      const session = sessionOf(id)
+      const group = groups.get(session) ?? { added: [], changed: [], removed: [] }
+      group[kind].push(id)
+      groups.set(session, group)
+    }
+  }
+
+  const latest = [...new Set(touches.map((touch) => sessions.get(touch.file)).reverse())].reverse()
+  const order = latest.includes(undefined) ? latest : [undefined, ...latest]
+  return order.flatMap((session) => {
+    const group = groups.get(session)
+    if (!group) return []
+    const file = touches.filter((touch) => sessions.get(touch.file) === session).at(-1)?.file
+    return { ...group, ...(file === undefined ? {} : { file }), ...(session === undefined ? {} : { session }) }
+  })
+}
+
+export function reclaim(
+  entries: HistoryEntry[],
+  file: string,
+  session: string,
+  saw: (entry: HistoryEntry) => boolean,
+): { found: HistoryEntry; parts: HistoryEntry[] } | null {
+  const id = `codefile:${file}`
+  const found = entries.find(
+    (entry) => entry.source === 'code' && [...entry.added, ...entry.changed, ...entry.removed].includes(id) && saw(entry),
+  )
+  if (!found || found.session !== undefined) return null
+
+  const parts = attribute(found, [{ file, session }])
+  const rest = parts.find((part) => part.session === undefined)
+  const claimed = parts.find((part) => part.session === session)
+  if (!claimed) return null
+
+  const { file: _file, ...base } = found
+  const kept = found.file === undefined || found.file === file ? base : found
+  const own = { ...base, ...claimed, id: rest ? randomUUID() : found.id }
+  return { found, parts: rest ? [own, { ...kept, ...rest }] : [own] }
 }

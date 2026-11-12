@@ -10,3 +10,5 @@ export const SOCKET_PATH =
     : `${ARCHITECT_DIR}/sock`
 
 export const SETTINGS_PATH = `${ARCHITECT_DIR}/settings.json`
+
+export const HOOK_DEADLINE_MS = 1500
