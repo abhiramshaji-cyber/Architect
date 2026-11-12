@@ -78,14 +78,14 @@ app.whenReady().then(async () => {
     return
   }
 
-  const run = {
+  const loginRun = {
     packaged: app.isPackaged,
     exePath: process.execPath,
     socketPath,
     platform: process.platform,
     localAppData: process.env.LOCALAPPDATA,
   }
-  if (opensAtLogin(run)) app.setLoginItemSettings({ openAtLogin: true })
+  if (opensAtLogin(loginRun)) app.setLoginItemSettings({ openAtLogin: true })
   started = true
   openFolders(pending.splice(0))
 })

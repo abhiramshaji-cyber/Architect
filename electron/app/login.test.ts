@@ -28,7 +28,7 @@ describe('opensAtLogin', () => {
 
   it('skips a packaged app outside /Applications', () => {
     expect(opensAtLogin({ ...mac, exePath: '/repo/dist/mac-arm64/Architect.app/Contents/MacOS/Architect' })).toBe(false)
-    expect(opensAtLogin({ ...mac, exePath: '/Applications/Architect.app/../Evil.app/Contents/MacOS/Architect' })).toBe(false)
+    expect(opensAtLogin({ ...mac, exePath: '/Users/me/Applications/Architect.app/Contents/MacOS/Architect' })).toBe(false)
   })
 
   it('skips any socket other than the default', () => {
