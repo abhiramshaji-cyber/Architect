@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { writeAgents } from '../electron/agents/write'
 import { check, ownership, parse } from '../electron/contract/graph'
 import { auditRules } from '../electron/rules/audit'
 import { factsOf, type SourceFacts } from '../electron/rules/facts'
@@ -8,6 +9,7 @@ import { scan } from '../electron/scan/scan'
 import { SOCKET_PATH } from '../shared/socket'
 import type { Architecture, CodeMap, RuleRun } from '../shared/types'
 import { parseArgs, USAGE_TEXT } from './args'
+import { agentsText } from './agents'
 import { report, type Violation } from './report'
 
 export const OK = 0
@@ -130,6 +132,12 @@ export async function run(
   if (typeof architecture === 'string') {
     err(architecture)
     return USAGE
+  }
+
+  if (args.command === 'agents') {
+    const written = writeAgents(args.root, architecture)
+    out(args.json ? JSON.stringify({ root: args.root, ...written }, null, 2) : agentsText(written))
+    return OK
   }
 
   const map = await scan(args.root)

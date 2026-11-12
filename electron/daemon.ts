@@ -52,6 +52,7 @@ import { recencyOf } from './recency'
 import { createReview } from './review'
 import { createJournal } from './journal'
 import { checkFile } from './rules/proposed'
+import { hasAgents, writeAgents } from './agents/write'
 
 const HISTORY_LIMIT = 200
 
@@ -599,7 +600,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
       notifyProjects()
       record(state.root, 'contract', contractDiff(architecture, state.architecture))
-      if (state.contract.status === 'ready' && state.architecture) changeListener?.(state.root, state.architecture)
+      if (state.contract.status === 'ready' && state.architecture) contractChanged(state.root, state.architecture, architecture)
     })
     state.watcher = watcher
 
@@ -620,7 +621,16 @@ export function createDaemon(options: DaemonOptions = {}) {
     state.contract = { status: 'ready' }
     notifyProjects()
     record(state.root, 'contract', contractDiff(before, architecture))
-    changeListener?.(state.root, architecture)
+    contractChanged(state.root, architecture, before)
+  }
+
+  function contractChanged(root: string, architecture: Architecture, before: Architecture | null) {
+    changeListener?.(root, architecture)
+    try {
+      if (hasAgents(root, before ? [before, architecture] : [architecture])) writeAgents(root, architecture)
+    } catch (err) {
+      console.error('could not refresh AGENTS.md:', errorText(err))
+    }
   }
 
   function adopt(state: ProjectState, markdown: string): Decision {
@@ -849,6 +859,11 @@ export function createDaemon(options: DaemonOptions = {}) {
         loadProject(root)
 
         if (req.op === 'list_edits') return { id: req.id, ok: true, result: listEdits(root) }
+        if (req.op === 'write_agents') {
+          const state = loadProject(root)
+          if (state.contract.status !== 'ready' || !state.architecture) throw new Error(state.contract.status === 'invalid' ? state.contract.error : `${root} has no architect.md`)
+          return { id: req.id, ok: true, result: writeAgents(root, state.architecture) }
+        }
         return { id: req.id, ok: true, result: readEdit(root, req.editId) }
       } catch (err) {
         return { id: req.id, ok: false, error: err instanceof Error ? err.message : String(err) }
