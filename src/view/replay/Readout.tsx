@@ -75,7 +75,7 @@ export default function Readout({ step, index, total, held, before, found, onOpe
       </p>
       {step.title && <p className="replay-title">{step.title}</p>}
       {step.kind === 'code' && <p className="replay-meta">{step.session ? `Session ${step.session}` : 'No session reported'}</p>}
-      {step.components.length > 0 && <p className="replay-meta">Components: {step.components.join(', ')}</p>}
+      {step.contract.length > 0 && <p className="replay-meta">Changed in architect.md: {step.contract.join(', ')}</p>}
       {step.files.length > 0 && (
         <>
           <p className="replay-meta">

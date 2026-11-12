@@ -35,6 +35,7 @@ describe('replay timeline', () => {
       ['h:h2', [], ['ui', 'core']],
     ])
     expect(steps[1]?.session).toBe('s1')
+    expect(steps[3]?.contract).toEqual(['ui -> core'])
   })
 
   it('keeps a commit before a history entry at the same moment', () => {

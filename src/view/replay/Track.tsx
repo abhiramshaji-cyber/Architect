@@ -45,7 +45,7 @@ export default function Track({ steps, at, filed, onAt }: Props) {
         {marks.map(({ index, rejected, where }) => (
           <button
             key={where}
-            className={index === at && where !== 'before' ? 'replay-mark on' : 'replay-mark'}
+            className={where === 'before' ? 'replay-mark before' : index === at ? 'replay-mark on' : 'replay-mark'}
             style={{ left: `${where === 'before' ? 0 : place(index)}%` }}
             title={rejected.map(verdictText).join('\n')}
             aria-label={`${rejected.length} rejected ${where === 'before' ? 'before step 1' : `at step ${index + 1}`}`}

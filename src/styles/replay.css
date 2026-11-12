@@ -119,6 +119,10 @@
   cursor: pointer;
 }
 
+.replay-mark.before {
+  transform: translateX(-130%);
+}
+
 .replay-mark.on {
   box-shadow: 0 0 0 2px var(--text);
 }
@@ -160,7 +164,7 @@
 .replay-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: var(--hover);
+  background: color-mix(in srgb, var(--live) 18%, transparent);
   pointer-events: none;
 }
 

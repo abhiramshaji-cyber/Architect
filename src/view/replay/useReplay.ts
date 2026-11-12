@@ -25,7 +25,7 @@ async function read(root: string, days: number): Promise<Stored> {
   if (!log.ok) return { root, days, since: start, commits: [], capped: false, verdicts, error: gitMessage(log.error) }
   const capped = log.value.length > LIMIT
   const commits = log.value.slice(0, LIMIT)
-  const since = capped ? (commits.at(-1)?.at ?? start) : start
+  const since = capped ? commits.reduce((low, commit) => Math.min(low, commit.at), Infinity) : start
   return { root, days, since, commits, capped, verdicts, error: null }
 }
 

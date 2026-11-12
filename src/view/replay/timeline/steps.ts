@@ -6,6 +6,7 @@ export type Step = {
   kind: 'commit' | 'code' | 'contract'
   files: string[]
   components: string[]
+  contract: string[]
   title: string
   short?: string
   session?: string
@@ -24,6 +25,7 @@ function fromCommit(commit: Commit): Step {
     kind: 'commit',
     files: commit.files,
     components: [],
+    contract: [],
     title: commit.subject,
     short: commit.short,
   }
@@ -39,6 +41,7 @@ function fromEntry(entry: HistoryEntry): Step {
     kind: entry.source,
     files: [...new Set(files)],
     components,
+    contract: entry.source === 'contract' ? [...new Set(ids.map((id) => id.replace('->', ' -> ')))] : [],
     title: '',
     ...(entry.session === undefined ? {} : { session: entry.session }),
   }

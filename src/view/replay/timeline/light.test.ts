@@ -26,6 +26,7 @@ const step = (files: string[], components: string[] = []): Step => ({
   kind: components.length > 0 ? 'contract' : 'commit',
   files,
   components,
+  contract: [],
   title: '',
 })
 
