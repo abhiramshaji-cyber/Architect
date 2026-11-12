@@ -14,6 +14,7 @@ import ScopePicker from './scope/ScopePicker'
 import { storeScope, storedScope } from './scope/pick'
 import FunctionTree from './tree/FunctionTree'
 import { useFunctions } from './useFunctions'
+import Related, { useRelated } from './facts/Related'
 
 type Mode = 'list' | 'tree'
 
@@ -57,6 +58,7 @@ export default function FunctionsView({ show }: ViewProps) {
   const needle = useDeferredValue(query)
   const changes = useRecency(currentRoot, codeMap)?.functions
   const stepOf = useMemo(() => ranker(Object.values(changes ?? {})), [changes])
+  const related = useRelated(list)
 
   useEffect(() => {
     loadCodeMap()
@@ -149,7 +151,7 @@ export default function FunctionsView({ show }: ViewProps) {
         <input
           className="search-input fn-search"
           type="search"
-          placeholder="Filter by name, file or summary"
+          placeholder="Filter by name, file or doc"
           aria-label="Filter functions"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -173,17 +175,20 @@ export default function FunctionsView({ show }: ViewProps) {
           query={needle}
           project={shownScope === '' ? folderName(currentRoot) : baseName(shownScope)}
           onOpen={onOpen}
+          onRelated={related.ask}
         />
       ) : rows && placed.length === 0 ? (
         <p className="fn-empty">No functions match “{needle}”.</p>
       ) : (
         <ul className="fn-list">
-          {placed.map(({ row, key }) => {
+          {placed.map(({ row, at, key }) => {
             const change = changes && changeOf(row, changes)
-            return <Row key={key} row={row} change={change} step={stepOf(change)} onOpen={onOpen} onScope={pickScope} />
+            const step = stepOf(change)
+            return <Row key={key} {...{ row, at, change, step, onOpen }} onScope={pickScope} onRelated={related.ask} />
           })}
         </ul>
       )}
+      {list && related.asked && <Related list={list} asked={related.asked} onOpen={onOpen} onClose={related.close} />}
     </section>
   )
 }
