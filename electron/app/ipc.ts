@@ -130,7 +130,7 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
   handle('architect:git-remote-branches', (root: string) => git.remoteBranches(root))
   handle('architect:git-fetch', (root: string) => git.fetch(root))
   handle('architect:git-distance', (root: string) => git.distance(root))
-  handle('architect:git-commits', (root: string, since: number) => commitsSince(root, since))
+  handle('architect:git-commits', (root: string, since: number, limit?: number) => commitsSince(root, since, limit))
   handle('architect:git-changes', (root: string) => diff.changes(root))
   handle('architect:git-file-diff', (root: string, section: DiffSection, file: ChangedFile, full?: boolean) =>
     diff.fileDiff(root, section, file, full),

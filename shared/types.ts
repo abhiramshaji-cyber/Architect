@@ -132,6 +132,8 @@ export type VerdictRecord = z.infer<typeof verdictRecordSchema>
 
 export type Decision = { status: 'approved' } | { status: 'rejected'; reason: string } | { status: 'pending'; id: string }
 
+export const HISTORY_LIMIT = 200
+
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
 
 export const EDIT_TIMEOUT_MS = 9 * 60 * 1000
@@ -598,7 +600,7 @@ export type ArchitectApi = import('./rules/conventions').ConventionsApi & {
   gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
   gitDistance(root: string): Promise<GitResult<BaseDistance>>
-  gitCommits(root: string, since: number): Promise<GitResult<Commit[]>>
+  gitCommits(root: string, since: number, limit?: number): Promise<GitResult<Commit[]>>
   gitChanges(root: string): Promise<GitResult<DiffChanges>>
   gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
   gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
