@@ -1,6 +1,7 @@
 import path from 'node:path'
 import ts from 'typescript'
-import type { FunctionEntry } from '../../shared/types'
+import fs from 'node:fs'
+import type { CodeMap, FunctionEntry } from '../../shared/types'
 
 type Named = { name: string; line: number }
 
@@ -34,11 +35,16 @@ function lineCount(text: string): number {
   return text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
 }
 
-function classesIn(text: string, file: string): Named[] {
+export function parsed(text: string, file: string): ts.SourceFile | undefined {
   const kind = PARSED.get(path.extname(file).toLowerCase())
-  if (kind === undefined || DECLARATION.test(file)) return []
+  if (kind === undefined || DECLARATION.test(file)) return undefined
+  return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind)
+}
 
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind)
+function classesIn(text: string, file: string): Named[] {
+  const source = parsed(text, file)
+  if (!source) return []
+
   const found: Named[] = []
   const visit = (node: ts.Node): void => {
     if (ts.isClassLike(node) && node.name) {
@@ -50,9 +56,22 @@ function classesIn(text: string, file: string): Named[] {
   return found
 }
 
-export function factsOf(file: string, read: () => string | undefined, functions: (text: string) => FunctionEntry[]): SourceFacts | null {
+type Classes = (text: string, file: string) => Named[]
+
+export function factsOf(file: string, read: () => string | undefined, functions: (text: string) => FunctionEntry[], classes?: Classes): SourceFacts | null {
   if (!isCode(file)) return null
   const text = read()
   if (text === undefined) return null
-  return { path: file, lines: lineCount(text), functions: functions(text), classes: classesIn(text, file) }
+  return { path: file, lines: lineCount(text), functions: functions(text), classes: classes ? classes(text, file) : classesIn(text, file) }
+}
+
+export function sourcesIn(root: string, map: CodeMap, classes?: Classes): SourceFacts[] {
+  const read = (file: string) => () => {
+    try {
+      return fs.readFileSync(path.join(root, file), 'utf8')
+    } catch {
+      return undefined
+    }
+  }
+  return map.folders.flatMap((folder) => folder.files.flatMap((file) => factsOf(file.path, read(file.path), () => file.functions, classes) ?? []))
 }

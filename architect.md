@@ -41,7 +41,7 @@ A capped, newest first list of records per project kept as one JSON file each in
 owns: `electron/journal/**`
 
 ### rules
-Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Fully deterministic, no model calls.
+Reads the Rules section of `architect.md`, falling back to the defaults when it is absent, and checks code against it: lines per file, code files per folder, banned words in file, class and function names, and how many unrelated groups of exported functions a file holds, two exported functions being related when one reaches the other through calls or nesting inside that file. A later rule line whose globs match a path overrides an earlier one. A proposed file is checked against the same file on disk, so only a violation that is new or worse is reported. Records every run with a pass or fail per rule in the journal. Also suggests splits, never applying them: a file over its lines or jobs limit, or over the project wide one when a later line grandfathers it, gets one file per connected group of exported functions in a folder named after it behind the same entry file, each file named after the most common leading word of its group's names or left unnamed with the tie that stopped it, and a function longer and more called than the split thresholds gets the extraction points its parse shows: compound statements, block callbacks and inner functions at the top of its body. Fully deterministic, no model calls.
 owns: `electron/rules/**`
 
 ### agents
@@ -66,7 +66,7 @@ React Flow diagram, the file tree and CodeMirror editor, the contract rail holdi
 owns: `src/**`
 
 ### cli
-Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. Records every run in the rule history and lists it with `--history`. `architect agents` writes the AGENTS.md files.
+Headless `architect check` binary. Reads the contract, scans the code and exits nonzero when the drawing or a rule is violated, printing each rule violation with its file and line. With `--suggest` it also prints the split suggestions with their evidence. Records every run in the rule history and lists it with `--history`. `architect agents` writes the AGENTS.md files.
 owns: `cli/**`
 
 ### bridge
@@ -172,6 +172,7 @@ owns: `lsp/**`
 - files: 5
 - names: Manager, Helper, Service, Factory, Base
 - jobs: 1
+- split: 50 lines, 3 callers
 - lines: 206 `src/view/ContractView.tsx`
 - lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
 - lines: 252 `mcp/bridge.ts`

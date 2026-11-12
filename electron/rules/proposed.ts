@@ -2,9 +2,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Architecture, RuleEntry, RuleViolation } from '../../shared/types'
 import { functionsIn, IGNORED_DIRS } from '../scan/scan'
-import { auditRules, folderOf } from './audit'
+import { auditRules, consideredOf, effective, folderOf } from './audit'
 import { factsOf, type SourceFacts } from './facts'
 import { recordRuns } from './runs'
+import { fileSplit } from './split/files'
+
+const SPLITTABLE = new Set(['lines', 'jobs'])
 
 export function proposedViolations(
   declared: RuleEntry[] | undefined,
@@ -30,8 +33,7 @@ function readText(file: string): string | undefined {
   }
 }
 
-function filesBeside(root: string, file: string): string[] {
-  const folder = folderOf(file)
+function filesIn(root: string, folder: string): string[] {
   try {
     return fs
       .readdirSync(path.join(root, folder), { withFileTypes: true })
@@ -66,7 +68,12 @@ export function checkFile(cacheDir: string, root: string, architecture: Architec
   const before = factsOf(relative, () => readText(path.join(root, relative)), parse)
   const scanned = relative.split('/').slice(0, -1).every((part) => !IGNORED_DIRS.has(part) && !part.startsWith('.'))
   const after = scanned ? factsOf(relative, () => content, parse) : null
-  const violations = after ? proposedViolations(architecture.rules, architecture.scope, filesBeside(root, relative), before, after) : []
+  const found = after ? proposedViolations(architecture.rules, architecture.scope, filesIn(root, folderOf(relative)), before, after) : []
+  const splittable = (violation: RuleViolation) => violation.path === relative && SPLITTABLE.has(violation.rule)
+  const entries = effective(architecture.rules)
+  const codeIn = (folder: string) => consideredOf(entries, filesIn(root, folder).flatMap((other) => factsOf(other, () => '', () => []) ?? []), architecture.scope).map((other) => other.path)
+  const split = after && found.some(splittable) ? fileSplit(entries, after, codeIn) : null
+  const violations = found.map((violation) => (split && splittable(violation) ? { ...violation, split } : violation))
 
   recordRuns(cacheDir, root, 'check_change', violations, relative)
   return violations
