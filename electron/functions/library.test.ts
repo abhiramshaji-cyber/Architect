@@ -72,8 +72,8 @@ describe('a library published through package.json exports', () => {
       'package.json': JSON.stringify({ exports: { './worker': './build/worker.js' } }),
       'src/root.ts': 'export function rootApi() {}\n',
       'packages/b/package.json': JSON.stringify({ exports: './src/index.ts' }),
-      'packages/b/src/index.ts': 'export function live() {}\n',
-      'packages/b/src/dead.ts': 'export function deadExport() {}\n',
+      'packages/b/src/index.ts': "export { live } from './dead'\n",
+      'packages/b/src/dead.ts': 'export function live() {}\nexport function deadExport() {}\n',
     })
     expect(unreached).toEqual(['deadExport'])
     expect(unknown).toEqual(['rootApi'])
@@ -82,12 +82,38 @@ describe('a library published through package.json exports', () => {
   it('puts test code and bodiless declarations in reach unknown, never what only tests call', async () => {
     const { unreached, unknown } = await listOf({
       'package.json': JSON.stringify({ exports: './src/index.ts' }),
-      'src/index.ts': 'export function api() {}\n',
+      'src/index.ts': "import './shim'\nexport function api() {}\n",
       'src/shim.ts': 'declare global { function later(): void }\nexport function onlyTested() {}\n',
       'src/index.test.ts': "import { onlyTested } from './shim'\nfunction setup() { onlyTested() }\nit('x', () => setup())\n",
     })
     expect(unreached).toEqual(['onlyTested'])
     expect(unknown).toEqual(['later', 'setup'])
+  })
+
+  it('resolves aliases from the tsconfig nearest the importing file', async () => {
+    const { unreached, unknown } = await listOf({
+      'package.json': JSON.stringify({ exports: './src/main.ts' }),
+      'tsconfig.json': JSON.stringify({ files: [], references: [{ path: './tsconfig.app.json' }] }),
+      'tsconfig.app.json': JSON.stringify({ compilerOptions: { paths: { '@/*': ['./src/*'] } }, include: ['src'] }),
+      'src/main.ts': "import { cn } from '@/lib/utils'\nexport function app() { return cn() }\n",
+      'src/lib/utils.ts': 'export function cn() { return join() }\nfunction join() { return 1 }\nexport function dead() {}\n',
+      'apps/web/tsconfig.json': JSON.stringify({ compilerOptions: { paths: { '@/*': ['./src/*'] } } }),
+      'apps/web/src/main.ts': "import { help } from '@/help'\nhelp()\n",
+      'apps/web/src/help.ts': 'export function help() {}\nexport function unused() {}\n',
+    })
+    expect(unreached).toEqual(['dead', 'unused'])
+    expect(unknown).toEqual(['help'])
+  })
+
+  it('puts the exports of a file nothing imports in reach unknown', async () => {
+    const { unreached, unknown, list } = await listOf({
+      'package.json': JSON.stringify({ exports: './src/index.ts' }),
+      'src/index.ts': 'export function api() {}\n',
+      'app/page.tsx': 'export default function Page() { return title() }\nfunction title() { return 1 }\n',
+    })
+    expect(unreached).toEqual([])
+    expect(unknown).toEqual(['Page', 'title'])
+    expect(list.rows.find((row) => row.name === 'Page')?.untraced).toBe('orphan')
   })
 
   it('counts the members of an anonymous default class as library API', async () => {

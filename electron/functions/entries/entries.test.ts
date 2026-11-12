@@ -174,10 +174,14 @@ describe('declaredIn', () => {
       { reason: 'module', file: 'dist/index.mjs', subpath: '.' },
     ])
     expect(declaredIn({ exports: { './*': './src/*.ts', './internal/*': null } }).filter((one) => one.excluded)).toEqual([
-      { reason: 'exports', file: 'src/internal/*.ts', excluded: true },
+      { reason: 'exports', file: 'src/internal/*.ts', subpath: './internal/*', excluded: true },
     ])
     expect(entriesOf({ 'package.json': JSON.stringify({ exports: { './*': './src/*.ts', './internal/*': null } }), 'src/a.ts': '', 'src/internal/b.ts': '' })).toEqual({
       'src/a.ts': ['exports'],
+    })
+    const exact = { './*': './src/*.ts', './internal/*': null, './internal/public': './src/internal/public.ts' }
+    expect(entriesOf({ 'package.json': JSON.stringify({ exports: exact }), 'src/internal/public.ts': '', 'src/internal/secret.ts': '' })).toEqual({
+      'src/internal/public.ts': ['exports'],
     })
     expect(declaredIn({ exports: './lib.js' })).toEqual([{ reason: 'exports', file: 'lib.js', subpath: '.' }])
   })

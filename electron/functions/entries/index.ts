@@ -27,6 +27,8 @@ function sourcesOf(declared: Declared, built: Built[], compiled: (file: string) 
   return [declared.file, ...(named.length > 0 ? named : only).map((entry) => entry.file), ...compiled(declared.file)]
 }
 
+const weightOf = (subpath = '') => (subpath.includes('*') ? subpath.indexOf('*') : Infinity)
+
 function matching(pattern: string, files: Set<string>): string[] {
   if (!pattern.includes('*')) return files.has(pattern) ? [pattern] : []
   const parts = pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
@@ -39,11 +41,15 @@ export function entriesIn(root: string, files: Set<string>, manifest: unknown, d
   const built = builtIn(base)
   const compiled = compiledFrom(base)
   const declared = declaredIn(manifest)
-  const hidden = new Set(
-    declared.filter((one) => one.excluded).flatMap((one) => sourcesOf(one, built, compiled).flatMap((file) => matching(path.posix.join(dir, file), files))),
-  )
-  const add = (file: string, reason: EntryReason) => {
-    const hits = matching(path.posix.join(dir, file), files).filter((hit) => !hidden.has(hit))
+  const hidden = new Map<string, number>()
+  for (const one of declared.filter((each) => each.excluded)) {
+    for (const file of sourcesOf(one, built, compiled).flatMap((source) => matching(path.posix.join(dir, source), files))) {
+      hidden.set(file, Math.max(hidden.get(file) ?? -1, weightOf(one.subpath)))
+    }
+  }
+  const add = (file: string, reason: EntryReason, subpath?: string) => {
+    const shown = (hit: string) => reason !== 'exports' || !subpath?.includes('*') || weightOf(subpath) > (hidden.get(hit) ?? -1)
+    const hits = matching(path.posix.join(dir, file), files).filter(shown)
     for (const hit of hits) {
       const reasons = into.get(hit) ?? []
       if (!reasons.includes(reason)) into.set(hit, [...reasons, reason])
@@ -54,7 +60,7 @@ export function entriesIn(root: string, files: Set<string>, manifest: unknown, d
   const mapped = new Map<string, boolean>()
   for (const entry of built) if (entry.reason !== null) add(entry.file, entry.reason)
   for (const one of declared.filter((each) => !each.excluded)) {
-    const found = sourcesOf(one, built, compiled).reduce((sum, file) => sum + add(file, one.reason), 0)
+    const found = sourcesOf(one, built, compiled).reduce((sum, file) => sum + add(file, one.reason, one.subpath), 0)
     const code = CODE.test(one.file) && !/\.d\.[cm]?ts$/.test(one.file)
     if (one.subpath !== undefined && code) mapped.set(one.subpath, (mapped.get(one.subpath) ?? false) || found > 0)
   }

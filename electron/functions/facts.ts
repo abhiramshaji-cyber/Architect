@@ -89,7 +89,13 @@ function untracedOf(files: FileEntry[], entries: EntryFiles): Map<string, Untrac
   for (const file of files.filter((one) => isTestFile(one.path))) {
     file.functions.forEach((_, at) => marks.set(`${file.path}\0${at}`, 'test'))
   }
-  for (const file of files.filter((one) => !isTestFile(one.path))) {
+  const live = files.filter((one) => !isTestFile(one.path))
+  const imported = new Set(live.flatMap((file) => file.imports ?? []))
+  for (const file of live) {
+    const orphan = !imported.has(file.path) && !entries.has(file.path)
+    file.functions.forEach((fn, at) => {
+      if (orphan && fn.exported) marks.set(`${file.path}\0${at}`, 'orphan')
+    })
     if (entries.opaque?.includes(packageOf(file.path, entries.packages ?? ['']))) {
       file.functions.forEach((fn, at) => {
         if (fn.exported) marks.set(`${file.path}\0${at}`, 'export')

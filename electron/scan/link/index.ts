@@ -23,21 +23,35 @@ export type Parsed = {
   specs: Set<string>
 }
 
-function resolutionOptions(root: string): ts.CompilerOptions {
-  const options: ts.CompilerOptions = {
-    allowJs: true,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  }
+const BASE: ts.CompilerOptions = { allowJs: true, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler }
 
-  const config = path.join(root, 'tsconfig.json')
+const CONFIG = /(^|\/)tsconfig(\.[\w-]+)?\.json$/
+
+function resolutionOptions(root: string, config: string): ts.CompilerOptions {
+  const dir = path.dirname(path.join(root, config))
   try {
-    const read = ts.readConfigFile(config, ts.sys.readFile)
-    if (read.error !== undefined || typeof read.config !== 'object' || read.config === null) return options
-    const parsed = ts.parseJsonConfigFileContent({ ...read.config, files: [], include: [] }, ts.sys, root)
-    return { ...options, baseUrl: parsed.options.baseUrl, paths: parsed.options.paths }
+    const read = ts.readConfigFile(path.join(root, config), ts.sys.readFile)
+    if (read.error !== undefined || typeof read.config !== 'object' || read.config === null) return BASE
+    const parsed = ts.parseJsonConfigFileContent({ ...read.config, files: [], include: [] }, ts.sys, dir)
+    return { ...BASE, baseUrl: parsed.options.baseUrl, paths: parsed.options.paths, pathsBasePath: parsed.options.pathsBasePath }
   } catch {
-    return options
+    return BASE
+  }
+}
+
+function resolversOf(root: string, files: string[]): (from: string) => ts.CompilerOptions[] {
+  const byDir = new Map<string, ts.CompilerOptions[]>()
+  for (const config of files.filter((file) => CONFIG.test(file)).sort()) {
+    const dir = path.posix.dirname(config)
+    byDir.set(dir, [...(byDir.get(dir) ?? []), resolutionOptions(root, config)])
+  }
+  const top = byDir.get('.') ?? [BASE]
+  return (from) => {
+    for (let dir = path.posix.dirname(from); dir !== '.'; dir = path.posix.dirname(dir)) {
+      const near = byDir.get(dir)
+      if (near) return [...near, ...top]
+    }
+    return top
   }
 }
 
@@ -50,19 +64,21 @@ function realRoot(root: string): string {
 }
 
 export function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> {
-  const options = resolutionOptions(root)
-  const cache = ts.createModuleResolutionCache(root, (name) => name, options)
+  const optionsOf = resolversOf(root, [...parsed.keys()])
+  const caches = new Map<ts.CompilerOptions, ts.ModuleResolutionCache>()
   const bases = [...new Set([root, realRoot(root)])]
 
   const target = (from: string, spec: string): string | undefined => {
-    const hit = ts.resolveModuleName(spec, path.join(root, from), options, ts.sys, cache).resolvedModule
-    if (hit === undefined || hit.isExternalLibraryImport === true) return undefined
-
-    for (const base of bases) {
-      const relative = path.relative(base, hit.resolvedFileName).split(path.sep).join('/')
-      if (parsed.has(relative)) return relative
+    for (const options of optionsOf(from)) {
+      const cache = caches.get(options) ?? ts.createModuleResolutionCache(root, (name) => name, options)
+      caches.set(options, cache)
+      const hit = ts.resolveModuleName(spec, path.join(root, from), options, ts.sys, cache).resolvedModule
+      if (hit === undefined) continue
+      for (const base of bases) {
+        const relative = path.relative(base, hit.resolvedFileName).split(path.sep).join('/')
+        if (parsed.has(relative)) return relative
+      }
     }
-
     return undefined
   }
 
