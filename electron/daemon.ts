@@ -425,7 +425,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
     const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...change }
     histories.append(root, entry)
-    if (source === 'code') remember(entry.id, digests)
+    if (source === 'code') remember(entry.id, named(change, digests))
     historyListener?.(entry)
   }
 
@@ -455,6 +455,15 @@ export function createDaemon(options: DaemonOptions = {}) {
       if (parent === dir) return null
       dir = parent
     }
+  }
+
+  function named(change: Attributed, digests: Map<string, string>): Map<string, string> {
+    const files = [...change.added, ...change.changed, ...change.removed].filter((id) => id.startsWith('codefile:'))
+    return new Map(files.flatMap((id) => {
+      const file = id.slice('codefile:'.length)
+      const digest = digests.get(file)
+      return digest === undefined ? [] : [[file, digest] as const]
+    }))
   }
 
   function remember(id: string, digests: Map<string, string>) {
