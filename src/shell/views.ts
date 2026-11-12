@@ -3,6 +3,7 @@ import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
 import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
+import FlowView from '../view/flow/FlowView'
 import LayersView from '../view/layers/LayersView'
 import FunctionsView from '../view/functions/FunctionsView'
 import HotspotsView from '../view/hotspots/HotspotsView'
@@ -10,12 +11,13 @@ import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'layers' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'functions' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
   functions: { label: 'Functions', component: FunctionsView },
   layers: { label: 'Layers', component: LayersView },
+  flow: { label: 'Flow', component: FlowView },
   contract: { label: 'Contract', component: ContractView },
   code: { label: 'Code', component: CodeView },
   diff: { label: 'Diff', component: DiffView },

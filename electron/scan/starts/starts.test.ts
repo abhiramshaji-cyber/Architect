@@ -26,7 +26,9 @@ function startsOf(map: CodeMap, file: string): Partial<Record<StartKind, string[
   const name = (ref: { file: string; fn: number }) =>
     `${ref.file}:${all.find((f) => f.path === ref.file)?.functions[ref.fn]?.name ?? '?'}`
   const entry = all.find((f) => f.path === file)
-  return Object.fromEntries((entry?.starts ?? []).map((start) => [start.kind, start.calls.map(name)]))
+  const found: Partial<Record<StartKind, string[]>> = {}
+  for (const start of entry?.starts ?? []) found[start.kind] = [...(found[start.kind] ?? []), ...start.calls.map(name)]
+  return found
 }
 
 describe('starts in the scan', () => {
@@ -105,6 +107,47 @@ describe('starts in the scan', () => {
       'preload.ts:extra.more',
       'preload.ts:ping',
     ])
+  })
+
+  it('records the channel, line and ordered call sites of each ipc handler, through wrappers', async () => {
+    const map = await mapOf({
+      'git.ts': 'export function status() {}\nexport function push() {}\n',
+      'ipc.ts': [
+        "import { ipcMain } from 'electron'",
+        "import { status, push } from './git'",
+        'function wrapIn(channel, fn) { ipcMain.handle(channel, async (event, ...args) => fn(event, ...args)) }',
+        'const wrap = (name, fn) => wrapIn(name, (_e, ...args) => fn(...args))',
+        "wrap('git:both', () => { push(); status() })",
+        "ipcMain.on('git:status', status)",
+        'ipcMain.handle(`git:${1}`, push)',
+      ].join('\n'),
+    })
+    const starts = map.folders.flatMap((f) => f.files).find((f) => f.path === 'ipc.ts')?.starts ?? []
+    const routed = starts.filter((start) => start.channel !== undefined)
+    expect(routed.map(({ channel, line, sites }) => ({ channel, line, sites: sites?.map((site) => ('fn' in site ? site.fn : -1)) }))).toEqual([
+      { channel: 'git:both', line: 5, sites: [1, 0] },
+      { channel: 'git:status', line: 6, sites: [0] },
+    ])
+  })
+
+  it('names each bridge member by its window path and the channel it sends on', async () => {
+    const map = await mapOf({
+      'preload.ts': [
+        "import { contextBridge, ipcRenderer } from 'electron'",
+        'const call = (channel, ...args) => ipcRenderer.invoke(channel, ...args)',
+        'const api = {',
+        "  read: (id) => call('api:read', id),",
+        "  write: (id) => ipcRenderer.send('api:write', id),",
+        "  watch: (fn) => ipcRenderer.on('api:changed', fn),",
+        "  git: { push: () => call('api:push') },",
+        '}',
+        "contextBridge.exposeInMainWorld('api', api)",
+        "contextBridge.exposeInMainWorld(name(), { lost: () => call('api:lost') })",
+      ].join('\n'),
+    })
+    const starts = map.folders.flatMap((f) => f.files).find((f) => f.path === 'preload.ts')?.starts ?? []
+    const members = starts.filter((start) => start.kind === 'bridge').map(({ member, channel }) => `${member ?? '?'} ${channel ?? '-'}`)
+    expect(members.sort()).toEqual(['? api:lost', 'api.git.push api:push', 'api.read api:read', 'api.watch -', 'api.write api:write'])
   })
 
   it('finds cli commands from argv checks, switches, aliases and command libraries', async () => {

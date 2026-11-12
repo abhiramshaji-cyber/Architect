@@ -2,9 +2,9 @@ import ts from 'typescript'
 import type { StartKind } from '../../../shared/types'
 import { isInline, unwrapped, type Call, type Code } from './refs'
 
-export type Registration = { kind: StartKind; handler: ts.Node }
+export type Registration = { kind: StartKind; handler: ts.Node; call: ts.CallExpression; channel?: string }
 
-type Registrar = { kind: StartKind; at: number | 'handler' }
+type Registrar = { kind: StartKind; at: number | 'handler'; channel?: number }
 
 const LAST = -1
 
@@ -55,7 +55,7 @@ function builtIn(call: ts.CallExpression, source: ts.SourceFile, imports: Readon
   const receiver = nameOf(call.expression.expression)
   const first = call.arguments[0]
 
-  if (receiver === 'ipcMain' && IPC.has(method)) return { kind: 'ipcHandler', at: 1 }
+  if (receiver === 'ipcMain' && IPC.has(method)) return { kind: 'ipcHandler', at: 1, channel: 0 }
   if (method === 'registerTool') return { kind: 'mcpTool', at: LAST }
   if (method === 'tool' && imports.has('McpServer') && first && ts.isStringLiteralLike(first)) {
     return { kind: 'mcpTool', at: LAST }
@@ -110,7 +110,20 @@ function paramAt(fn: ts.Node, handler: ts.Node): number {
   return hit
 }
 
-function callsOf(root: ts.Node): ts.CallExpression[] {
+function paramIndex(fn: ts.Node, arg: ts.Expression | undefined): number | undefined {
+  const value = arg && unwrapped(arg)
+  if (!ts.isFunctionLike(fn) || !value || !ts.isIdentifier(value)) return undefined
+  const at = fn.parameters.findIndex((param) => ts.isIdentifier(param.name) && param.name.text === value.text)
+  return at === -1 ? undefined : at
+}
+
+function channelOf(call: ts.CallExpression, registrar: Registrar): string | undefined {
+  const arg = registrar.channel === undefined ? undefined : call.arguments[registrar.channel]
+  const value = arg && unwrapped(arg)
+  return value && ts.isStringLiteralLike(value) ? value.text : undefined
+}
+
+export function callsOf(root: ts.Node): ts.CallExpression[] {
   const calls: ts.CallExpression[] = []
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) calls.push(node)
@@ -120,7 +133,7 @@ function callsOf(root: ts.Node): ts.CallExpression[] {
   return calls
 }
 
-function wrapperBody(fn: ts.Node): ts.Node | undefined {
+export function wrapperBody(fn: ts.Node): ts.Node | undefined {
   if (ts.isFunctionLike(fn)) return fn
   if (ts.isVariableDeclaration(fn) || ts.isPropertyAssignment(fn) || ts.isPropertyDeclaration(fn)) {
     const value = fn.initializer && unwrapped(fn.initializer)
@@ -159,7 +172,8 @@ export function registrationsIn(
         const handler = registrar && handlerOf(call, registrar)
         const at = handler ? paramAt(body, handler) : -1
         if (!registrar || at === -1) continue
-        wrappers.set(self, { kind: registrar.kind, at })
+        const channel = registrar.channel === undefined ? undefined : paramIndex(body, call.arguments[registrar.channel])
+        wrappers.set(self, { kind: registrar.kind, at, ...(channel === undefined ? {} : { channel }) })
         grew = true
         break
       }
@@ -169,6 +183,8 @@ export function registrationsIn(
   return calls.flatMap((call) => {
     const registrar = registrarOf(call)
     const handler = registrar && handlerOf(call, registrar)
-    return registrar && handler ? [{ kind: registrar.kind, handler }] : []
+    if (!registrar || !handler) return []
+    const channel = channelOf(call, registrar)
+    return [{ kind: registrar.kind, handler, call, ...(channel === undefined ? {} : { channel }) }]
   })
 }

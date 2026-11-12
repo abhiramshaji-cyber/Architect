@@ -9,7 +9,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-const MAP_VERSION = 8
+const MAP_VERSION = 9
 
 const LEGACY_MAP = path.join('.architect', 'map.json')
 
@@ -38,6 +38,14 @@ function isCallRef(value: unknown): boolean {
 
 const optionalText = (value: unknown) => value === undefined || typeof value === 'string'
 
+function isCallSite(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const site = value as Record<string, unknown>
+  return Number.isInteger(site.line) && (typeof site.bridge === 'string' || isCallRef(site))
+}
+
+const optionalSites = (value: unknown) => value === undefined || (Array.isArray(value) && value.every(isCallSite))
+
 function isParam(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const param = value as Record<string, unknown>
@@ -56,7 +64,7 @@ function isFunctionEntry(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const fn = value as Record<string, unknown>
   if (!Array.isArray(fn.calls) || !fn.calls.every(isCallRef)) return false
-  if (typeof fn.endLine !== 'number') return false
+  if (typeof fn.endLine !== 'number' || !optionalSites(fn.sites)) return false
   if (fn.doc !== undefined && typeof fn.doc !== 'string') return false
   if (fn.signature !== undefined && !isSignature(fn.signature)) return false
   return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
@@ -65,6 +73,8 @@ function isFunctionEntry(value: unknown): boolean {
 function isFileStart(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const start = value as Record<string, unknown>
+  if (!optionalText(start.channel) || !optionalText(start.member) || !optionalSites(start.sites)) return false
+  if (start.line !== undefined && !Number.isInteger(start.line)) return false
   return typeof start.kind === 'string' && Array.isArray(start.calls) && start.calls.every(isCallRef)
 }
 

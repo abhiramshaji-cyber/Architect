@@ -68,6 +68,9 @@ export type LayerCall = { file: string; line: number; fn: string; target: string
 export type LayerCell = { from: string; to: string; status: LayerStatus; verdict?: Verdict; calls: LayerCall[] }
 export type LayerRow = { id: string; level: number; block: number }
 export type Layers = { contract: boolean; rows: LayerRow[]; cells: LayerCell[] }
+export type FlowAsk = { file: string; name: string; line: number; depth: number; open: string[] }
+export type FlowStep = { key: string; from: string; to: string; file: string; line: number; callee: string; target: string; targetLine: number; depth: number; lines: number[]; mark?: 'cycle' | 'repeat'; more?: true; ipc?: string; forbidden?: string }
+export type Flow = { start: string; file: string; line: number; entry: Entry; lane: string; lanes: string[]; steps: FlowStep[]; depth: number; contract: boolean; cut: boolean }
 
 export const proposalSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('component'), id: z.string(), purpose: z.string(), owns: z.array(z.string()) }),
@@ -215,6 +218,7 @@ export const requestSchema = z.discriminatedUnion('op', [
 export type Request = z.infer<typeof requestSchema>
 
 export type CallRef = { file: string; fn: number }
+export type CallSite = { file: string; fn: number; line: number } | { bridge: string; line: number }
 
 export type FunctionEntry = {
   name: string
@@ -222,20 +226,19 @@ export type FunctionEntry = {
   endLine: number
   description: string
   calls: CallRef[]
+  sites?: CallSite[]
   exported?: true
   doc?: string
   signature?: Signature
 }
 
 export type Param = { name: string; type?: string; value?: string; optional?: true; rest?: true }
-
 export type Signature = { generics?: string; params: Param[]; returns?: string }
 
 export type StartReason = 'mcpTool' | 'ipcHandler' | 'bridge' | 'cliCommand'
-
 export type StartKind = 'load' | 'exports' | StartReason
 
-export type FileStart = { kind: StartKind; calls: CallRef[] }
+export type FileStart = { kind: StartKind; calls: CallRef[]; channel?: string; member?: string; line?: number; sites?: CallSite[] }
 
 export type FileEntry = { path: string; lines?: number; functions: FunctionEntry[]; imports?: string[]; starts?: FileStart[] }
 
@@ -557,6 +560,7 @@ export type ArchitectApi = {
   rescan(root: string): Promise<CodeMap>
   ownership(root: string): Promise<Ownership | null>
   layers(root: string): Promise<Layers>
+  flow(root: string, ask: FlowAsk): Promise<Flow>
   recency(root: string): Promise<Recency>
   churn(root: string, days?: number): Promise<import('./recency').Churn>
   readSource(root: string, file: string, from: number, length: number): Promise<SourceWindow>
