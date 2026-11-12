@@ -241,6 +241,12 @@
 
 .fn-card-open > * {
   max-width: 100%;
+  flex-shrink: 0;
+}
+
+.fn-card-open > .fn-card-doc {
+  flex-shrink: 1;
+  min-height: 0;
 }
 
 .fn-card-open:hover {
@@ -300,6 +306,24 @@
 .fn-card-also {
   font-size: var(--fs-xs);
   color: var(--text-faint);
+}
+
+.fn-card-jump {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.fn-card-jump:hover,
+.fn-card-jump:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 .fn-card-foot {
