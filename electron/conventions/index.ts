@@ -7,7 +7,7 @@ import type { ClaudeRun } from '../draft/draft'
 import { effective } from '../rules/audit'
 import { type SourceFacts, sourcesIn } from '../rules/facts'
 import { ruleLine } from '../rules/syntax'
-import { impactOf } from './impact'
+import { impactOf, withBanned } from './impact'
 import { measured } from './measure'
 import { promoted, ruleOf } from './promote'
 
@@ -29,7 +29,8 @@ function weighed(architecture: Architecture | null, sources: SourceFacts[], foun
   const { rules, scope } = architecture ?? {}
   return found.map((convention) => {
     if (convention.rule === undefined) return convention
-    const entry = ruleOf(convention.rule)
+    const read = ruleOf(convention.rule)
+    const entry = typeof read === 'string' ? read : withBanned(rules, read)
     if (typeof entry !== 'string') return { ...convention, rule: ruleLine(entry), impact: impactOf(rules, sources, scope, entry) }
 
     const { rule, ...rest } = convention
@@ -42,7 +43,8 @@ export async function conventionsOf(dir: string, load: () => Promise<Project>): 
   const { root, map, architecture } = await load()
   if (!on(dir)) return { enabled: false }
   const sources = sourcesIn(root, map)
-  return { enabled: true, measured: weighed(architecture, sources, measured(architecture, sources)) }
+  const found = weighed(architecture, sources, measured(architecture, sources))
+  return { enabled: true, measured: found.filter((convention) => convention.impact?.loosens.length === 0) }
 }
 
 export function switchConventions(dir: string, enabled: boolean, load: () => Promise<Project>): Promise<Conventions> {

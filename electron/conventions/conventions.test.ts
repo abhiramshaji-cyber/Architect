@@ -97,7 +97,13 @@ describe('impactOf', () => {
     const tighter = impactOf(undefined, sources, undefined, { rule: 'lines', limit: 100, globs: ['b/**'] })
     expect(tighter.flags.map((v) => v.path)).toEqual(['b/y.ts'])
     const looser = impactOf(undefined, sources, undefined, { rule: 'lines', limit: 400, globs: [] })
-    expect(looser).toEqual({ flags: [], clears: [expect.objectContaining({ path: 'a/x.ts' })] })
+    expect(looser).toEqual({ flags: [], clears: [expect.objectContaining({ path: 'a/x.ts' })], loosens: ['- lines: 200'] })
+  })
+
+  it('reports a rule that loosens a limit even when no file is near it today', () => {
+    const declared = [{ rule: 'lines' as const, limit: 50, globs: ['src/new/**'] }]
+    expect(impactOf(declared, [facts('src/a.ts', 10)], undefined, { rule: 'lines', limit: 400, globs: ['src/**'] }).loosens).toEqual(['- lines: 200', '- lines: 50 `src/new/**`'])
+    expect(impactOf(declared, [], undefined, { rule: 'lines', limit: 40, globs: ['other/**'] }).loosens).toEqual([])
   })
 })
 
@@ -196,6 +202,23 @@ describe('stopping a running ask', () => {
 
     const loose = await suggestedConventions(dir, async () => ({ root: dir, map: mapOf('top.ts'), architecture: null }), run)
     expect(loose.ok && loose.value[0]?.files).toEqual(['top.ts'])
+  })
+})
+
+describe('names suggestions', () => {
+  it('keeps the words already banned and drops a measured rule that would loosen a tighter line', async () => {
+    on()
+    write('a/x.ts', 3)
+    write('a/y.ts', 5)
+    const reply = { conventions: [{ title: 'No utils', detail: '', files: ['a/x.ts'], rule: '- names: Util `a/**`' }] }
+    const run = vi.fn<ClaudeRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify(reply), stderr: '' })
+    const architecture = drawn([['a/**']], [{ rule: 'lines', limit: 4, globs: ['a/empty/**'] }])
+    const load = async () => ({ root: dir, map: mapOf('a/x.ts', 'a/y.ts'), architecture })
+
+    const result = await suggestedConventions(dir, load, run)
+    expect(result.ok && result.value[0]).toMatchObject({ rule: '- names: Util, Manager, Helper, Service, Factory, Base `a/**`', impact: { loosens: [] } })
+    const state = await conventionsOf(dir, load)
+    expect(state.enabled && state.measured.map((c) => c.rule)).not.toContain('- lines: 5 `a/**`')
   })
 })
 

@@ -1,10 +1,7 @@
 import type { DraftResult } from '../types'
 import type { RuleViolation } from './rules'
 
-export type ConventionImpact = {
-  flags: RuleViolation[]
-  clears: RuleViolation[]
-}
+export type ConventionImpact = { flags: RuleViolation[]; clears: RuleViolation[]; loosens: string[] }
 
 export type Convention = {
   source: 'measured' | 'ai'

@@ -3,7 +3,9 @@ import { parseRules, ruleLine } from '../rules/syntax'
 
 const ends = (row: string) => row.startsWith('## ') || row.startsWith('<!--')
 
-export function ruleOf(line: string): RuleEntry | string {
+export type Checked = Exclude<RuleEntry, { rule: 'skip' } | { rule: 'split' }>
+
+export function ruleOf(line: string): Checked | string {
   let problem = 'not a rule line'
   const [entry] = parseRules([{ text: line.trim(), line: 1, col: 0 }], (message) => {
     problem = message

@@ -9,7 +9,7 @@ const MAX_FOLDERS = 300
 const MAX_PLAIN = 8
 
 const RULE_SYNTAX = [
-  '- names: Word, Word `glob`   bans those words in file, class and function names under the glob',
+  '- names: Word, Word `glob`   bans those words in file, class and function names under the glob, in place of the list in force there',
   '- lines: N `glob`            at most N lines per file under the glob',
   '- files: N `glob`            at most N code files per folder under the glob',
   '- jobs: N `glob`             at most N unrelated groups of exported functions per file under the glob',

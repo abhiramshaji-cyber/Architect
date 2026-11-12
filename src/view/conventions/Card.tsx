@@ -24,6 +24,10 @@ export default memo(function Card({ convention, onOpen, onPromote }: CardProps) 
   const [added, setAdded] = useState(false)
   const { impact, rule } = convention
   const ai = convention.source === 'ai'
+  const add = () => {
+    if (!rule || (impact?.loosens.length && !window.confirm(`${rule} loosens ${impact.loosens.join(', ')} for the paths it covers. Add it anyway?`))) return
+    void onPromote(rule).then(setAdded)
+  }
 
   return (
     <li className="cv-card">
@@ -46,14 +50,27 @@ export default memo(function Card({ convention, onOpen, onPromote }: CardProps) 
           <span className="cv-impact">
             {impact.flags.length === 0 ? 'flags nothing today' : `would flag ${plural(impact.flags.length, 'violation')} today`}
             {impact.clears.length > 0 && `, and would lift ${plural(impact.clears.length, 'violation')} in force now`}
+            {impact.loosens.length > 0 && `, and loosens ${plural(impact.loosens.length, 'rule')} in force`}
           </span>
-          <button className="ghost" disabled={added} onClick={() => onPromote(rule).then(setAdded)}>
-            {added ? 'Added to Rules' : 'Add to Rules'}
+          <button className="ghost" disabled={added} onClick={add}>
+            {added ? 'Added to Rules' : impact.loosens.length > 0 ? 'Add and loosen' : 'Add to Rules'}
           </button>
         </div>
       )}
       {impact && <Violations label="Would flag" found={impact.flags} />}
       {impact && <Violations label="Would lift" found={impact.clears} />}
+      {impact && impact.loosens.length > 0 && (
+        <details className="cv-evidence">
+          <summary>Loosens</summary>
+          <ul>
+            {impact.loosens.map((line) => (
+              <li key={line}>
+                <code>{line}</code>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </li>
   )
 })
