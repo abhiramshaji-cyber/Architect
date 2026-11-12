@@ -13,6 +13,23 @@ const at = (fn: Fn) => `${fn.file}:${fn.line}`
 
 const bare = (file: string) => file.replace(/\.[cm]?[jt]sx?$/, '').replace(/\/index$/, '')
 
+type Loaded = { target: string; line: number; names: string[] | null }
+
+function namesOf(node: ts.Node): string[] | null | undefined {
+  if (ts.isImportDeclaration(node)) {
+    const clause = node.importClause
+    if (clause?.isTypeOnly) return []
+    if (!clause) return []
+    if (clause.name || (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings))) return null
+    return (clause.namedBindings?.elements ?? []).filter((element) => !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text)
+  }
+  if (ts.isExportDeclaration(node)) {
+    if (node.isTypeOnly) return []
+    return node.exportClause && ts.isNamedExports(node.exportClause) ? node.exportClause.elements.filter((element) => !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text) : null
+  }
+  return null
+}
+
 function specOf(node: ts.Node): ts.Expression | undefined {
   if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) return node.moduleSpecifier
   if (!ts.isCallExpression(node) || node.arguments.length !== 1) return undefined
@@ -20,7 +37,7 @@ function specOf(node: ts.Node): ts.Expression | undefined {
   return loads ? node.arguments[0] : undefined
 }
 
-export function importLine(root: string, test: string, target: string): number | 'unreadable' | 'not-relative' {
+export function importsOf(root: string, test: string): Loaded[] | 'unreadable' {
   let text: string
   try {
     text = fs.readFileSync(path.join(root, test), 'utf8')
@@ -28,19 +45,17 @@ export function importLine(root: string, test: string, target: string): number |
     return 'unreadable'
   }
   const source = ts.createSourceFile(test, text, ts.ScriptTarget.Latest, true)
-  const wanted = bare(target)
-  let line: number | null = null
+  const found: Loaded[] = []
   const visit = (node: ts.Node): void => {
-    if (line !== null) return
     const spec = specOf(node)
-    if (spec !== undefined && ts.isStringLiteralLike(spec) && spec.text.startsWith('.') && bare(path.posix.join(path.posix.dirname(test), spec.text)) === wanted) {
-      line = source.getLineAndCharacterOfPosition(spec.getStart(source)).line + 1
-      return
+    const names = spec === undefined ? undefined : namesOf(node)
+    if (spec !== undefined && names !== undefined && ts.isStringLiteralLike(spec) && spec.text.startsWith('.')) {
+      found.push({ target: bare(path.posix.join(path.posix.dirname(test), spec.text)), line: source.getLineAndCharacterOfPosition(spec.getStart(source)).line + 1, names })
     }
     ts.forEachChild(node, visit)
   }
   visit(source)
-  return line ?? 'not-relative'
+  return found
 }
 
 function reachedOf(fns: Fn[], reach: Reach, node: number): number {
@@ -58,9 +73,9 @@ function exposedBy(fns: Fn[], files: FileEntry[]): Map<string, number[]> {
   }))
 }
 
-type Hit = { via: 'call'; at: string; reaches: string } | { via: 'import'; target: string; reaches: string }
+type Hit = { via: 'call' | 'import'; at: string; reaches: string; unchecked?: string }
 
-export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number } | undefined): { total: number; listed: TestReach[]; notes: string[] } {
+export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reach, added: { file: string; line: number; name: string } | undefined): { total: number; listed: TestReach[]; notes: string[] } {
   const found = new Map<string, Hit>()
 
   for (const node of [...reach.depth.keys()].sort((a, b) => a - b)) {
@@ -71,27 +86,30 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
   }
 
   const exposed = exposedBy(fns, files)
-  const reachedIn = (file: string) => (exposed.get(file) ?? []).find((i) => reach.depth.has(i) && fns[i]?.test === false)
+  const named = (fn: { name: string }, names: string[] | null) => names === null || names.includes(fn.name.split('.')[0] ?? '')
   for (const file of files) {
-    if (!isTestFile(file.path) || found.has(file.path)) continue
+    if (!isTestFile(file.path) || found.has(file.path) || (file.imports ?? []).length === 0) continue
+    const loaded = importsOf(root, file.path)
     for (const target of file.imports ?? []) {
-      const hit = reachedIn(target)
-      const reached = hit === undefined ? undefined : fns[hit]
-      if (reached === undefined && target !== added?.file) continue
-      found.set(file.path, { via: 'import', target, reaches: reached ? at(reached) : `${target}:${added?.line}` })
+      const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === bare(target))
+      const ways = entries.length > 0 ? entries : [{ target, line: 0, names: null }]
+      const hit = ways.flatMap((way) => {
+        const index = (exposed.get(target) ?? []).find((i) => reach.depth.has(i) && fns[i]?.test === false && named(fns[i] as Fn, way.names))
+        const reached = index === undefined ? undefined : fns[index]
+        const fresh = added && target === added.file && named(added, way.names) ? `${added.file}:${added.line}` : undefined
+        return reached || fresh ? [{ way, reaches: reached ? at(reached) : (fresh as string) }] : []
+      })[0]
+      if (hit === undefined) continue
+      const unchecked = loaded === 'unreadable' ? `${file.path} could not be read, so the names it imports are not checked` : entries.length === 0 ? `${file.path} imports ${target} by a path that is not relative, so its import line and names are not checked` : undefined
+      found.set(file.path, { via: 'import', at: hit.way.line > 0 ? `${file.path}:${hit.way.line}` : file.path, reaches: hit.reaches, ...(unchecked ? { unchecked } : {}) })
       break
     }
   }
 
-  const lineless: string[] = []
-  const listed = [...found].sort(([a], [b]) => a.localeCompare(b)).slice(0, LISTED).map(([file, hit]): TestReach => {
-    if (hit.via === 'call') return { file, ...hit }
-    const line = importLine(root, file, hit.target)
-    if (line === 'unreadable') lineless.push(`${file} could not be read, so its import line is not given`)
-    if (line === 'not-relative') lineless.push(`${file} imports ${hit.target} by a path that is not relative, so its import line is not given`)
-    return { file, via: 'import', at: typeof line === 'number' ? `${file}:${line}` : file, reaches: hit.reaches }
-  })
+  const shown = [...found].sort(([a], [b]) => a.localeCompare(b)).slice(0, LISTED)
+  const listed = shown.map(([file, { via, at: line, reaches }]): TestReach => ({ file, via, at: line, reaches }))
+  const lineless = shown.flatMap(([, hit]) => (hit.unchecked ? [hit.unchecked] : []))
   const cut = found.size > LISTED ? [`${found.size - LISTED} of ${found.size} test files are counted but not listed`] : []
-  const loose = listed.some((test) => test.via === 'import') ? ['a test listed via import imports a file that holds or re-exports a reached function; the scan does not see calls inside test callbacks, so it may not call that function'] : []
+  const loose = listed.some((test) => test.via === 'import') ? ['a test listed via import imports a reached function by name, or a whole file holding one; the scan does not see calls inside test callbacks, so it may not call it'] : []
   return { total: found.size, listed, notes: [...cut, ...lineless, ...loose] }
 }

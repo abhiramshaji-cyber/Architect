@@ -13,6 +13,7 @@ const componentSchema = z.object({ id: z.string().nullable(), functions: z.numbe
 const testSchema = z.object({ file: z.string(), via: z.enum(['call', 'import']), at: z.string(), reaches: z.string() })
 
 export const impactSchema = z.object({
+  status: z.enum(['done', 'timeout', 'failed']),
   touched: z.object({ total: z.number().int().nonnegative(), listed: z.array(touchSchema) }),
   callers: z.object({
     total: z.number().int().nonnegative(),

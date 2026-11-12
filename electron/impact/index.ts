@@ -15,11 +15,13 @@ export { impactSchema, type Impact } from './schema'
 
 export type ImpactInput = { cwd: string; from?: string; to?: string; file?: string; content?: string }
 
-type Spot = { file: string; line: number }
+type Spot = { file: string; line: number; name: string }
 
 type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; file: string | null; notes: string[] }
 
 const SETTLE_MS = 2000
+
+const CODE = /\.[cm]?[jt]sx?$/
 
 const TIMEOUT_MS = 5000
 
@@ -49,11 +51,11 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
     if (change.change === 'added') return []
     const index = scanned.indexOf(change.key)
     if (index >= 0 && offset >= 0) return [offset + index]
-    notes.push(`${change.name} at ${file}:${change.line} is not in the last scan, so its callers are not counted`)
+    notes.push(`${change.name} at ${file}:${change.line} is not in the scan (the scan skips this path, or the file changed after the scan), so its callers are not counted`)
     return []
   })
   const touched = changes.map((change) => ({ name: change.name, change: change.change, at: `${file}:${change.line}`, in: change.change === 'added' ? ('proposed' as const) : ('disk' as const) }))
-  return { seeds, touched, added: changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line })), file, notes }
+  return { seeds, touched, added: changes.filter((change) => change.change === 'added').map((change) => ({ file, line: change.line, name: change.name })), file, notes }
 }
 
 function edgeSeeds(from: string, to: string, architecture: Architecture, fns: Fn[]): Seeded {
@@ -92,6 +94,7 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
   const { reach, callers, entries, reached, notes } = callersOf(fns, files, edgesOf(map), seeded.seeds)
   const tests = testsOf(root, fns, files, reach, seeded.added[0])
   return {
+    status: 'done',
     touched: { total: seeded.touched.length, listed: seeded.touched.slice(0, LISTED) },
     callers,
     entries,
@@ -102,7 +105,7 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
 }
 
 function current(root: string, map: CodeMap): boolean {
-  const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path))]
+  const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path)).filter((file) => CODE.test(file))]
   return paths.every((entry) => {
     const stat = fs.statSync(path.join(root, entry), { throwIfNoEntry: false })
     return stat !== undefined && stat.ctimeMs < map.scannedAt - SETTLE_MS
@@ -124,17 +127,17 @@ async function mapOf(root: string): Promise<CodeMap> {
 
 export async function impactFor(input: ImpactInput, root: string, architecture: Architecture, timeoutMs = TIMEOUT_MS): Promise<Impact> {
   const empty = { total: 0, listed: [] }
-  const failed = (note: string): Impact => ({ touched: empty, callers: { ...empty, depths: [], listedThrough: LIST_DEPTH, unlisted: 0 }, entries: empty, components: [], tests: empty, notes: [note] })
+  const failed = (status: 'timeout' | 'failed', note: string): Impact => ({ status, touched: empty, callers: { ...empty, depths: [], listedThrough: LIST_DEPTH, unlisted: 0 }, entries: empty, components: [], tests: empty, notes: [note] })
   let timer: NodeJS.Timeout | undefined
   const late = new Promise<null>((resolve) => {
     timer = setTimeout(resolve, timeoutMs, null)
   })
   try {
     const map = await Promise.race([mapOf(root), late])
-    if (map === null) return failed(`impact was not worked out: scanning ${root} took longer than ${timeoutMs} ms; the scan goes on and a later check uses it`)
+    if (map === null) return failed('timeout', `impact was not worked out: scanning ${root} took longer than ${timeoutMs} ms; the scan goes on and a later check uses it`)
     return impactOf(input, root, architecture, map)
   } catch (err) {
-    return failed(`impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`)
+    return failed('failed', `impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`)
   } finally {
     clearTimeout(timer)
   }

@@ -28,7 +28,15 @@ function bodies(source: string, file: string): Map<string, Body> {
   const lines = source.split(/\r?\n/)
   const fns = functionsIn(source, file)
   const keys = keysOf(fns)
-  return new Map(fns.map((fn, i) => [keys[i] ?? '', { name: fn.name, key: keys[i] ?? '', line: fn.line, endLine: fn.endLine, text: lines.slice(fn.line - 1, fn.endLine).join('\n') }]))
+  return new Map(
+    fns.map((fn, i) => {
+      const key = keys[i] ?? ''
+      const inner = fns.filter((_, j) => (keys[j] ?? '').startsWith(`${key}/`))
+      const own = (line: number) => line === fn.line || line === fn.endLine || !inner.some((child) => child.line <= line && line <= child.endLine)
+      const text = lines.slice(fn.line - 1, fn.endLine).filter((_, at) => own(fn.line + at)).join('\n')
+      return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text }]
+    }),
+  )
 }
 
 function sharing(all: Map<string, Body>, body: Body): string[] {

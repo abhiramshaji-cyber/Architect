@@ -7,7 +7,7 @@ import { parse } from '../contract/graph'
 import { scan } from '../scan/scan'
 import { impactFor, impactOf, type ImpactInput } from '.'
 import { callersOf } from './callers'
-import { importLine } from './tests'
+import { importsOf } from './tests'
 import { changesOf } from './touched'
 
 const roots: string[] = []
@@ -73,6 +73,12 @@ describe('changesOf', () => {
     expect(split.map((change) => `${change.key} ${change.change}`)).toEqual(['/a#0 changed', '/b#0 changed'])
   })
 
+  it('marks only the inner function when only its body changes', () => {
+    const before = 'function outer() {\n  const x = 1\n  function inner() {\n    return 1\n  }\n  return inner() + x\n}\n'
+    expect(changesOf('x.ts', before, before.replace('return 1', 'return 2')).changes.map((change) => `${change.key} ${change.change}`)).toEqual(['/outer#0/inner#0 changed'])
+    expect(changesOf('x.ts', before, before.replace('const x = 1', 'const x = 2')).changes.map((change) => `${change.key} ${change.change}`)).toEqual(['/outer#0 changed'])
+  })
+
   it('touches nothing when only code outside every function changes', () => {
     expect(changesOf('x.ts', 'const a = 1\nfunction f() {}\n', 'const a = 2\nfunction f() {}\n').changes).toEqual([])
   })
@@ -107,10 +113,7 @@ describe('impactOf', () => {
       '3 api/route.ts:3 -> api/handler.ts:3 handle',
     ])
     expect(impact.callers).toMatchObject({ total: 4, listedThrough: 3, unlisted: 1 })
-    expect(impact.notes).toEqual([
-      '1 of 4 callers are counted in depths but not listed; the list stops at depth 3 or 25 callers',
-      'a test listed via import imports a file that holds or re-exports a reached function; the scan does not see calls inside test callbacks, so it may not call that function',
-    ])
+    expect(impact.notes).toEqual(['1 of 4 callers are counted in depths but not listed; the list stops at depth 3 or 25 callers'])
     expect(impact.components).toEqual([
       { id: 'api', functions: 2, entries: 0, first: 'api/handler.ts:3' },
       { id: 'store', functions: 2, entries: 0, first: 'store/cache.ts:3' },
@@ -123,13 +126,11 @@ describe('impactOf', () => {
     const { root, map, architecture } = await project()
     const impact = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, map)
 
-    expect(impact.tests).toEqual({
-      total: 2,
-      listed: [
-        { file: 'api/handler.test.ts', via: 'call', at: 'api/handler.test.ts:3', reaches: 'store/cache.ts:3' },
-        { file: 'store/db.test.ts', via: 'import', at: 'store/db.test.ts:1', reaches: 'store/db.ts:1' },
-      ],
-    })
+    expect(impact.tests).toEqual({ total: 1, listed: [{ file: 'api/handler.test.ts', via: 'call', at: 'api/handler.test.ts:3', reaches: 'store/cache.ts:3' }] })
+
+    const idle = impactOf(edit(root, 'store/db.ts', 'return 3', 'return 7'), root, architecture, map)
+    expect(idle.tests.listed).toEqual([{ file: 'store/db.test.ts', via: 'import', at: 'store/db.test.ts:1', reaches: 'store/db.ts:9' }])
+    expect(idle.notes).toContain('a test listed via import imports a reached function by name, or a whole file holding one; the scan does not see calls inside test callbacks, so it may not call it')
     expect(impact.callers.listed.some((caller) => caller.at.includes('.test.'))).toBe(false)
   })
 
@@ -153,7 +154,10 @@ describe('impactOf', () => {
     expect(added.tests).toEqual({ total: 0, listed: [] })
 
     const tested = impactOf(edit(root, 'store/db.ts', 'export function load', 'export function extra() {}\n\nexport function load'), root, architecture, map)
-    expect(tested.tests.listed).toContainEqual({ file: 'store/db.test.ts', via: 'import', at: 'store/db.test.ts:1', reaches: 'store/db.ts:1' })
+    expect(tested.tests.total).toBe(0)
+    const whole = await project({ ...FILES, 'store/db.test.ts': "import * as db from './db'\n\nit('idles', () => db.idle())\n" })
+    const spread = impactOf(edit(whole.root, 'store/db.ts', 'export function load', 'export function extra() {}\n\nexport function load'), whole.root, whole.architecture, whole.map)
+    expect(spread.tests.listed).toContainEqual({ file: 'store/db.test.ts', via: 'import', at: 'store/db.test.ts:1', reaches: 'store/db.ts:1' })
     expect(impactOf({ cwd: root, file: 'store/db.ts', content: fs.readFileSync(path.join(root, 'store/db.ts'), 'utf8') }, root, architecture, map).tests.total).toBe(0)
   })
 
@@ -172,7 +176,7 @@ describe('impactOf', () => {
   it('notes a changed function the scan has not seen yet', async () => {
     const { root, architecture } = await project()
     const empty: CodeMap = { root, scannedAt: 0, folders: [] }
-    expect(impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, empty).notes).toEqual(['load at store/db.ts:1 is not in the last scan, so its callers are not counted'])
+    expect(impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, empty).notes).toEqual(['load at store/db.ts:1 is not in the scan (the scan skips this path, or the file changed after the scan), so its callers are not counted'])
   })
 
   it('starts an edge from every function the calling component owns', async () => {
@@ -198,11 +202,13 @@ describe('impactFor', () => {
 
     fs.mkdirSync(path.join(root, 'pad'))
     for (let i = 0; i < 200; i += 1) fs.writeFileSync(path.join(root, 'pad', `p${i}.ts`), `export function p${i}() {}\n`)
+    expect(await impactFor(input, root, architecture, 0)).toMatchObject({ status: 'timeout' })
     expect((await impactFor(input, root, architecture, 0)).notes[0]).toMatch(/^impact was not worked out: scanning .* took longer than 0 ms/)
 
     const broken = await impactFor(input, root, {} as Architecture)
     expect(broken.notes[0]).toMatch(/^impact could not be worked out: /)
-    expect(broken.callers.total).toBe(0)
+    expect(broken).toMatchObject({ status: 'failed', callers: { total: 0 } })
+    expect(first.status).toBe('done')
   })
 })
 
@@ -213,14 +219,14 @@ describe('tests reached through files that forward exports', () => {
     const withAlias = { ...map, folders: map.folders.map((folder) => ({ ...folder, files: folder.files.map((file) => (file.path === 'z/alias.test.ts' ? { ...file, imports: ['store/db.ts'] } : file)) })) }
     const impact = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, withAlias)
 
-    expect(impact.tests.total).toBe(14)
+    expect(impact.tests.total).toBe(13)
     expect(impact.tests.listed).toHaveLength(10)
     expect(impact.tests.listed).toContainEqual({ file: 't/n00.test.ts', via: 'import', at: 't/n00.test.ts:1', reaches: 'store/db.ts:1' })
-    expect(impact.notes).toContain('4 of 14 test files are counted but not listed')
+    expect(impact.notes).toContain('3 of 13 test files are counted but not listed')
 
     const alias = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, { ...withAlias, folders: withAlias.folders.filter((folder) => folder.path !== 't') })
     expect(alias.tests.listed).toContainEqual({ file: 'z/alias.test.ts', via: 'import', at: 'z/alias.test.ts', reaches: 'store/db.ts:1' })
-    expect(alias.notes).toContain('z/alias.test.ts imports store/db.ts by a path that is not relative, so its import line is not given')
+    expect(alias.notes).toContain('z/alias.test.ts imports store/db.ts by a path that is not relative, so its import line and names are not checked')
   })
 
   it('says the edge is left to the verdict when a file is given too', async () => {
@@ -231,12 +237,21 @@ describe('tests reached through files that forward exports', () => {
   })
 })
 
-describe('importLine', () => {
-  it('finds the line importing the file and nothing for a missing file or an alias', async () => {
-    const { root } = await project({ 'a/b.ts': 'export const b = 1\n', 'a/b.test.ts': "import x from 'vitest'\nexport * from './b.js'\n", 'a/c.test.ts': "import { b } from '@/a/b'\n" })
-    expect(importLine(root, 'a/b.test.ts', 'a/b.ts')).toBe(2)
-    expect(importLine(root, 'a/c.test.ts', 'a/b.ts')).toBe('not-relative')
-    expect(importLine(root, 'a/none.test.ts', 'a/b.ts')).toBe('unreadable')
+describe('importsOf', () => {
+  it('reads each relative import with its line and the names it brings in, a type import bringing none', async () => {
+    const { root } = await project({
+      'a/b.ts': 'export const b = 1\n',
+      'a/b.test.ts': "import type { T } from './t'\nimport { b, type U, c as d } from './b.js'\nimport * as all from './all'\nimport side from './side'\nexport * from './star'\nimport './bare'\nimport { x } from '@/alias'\n",
+    })
+    expect(importsOf(root, 'a/b.test.ts')).toEqual([
+      { target: 'a/t', line: 1, names: [] },
+      { target: 'a/b', line: 2, names: ['b', 'c'] },
+      { target: 'a/all', line: 3, names: null },
+      { target: 'a/side', line: 4, names: null },
+      { target: 'a/star', line: 5, names: null },
+      { target: 'a/bare', line: 6, names: [] },
+    ])
+    expect(importsOf(root, 'a/none.test.ts')).toBe('unreadable')
   })
 })
 
