@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Commit, HistoryEntry, VerdictRecord } from '../../../shared/types'
+import type { Commit, VerdictRecord } from '../../../shared/types'
 import { gitMessage } from '../../model/picker'
 
 export const LIMIT = 1000
@@ -41,7 +41,7 @@ const sameAs = (a: Stored | null, b: Stored) =>
   a.verdicts.length === b.verdicts.length &&
   a.verdicts[0]?.id === b.verdicts[0]?.id
 
-export function useReplay(root: string | null, days: number, history: HistoryEntry[]): Stored | null {
+export function useReplay(root: string | null, days: number): Stored | null {
   const [stored, setStored] = useState<Stored | null>(null)
 
   useEffect(() => {
@@ -73,7 +73,7 @@ export function useReplay(root: string | null, days: number, history: HistoryEnt
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refresh)
     }
-  }, [root, days, history])
+  }, [root, days])
 
   return stored?.root === root && stored.days === days ? stored : null
 }

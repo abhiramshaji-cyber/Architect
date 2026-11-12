@@ -40,7 +40,7 @@ export default function ReplayView({ theme, show }: ViewProps) {
   const [days, setDays] = useState<Days>('90')
   const [picked, setPicked] = useState<{ key: string; at: number } | null>(null)
   const [playing, setPlaying] = useState(false)
-  const stored = useReplay(currentRoot, Number(days), history)
+  const stored = useReplay(currentRoot, Number(days))
 
   const start = useMemo(() => (stored ? startOf(stored.since, stored.capped, history, stored.verdicts) : null), [stored, history])
   const steps = useMemo(() => (stored && start ? stepsOf(stored.commits, history, start.at) : []), [stored, start, history])

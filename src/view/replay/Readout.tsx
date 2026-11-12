@@ -16,7 +16,8 @@ export function stepText(step: Step): string {
 }
 
 export function verdictText({ from, to, file, verdict, stale }: VerdictRecord): string {
-  const asked = from !== undefined && to !== undefined ? `${from} -> ${to}` : (file ?? 'change')
+  const edge = from !== undefined && to !== undefined ? `${from} -> ${to}` : undefined
+  const asked = (verdict.status === 'rule-violation' ? (file ?? edge) : (edge ?? file)) ?? 'change'
   const said = (() => {
     switch (verdict.status) {
       case 'allowed':
@@ -32,7 +33,9 @@ export function verdictText({ from, to, file, verdict, stale }: VerdictRecord): 
       case 'unknown':
         return verdict.reason ? `unknown: ${verdict.reason}` : 'unknown'
       case 'rule-violation':
-        return verdict.violations.map((violation) => violation.message).join('; ')
+        return verdict.violations
+          .map(({ path, line, message }) => `${path}${line === undefined ? '' : `:${line}`} ${message}`)
+          .join('; ')
     }
   })()
   return `${asked} ${said}${stale ? ' (stale contract)' : ''}`
