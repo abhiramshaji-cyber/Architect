@@ -134,7 +134,7 @@ export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map))
         entry: claimed.get(`${file.path}\0${index}`) ?? null,
         untraced: untraced.get(`${file.path}\0${index}`) ?? null,
       }
-      if (fn.overload) fact.overload = true
+      if (fn.twin) fact.twin = true
       return fact
     }),
   )

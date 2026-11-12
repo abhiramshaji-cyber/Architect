@@ -494,10 +494,12 @@ function parseFile(source: string, file: string): Parsed {
       if (placed.length > 0) raw.set(from, placed)
     }
 
+    const bound = new Set([...byScope.values()].flatMap((names) => [...names.values()]))
     const functions = order.map(({ f, i }, from) => {
       rawOf(sites[i] ?? [], from)
       const entry: FunctionEntry = { ...f.entry, calls: refsOf(distinct(sites[i] ?? []), from) }
-      if (isOverloadSignature(f.node)) entry.overload = true
+      const accessor = ts.isGetAccessorDeclaration(f.node) || ts.isSetAccessorDeclaration(f.node)
+      if (isOverloadSignature(f.node) || (accessor && !bound.has(i))) entry.twin = true
       return entry
     })
     const starts: FileStart[] = opened.map(({ sites: handled, ...start }, k) => {
@@ -518,6 +520,7 @@ function parseFile(source: string, file: string): Parsed {
       const fn = functions[at]
       if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
     }
+    for (const fn of functions) if (fn.twin && topLevel.has(fn.name) && exportedLocals.has(fn.name.split('.')[0] ?? fn.name)) fn.exported = true
 
     return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs, typed, computed }
   } catch {

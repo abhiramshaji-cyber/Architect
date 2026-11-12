@@ -168,10 +168,10 @@ describe('treeOf', () => {
   it('places an overload signature under its implementation, never on its own', () => {
     const tree = graph([
       ['main', [3], { entry: BIN }],
-      ['parse', [], { overload: true, line: 2 }],
-      ['parse', [], { overload: true, line: 3 }],
+      ['parse', [], { twin: true, line: 2 }],
+      ['parse', [], { twin: true, line: 3 }],
       ['parse', [], { line: 4 }],
-      ['dead', [], { overload: true, line: 9 }],
+      ['dead', [], { twin: true, line: 9 }],
       ['dead', [], { line: 10 }],
     ])
     expect(tree.children[3]).toEqual([1, 2])

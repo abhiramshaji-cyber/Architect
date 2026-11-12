@@ -5,7 +5,7 @@ import { PROJECT, REASON, UNKNOWN, UNKNOWN_TITLE, UNREACHED, UNREACHED_TITLE, id
 
 const UNTRACED: Record<Untraced, string> = {
   value: 'used as a value',
-  load: 'called when its file loads',
+  load: 'called from code outside any listed function',
   export: 'exported by a package entry not mapped to source',
   orphan: 'no file outside tests imports its file',
   computed: 'its package loads modules by a computed path',
@@ -56,7 +56,7 @@ export function reachOf(outline: Outline, id: string, row: FunctionRow): string[
   const callers = row.fanIn === 0 ? 'no callers' : plural(row.fanIn, 'caller')
   if (line.has(UNREACHED)) return [`${row.fanIn === 0 ? callers : `${callers}, none reached`}`]
   if (!line.has(UNKNOWN)) return []
-  if (row.overload) return ['declaration without a body']
+  if (row.twin && indexOf(outline.up.get(id) ?? '') < 0) return ['declaration without a body']
   return [`${row.untraced ? UNTRACED[row.untraced] : `${callers}, reach unknown`}`]
 }
 

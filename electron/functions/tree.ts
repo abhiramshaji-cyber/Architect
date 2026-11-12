@@ -31,11 +31,11 @@ export function groupsOf(rows: FunctionRow[], starts: number[]): EntryGroup[] {
 function signaturesOf(rows: FunctionRow[]): number[][] {
   const bodies = new Map<string, number[]>()
   rows.forEach((row, at) => {
-    if (!row.overload) bodies.set(`${row.file}\0${row.name}`, [...(bodies.get(`${row.file}\0${row.name}`) ?? []), at])
+    if (!row.twin) bodies.set(`${row.file}\0${row.name}`, [...(bodies.get(`${row.file}\0${row.name}`) ?? []), at])
   })
   const signatures = rows.map((): number[] => [])
   rows.forEach((row, at) => {
-    if (!row.overload) return
+    if (!row.twin) return
     const after = (bodies.get(`${row.file}\0${row.name}`) ?? []).filter((to) => (rows[to]?.line ?? 0) > row.line)
     const body = after.sort((a, b) => (rows[a]?.line ?? 0) - (rows[b]?.line ?? 0))[0]
     if (body !== undefined) signatures[body]?.push(at)
@@ -81,7 +81,7 @@ export function treeOf(rows: FunctionRow[], edges: number[][], lifted = false): 
   }
 
   const tested = (at: number) => rows[at]?.untraced === 'test'
-  const declared = (at: number) => rows[at]?.overload === true && !signed.has(at)
+  const declared = (at: number) => rows[at]?.twin === true && !signed.has(at)
   const unknown = all.filter((at) => !seen[at] && !tested(at) && ((rows[at]?.untraced ?? null) !== null || declared(at)))
   walk(unknown)
   for (const at of all) {

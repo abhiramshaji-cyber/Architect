@@ -231,7 +231,7 @@ export type FunctionEntry = {
   calls: CallRef[]
   sites?: CallSite[]
   exported?: true
-  overload?: true
+  twin?: true
   doc?: string
   signature?: Signature
 }
@@ -504,7 +504,7 @@ export type FunctionFacts = {
   exported: boolean
   entry: Entry | null
   untraced: Untraced | null
-  overload?: true
+  twin?: true
 }
 
 export type EntryReason = StartReason | 'electronMain' | 'preload' | 'renderer' | 'page' | 'bin' | 'main' | 'exports' | 'module' | 'script'

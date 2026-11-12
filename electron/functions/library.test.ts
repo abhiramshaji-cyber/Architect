@@ -138,6 +138,17 @@ describe('a library published through package.json exports', () => {
     expect(unknown).toEqual(['run'])
   })
 
+  it('keeps both accessors of a public property and treats a script glob as no entry', async () => {
+    const { unreached, unknown, list } = await listOf({
+      'package.json': JSON.stringify({ exports: './src/index.ts', scripts: { format: 'prettier --write "src/**/*.ts"' } }),
+      'src/index.ts': 'export class Span {\n  get previous() { return 1 }\n  set previous(v: number) {}\n}\n',
+      'src/pages/route.ts': 'export function GET() {}\n',
+    })
+    expect(unreached).toEqual([])
+    expect(unknown).toEqual(['GET'])
+    expect(list.tree.groups.map((group) => group.reason)).toEqual(['exports'])
+  })
+
   it('counts the members of an anonymous default class as library API', async () => {
     const { unreached, list } = await listOf({
       'package.json': JSON.stringify({ exports: { '.': './src/index.ts' } }),

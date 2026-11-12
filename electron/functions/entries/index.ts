@@ -49,7 +49,8 @@ export function entriesIn(root: string, files: Set<string>, manifest: unknown, d
   }
   const add = (file: string, reason: EntryReason, subpath?: string) => {
     const shown = (hit: string) => reason !== 'exports' || !subpath?.includes('*') || weightOf(subpath) > (hidden.get(hit) ?? -1)
-    const hits = matching(path.posix.join(dir, file), files).filter(shown)
+    const exact = reason === 'script' || reason === 'bin'
+    const hits = (exact ? [path.posix.join(dir, file)].filter((one) => files.has(one)) : matching(path.posix.join(dir, file), files)).filter(shown)
     for (const hit of hits) {
       const reasons = into.get(hit) ?? []
       if (!reasons.includes(reason)) into.set(hit, [...reasons, reason])

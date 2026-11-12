@@ -71,7 +71,7 @@ describe('cardOf', () => {
     expect(notes(1)).toEqual(['no callers'])
     expect(notes(2)).toEqual(['2 callers, none reached'])
     expect(notes(3)).toEqual(['used as a value'])
-    expect(notes(5)).toEqual(['called when its file loads'])
+    expect(notes(5)).toEqual(['called from code outside any listed function'])
     expect(notes(7, { fanIn: 1 })).toEqual(['1 caller, reach unknown'])
     expect(notes(0)).toEqual([])
     expect(cardOf(split, UNKNOWN, { ...list, rows: marked, tree }, 'demo')).toMatchObject({ title: 'Reach unknown' })
