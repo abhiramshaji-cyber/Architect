@@ -191,8 +191,24 @@ describe('bridge', () => {
       })
     })
 
-    await checkChange('a', 'b', path)
+    await checkChange({ from: 'a', to: 'b' }, path)
     expect(seenReq).toMatchObject({ op: 'check_change', from: 'a', to: 'b' })
+
+    stopServer(server, path)
+  })
+
+  it('maps check_change with a proposed file to op check_change with file and content', async () => {
+    let seenReq: Request | undefined
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seenReq = req
+        s.write(JSON.stringify({ id: req.id, ok: true, result: { status: 'allowed' } }) + '\n')
+      })
+    })
+
+    await checkChange({ file: 'src/a.ts', content: 'export const a = 1\n' }, path)
+    expect(seenReq).toMatchObject({ op: 'check_change', file: 'src/a.ts', content: 'export const a = 1\n' })
+    expect(seenReq).not.toHaveProperty('from')
 
     stopServer(server, path)
   })
@@ -260,7 +276,7 @@ describe('bridge', () => {
       })
     })
 
-    const result = await checkChange('a', 'b', path)
+    const result = await checkChange({ from: 'a', to: 'b' }, path)
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toBe('forbidden dependency')
 

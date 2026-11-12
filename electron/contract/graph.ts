@@ -1,7 +1,8 @@
 import picomatch from 'picomatch'
 
 import { findCycle } from '../../shared/cycle'
-import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Ownership, type Proposal, type Pt, type Verdict } from '../../shared/types'
+import { parseRules } from '../rules/syntax'
+import { isPt, type Architecture, type Component, type Edge, type Forbidden, type Layout, type Ownership, type Proposal, type Pt, type RuleEntry, type Verdict } from '../../shared/types'
 
 const LAYOUT_OPEN = '<!-- architect:layout'
 const LAYOUT_CLOSE = '-->'
@@ -199,10 +200,14 @@ export function scan(markdown: string): Scan {
     if (m) packages.push((m[1] ?? '').trim())
   }
 
+  // rules
+  const declared = /^## Rules\s*$/m.test(markdown)
+  const rules = declared ? parseRules(sectionLines(markdown, 'Rules'), note) : undefined
+
   const layout = layoutHint(markdown, knownIds, refs)
 
   return {
-    architecture: { title, summary, components, edges, forbidden, packages, ...(layout && { layout }), ...(scope && { scope }) },
+    architecture: { title, summary, components, edges, forbidden, packages, ...(layout && { layout }), ...(scope && { scope }), ...(rules && { rules }) },
     problems,
     refs,
   }
@@ -237,6 +242,7 @@ export function serialize(architecture: Architecture): string {
   for (const f of architecture.forbidden) lines.push(`- ${f.from} -> ${f.to} : ${f.reason}`)
   lines.push('', '## Packages', '')
   for (const p of architecture.packages) lines.push(`- ${p}`)
+  if (architecture.rules) lines.push('', '## Rules', '', ...architecture.rules.map(ruleLine))
 
   const placed = architecture.components
     .map((c) => [c.id, architecture.layout?.[c.id]] as const)
@@ -249,6 +255,13 @@ export function serialize(architecture: Architecture): string {
   }
 
   return lines.join('\n')
+}
+
+function ruleLine(entry: RuleEntry): string {
+  const globs = entry.globs.map((glob) => `\`${glob}\``).join(', ')
+  if (entry.rule === 'skip') return `- skip: ${globs || 'off'}`
+  const value = entry.rule === 'names' ? (entry.banned === 'off' ? 'off' : entry.banned.join(', ')) : String(entry.limit)
+  return `- ${entry.rule}: ${value}${globs ? ` ${globs}` : ''}`
 }
 
 export function check(architecture: Architecture, from: string, to: string): Verdict {
@@ -279,6 +292,7 @@ export function apply(architecture: Architecture, proposal: Proposal): Architect
     packages: [...architecture.packages],
     layout: architecture.layout,
     scope: architecture.scope,
+    ...(architecture.rules && { rules: [...architecture.rules] }),
   }
 
   if (proposal.kind === 'contract') {

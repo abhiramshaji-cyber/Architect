@@ -2351,3 +2351,78 @@ describe("change review", () => {
     c.close();
   });
 });
+
+describe("check_change rules", () => {
+  const body = (count: number) => `export function go() {\n${"  void 0\n".repeat(count)}}\n`;
+
+  async function ask(input: Omit<Extract<Request, { op: "check_change" }>, "id" | "cwd" | "op">) {
+    const c = await client(socketPath);
+    const res = await c.request({ op: "check_change", cwd: tmpRoot, ...input });
+    c.close();
+    return res;
+  }
+
+  beforeEach(async () => {
+    writeArchitect(tmpRoot, fixture(component("api") + "\n" + component("db")));
+    fs.mkdirSync(path.join(tmpRoot, "api"), { recursive: true });
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+  });
+
+  it("rejects a proposed file that breaks a rule and names it", async () => {
+    const res = await ask({ file: "api/long.ts", content: body(220) });
+
+    expect(res.ok && res.result).toMatchObject({
+      status: "rule-violation",
+      violations: [{ rule: "lines", path: "api/long.ts", line: 201, message: "222 lines, the limit is 200" }],
+    });
+  });
+
+  it("allows a change that leaves an existing violation no worse", async () => {
+    fs.writeFileSync(path.join(tmpRoot, "api", "long.ts"), body(240));
+    const res = await ask({ file: path.join(tmpRoot, "api", "long.ts"), content: body(230) });
+
+    expect(res.ok && res.result).toEqual({ status: "allowed" });
+  });
+
+  it("rejects a new file in a folder already at its limit", async () => {
+    for (const name of ["a", "b", "c", "d", "e"]) fs.writeFileSync(path.join(tmpRoot, "api", `${name}.ts`), "export const x = 1\n");
+    fs.writeFileSync(path.join(tmpRoot, "api", "a.test.ts"), "export const x = 1\n");
+
+    const added = await ask({ file: "api/f.ts", content: "export const y = 2\n" });
+    expect(added.ok && added.result).toMatchObject({ status: "rule-violation", violations: [{ rule: "files", path: "api" }] });
+
+    const replaced = await ask({ file: "api/a.ts", content: "export const y = 2\n" });
+    expect(replaced.ok && replaced.result).toEqual({ status: "allowed" });
+  });
+
+  it("follows the Rules section of architect.md", async () => {
+    const tuned = fs.readFileSync(path.join(tmpRoot, "architect.md"), "utf8") + "\n## Rules\n\n- lines: 300 `api/**`\n- names: off\n";
+    writeArchitect(tmpRoot, tuned);
+
+    const res = await ask({ file: "api/UserService.ts", content: body(250) });
+    expect(res.ok && res.result).toEqual({ status: "allowed" });
+  });
+
+  it("answers the edge first when both an edge and a file are given", async () => {
+    const res = await ask({ from: "api", to: "db", file: "api/long.ts", content: body(220) });
+    expect(res.ok && res.result).toEqual({ status: "undrawn-edge" });
+  });
+
+  it("refuses a half edge, a file with no content and a file outside the project", async () => {
+    expect(await ask({ from: "api" })).toMatchObject({ ok: false, error: "check_change needs both from and to" });
+    expect(await ask({ file: "api/a.ts" })).toMatchObject({ ok: false, error: expect.stringContaining("proposed content") });
+    expect(await ask({})).toMatchObject({ ok: false, error: expect.stringContaining("from and to, or a file") });
+    expect(await ask({ file: "../elsewhere.ts", content: "x" })).toMatchObject({ ok: false, error: expect.stringContaining("outside the project") });
+  });
+
+  it("records a pass or fail run per rule", async () => {
+    await ask({ file: "api/long.ts", content: body(220) });
+
+    const key = createHash("sha256").update(fs.realpathSync.native(tmpRoot)).digest("hex");
+    const runs = JSON.parse(fs.readFileSync(path.join(path.dirname(socketPath), "rules", `${key}.json`), "utf8"));
+    expect(runs).toHaveLength(4);
+    expect(runs).toContainEqual(expect.objectContaining({ source: "check_change", rule: "lines", pass: false, violations: 1, file: "api/long.ts" }));
+    expect(runs).toContainEqual(expect.objectContaining({ rule: "files", pass: true, violations: 0 }));
+  });
+});

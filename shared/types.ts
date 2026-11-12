@@ -30,7 +30,30 @@ export type Architecture = {
   packages: string[]
   layout?: Layout
   scope?: string
+  rules?: RuleEntry[]
 }
+
+export type LimitRule = 'lines' | 'files' | 'jobs'
+
+export type CheckedRule = LimitRule | 'names'
+
+export type RuleEntry =
+  | { rule: LimitRule; limit: number | 'off'; globs: string[] }
+  | { rule: 'names'; banned: string[] | 'off'; globs: string[] }
+  | { rule: 'skip'; globs: string[] }
+
+export type RuleViolation = { rule: CheckedRule; path: string; line?: number; key: string; amount: number; message: string }
+
+export const ruleRunSchema = z.object({
+  at: z.number(),
+  source: z.enum(['check', 'check_change']),
+  rule: z.enum(['lines', 'files', 'jobs', 'names']),
+  pass: z.boolean(),
+  violations: z.number().int().nonnegative(),
+  file: z.string().optional(),
+})
+
+export type RuleRun = z.infer<typeof ruleRunSchema>
 
 export type SourceError = 'closed' | 'range' | 'outside' | 'unreadable' | 'binary' | 'large'
 
@@ -97,6 +120,7 @@ export type Verdict =
   | { status: 'cycle'; path: string[] }
   | { status: 'undrawn-edge' }
   | { status: 'unknown'; reason?: string }
+  | { status: 'rule-violation'; violations: RuleViolation[] }
 
 export type Decision =
   | { status: 'approved' }
@@ -161,7 +185,15 @@ export type ReviewDetail = {
 
 export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('get_architecture'), cwd: z.string() }),
-  z.object({ id: z.string(), op: z.literal('check_change'), cwd: z.string(), from: z.string(), to: z.string() }),
+  z.object({
+    id: z.string(),
+    op: z.literal('check_change'),
+    cwd: z.string(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    file: z.string().optional(),
+    content: z.string().optional(),
+  }),
   z.object({
     id: z.string(),
     op: z.literal('propose_change'),

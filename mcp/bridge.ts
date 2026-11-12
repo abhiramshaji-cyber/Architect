@@ -139,8 +139,9 @@ async function callTool(req: RequestInput, socketPath: string): Promise<ToolResu
 
 export const getArchitecture = (socketPath = SOCKET_PATH) => callTool({ op: 'get_architecture' }, socketPath)
 
-export const checkChange = (from: string, to: string, socketPath = SOCKET_PATH) =>
-  callTool({ op: 'check_change', from, to }, socketPath)
+type ChangeInput = { from?: string; to?: string; file?: string; content?: string }
+
+export const checkChange = (input: ChangeInput, socketPath = SOCKET_PATH) => callTool({ op: 'check_change', ...input }, socketPath)
 
 export const proposeChange = (proposal: Proposal, rationale: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'propose_change', proposal, rationale }, socketPath)
@@ -162,10 +163,15 @@ function main() {
     'check_change',
     {
       description:
-        'Check whether a dependency between two components is allowed. The verdict is allowed, forbidden with a reason, unknown-component naming the id(s) not on the canvas (propose a component), or undrawn-edge when both components exist but the edge is not drawn (propose an edge).',
-      inputSchema: { from: z.string(), to: z.string() },
+        'Check a change before making it. Pass from and to to check a dependency between two components: the verdict is allowed, forbidden with a reason, unknown-component naming the id(s) not on the canvas (propose a component), or undrawn-edge when both components exist but the edge is not drawn (propose an edge). Pass file and its full proposed content to check the file against the Rules section of architect.md (lines per file, code files per folder, banned names, one job per file): the verdict is allowed, or rule-violation listing each rule the change would break or worsen with its file, line and message. Violations the file already had and does not worsen are not reported. Pass both to check both.',
+      inputSchema: {
+        from: z.string().optional(),
+        to: z.string().optional(),
+        file: z.string().optional().describe('path of the file to write, absolute or relative to the working directory'),
+        content: z.string().optional().describe('the full text the file would hold after the change'),
+      },
     },
-    ({ from, to }) => checkChange(from, to),
+    (input) => checkChange(input),
   )
 
   server.registerTool(
