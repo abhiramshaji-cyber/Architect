@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRules } from './syntax'
+import { parseRules, ruleLine } from './syntax'
 
 function read(...texts: string[]) {
   const problems: string[] = []
@@ -9,6 +9,31 @@ function read(...texts: string[]) {
   )
   return { entries, problems }
 }
+
+describe('split rule', () => {
+  it('reads both thresholds with globs, and off', () => {
+    expect(read('- split: 50 lines, 3 callers', '- split: 1 line, 1 caller `src/**`', '- split: off `gen/**`')).toEqual({
+      entries: [
+        { rule: 'split', threshold: { lines: 50, callers: 3 }, globs: [] },
+        { rule: 'split', threshold: { lines: 1, callers: 1 }, globs: ['src/**'] },
+        { rule: 'split', threshold: 'off', globs: ['gen/**'] },
+      ],
+      problems: [],
+    })
+  })
+
+  it('refuses a missing, zero, reordered or oversized threshold', () => {
+    const bad = 'split takes "<n> lines, <n> callers" with both above zero, or off'
+    for (const value of ['50', '0 lines, 3 callers', '50 lines, 0 callers', '3 callers, 50 lines', '99999999999999999999 lines, 3 callers', '50 lines 3 callers']) {
+      expect(read(`- split: ${value}`).problems).toEqual([`${bad} (line 1)`])
+    }
+  })
+
+  it('writes a split line back the way it reads', () => {
+    expect(ruleLine({ rule: 'split', threshold: { lines: 50, callers: 3 }, globs: ['a/**'] })).toBe('- split: 50 lines, 3 callers `a/**`')
+    expect(ruleLine({ rule: 'split', threshold: 'off', globs: [] })).toBe('- split: off')
+  })
+})
 
 describe('parseRules', () => {
   it('reads every rule with its value and globs', () => {

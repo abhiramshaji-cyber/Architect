@@ -241,6 +241,12 @@
 
 .fn-card-open > * {
   max-width: 100%;
+  flex-shrink: 0;
+}
+
+.fn-card-open > .fn-card-doc {
+  flex-shrink: 1;
+  min-height: 0;
 }
 
 .fn-card-open:hover {
@@ -300,6 +306,24 @@
 .fn-card-also {
   font-size: var(--fs-xs);
   color: var(--text-faint);
+}
+
+.fn-card-jump {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.fn-card-jump:hover,
+.fn-card-jump:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 .fn-card-foot {
@@ -611,5 +635,47 @@
   padding: var(--sp-2) var(--sp-3);
   border-top: 1px solid var(--line);
   font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.fn-splits {
+  margin: var(--sp-3) var(--sp-6) 0;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+.fn-splits summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.fn-splits ul {
+  list-style: none;
+  margin: var(--sp-1) 0 var(--sp-2);
+  padding-left: var(--sp-4);
+}
+
+.fn-splits > ul {
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-left: 0;
+}
+
+.fn-split-file {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.fn-split-facts {
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.fn-split-unnamed {
+  color: var(--text-faint);
+}
+
+.fn-split-note {
+  margin: var(--sp-1) 0 var(--sp-2) var(--sp-4);
   color: var(--text-faint);
 }

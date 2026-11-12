@@ -120,6 +120,14 @@ export function isOpen(outline: Outline, id: string, overrides: Map<string, bool
   return overrides.get(id) ?? (forced.has(id) || id === PROJECT || alone || outline.starts.has(id))
 }
 
+function soleOf(outline: Outline, next: Map<string, boolean>, id: string, forced: Set<string>): Map<string, boolean> {
+  if (!outline.buckets.has(id)) return next
+  for (const sibling of outline.kids.get(outline.up.get(id) ?? '') ?? []) {
+    if (sibling !== id && outline.buckets.has(sibling) && !forced.has(sibling)) next.set(sibling, false)
+  }
+  return next
+}
+
 export function toggledOf(
   outline: Outline,
   overrides: Map<string, boolean>,
@@ -127,9 +135,20 @@ export function toggledOf(
   forced: Set<string>,
 ): Map<string, boolean> {
   const next = new Map(overrides).set(id, !isOpen(outline, id, overrides, forced))
-  if (!next.get(id) || !outline.buckets.has(id)) return next
-  for (const sibling of outline.kids.get(outline.up.get(id) ?? '') ?? []) {
-    if (sibling !== id && outline.buckets.has(sibling) && !forced.has(sibling)) next.set(sibling, false)
+  return next.get(id) ? soleOf(outline, next, id, forced) : next
+}
+
+export function revealedOf(
+  outline: Outline,
+  overrides: Map<string, boolean>,
+  id: string,
+  forced: Set<string>,
+): Map<string, boolean> {
+  const next = new Map(overrides)
+  for (const at of lineageOf(outline, id)) {
+    if (at === id) continue
+    next.set(at, true)
+    soleOf(outline, next, at, forced)
   }
   return next
 }

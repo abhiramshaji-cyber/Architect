@@ -337,6 +337,16 @@ describe("drafting a first contract", () => {
     expect(claude).not.toHaveBeenCalled();
   });
 
+  it("returns split suggestions with the functions, read from the project rules", async () => {
+    const root = repo();
+    fs.writeFileSync(path.join(root, "api", "two.ts"), "export function go() {}\nexport function stop() {}\n");
+    daemon = createDaemon({ socketPath, claude: vi.fn() });
+
+    const { splits } = await daemon.listFunctions(root);
+    expect(splits?.map((split) => [split.kind, split.path])).toEqual([["file", "api/two.ts"]]);
+    expect(splits?.[0]).toMatchObject({ folder: "api/two", groups: [{ file: "api/two/go.ts" }, { file: "api/two/stop.ts" }] });
+  });
+
   it("reports the agent as not installed and writes nothing", async () => {
     const root = repo();
     daemon = createDaemon({
