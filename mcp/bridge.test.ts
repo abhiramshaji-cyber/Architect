@@ -12,6 +12,7 @@ import {
   proposeChange,
   listEdits,
   getEdit,
+  where,
 } from './bridge.js'
 
 function socketPath() {
@@ -247,6 +248,26 @@ describe('bridge', () => {
 
     await writeAgents(path)
     expect(seenReq).toMatchObject({ op: 'write_agents' })
+
+    stopServer(server, path)
+  })
+
+  it('maps where to op where, defaulting missing lists and leaving out an absent name or file', async () => {
+    const seen: Request[] = []
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seen.push(req)
+        s.write(JSON.stringify({ id: req.id, ok: true, result: { component: { status: 'no-match' } } }) + '\n')
+      })
+    })
+
+    const full = await where({ calls: ['load'], callers: ['api/a.ts'], name: 'loadMany', file: 'store/x.ts' }, path)
+    await where({}, path)
+    expect(full.content[0].text).toBe('{"component":{"status":"no-match"}}')
+    expect(seen[0]).toMatchObject({ op: 'where', calls: ['load'], callers: ['api/a.ts'], name: 'loadMany', file: 'store/x.ts' })
+    expect(seen[1]).toMatchObject({ op: 'where', calls: [], callers: [] })
+    expect(seen[1]).not.toHaveProperty('name')
+    expect(seen[1]).not.toHaveProperty('file')
 
     stopServer(server, path)
   })
