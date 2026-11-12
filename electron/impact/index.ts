@@ -9,7 +9,7 @@ import { projectPath, type Fn } from '../where/refs'
 import { reachOf, type Reach } from './callers'
 import type { Caller, Impact, Touch } from './schema'
 import { testsOf } from './tests'
-import { changesOf, numbered } from './touched'
+import { changesOf, keysOf } from './touched'
 
 export { impactSchema, type Impact } from './schema'
 
@@ -21,7 +21,7 @@ type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; file: string |
 
 const LIST_DEPTH = 3
 
-const LISTED = 40
+const LISTED = 25
 
 const DEPTHS = 25
 
@@ -49,10 +49,10 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const { changes, parsed } = changesOf(file, current, input.content)
   const notes = current === input.content ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 ? [`${file} holds no function the scan parses, so no function is touched`] : changes.length === 0 ? [`the change to ${file} is outside every function, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
-  const scanned = numbered(files.find((entry) => entry.path === file)?.functions ?? [])
+  const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
   const seeds = changes.flatMap((change) => {
     if (change.change === 'added') return []
-    const index = scanned.findIndex((fn) => fn.name === change.name && fn.nth === change.nth)
+    const index = scanned.indexOf(change.key)
     if (index >= 0 && offset >= 0) return [offset + index]
     notes.push(`${change.name} at ${file}:${change.line} is not in the last scan, so its callers are not counted`)
     return []
@@ -116,15 +116,17 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
   const fns: Fn[] = files.flatMap((file) => file.functions.map((fn) => ({ file: file.path, name: fn.name, line: fn.line, test: isTestFile(file.path) })))
   const { file, content, from, to } = input
   const seeded = file !== undefined && content !== undefined ? fileSeeds({ ...input, file, content }, root, files, fns) : edgeSeeds(from ?? '', to ?? '', architecture, fns)
+  const both = file !== undefined && content !== undefined && from !== undefined && to !== undefined ? [`impact is worked out from ${file}; the edge ${from} -> ${to} is answered by the verdict only`] : []
 
   const reach = reachOf(edgesOf(map), seeded.seeds)
   const { notes, ...callers } = callersOf(fns, reach)
+  const tests = testsOf(root, fns, files, reach, seeded.added[0])
   return {
     touched: { total: seeded.touched.length, listed: seeded.touched.slice(0, LISTED) },
     callers,
     components: componentsOf(architecture, fns, reach, seeded.added),
-    tests: testsOf(root, fns, files, reach, seeded.added[0]),
-    notes: [...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes],
+    tests: { total: tests.total, listed: tests.listed },
+    notes: [...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes],
   }
 }
 
@@ -132,23 +134,26 @@ function current(root: string, map: CodeMap): boolean {
   const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path))]
   return paths.every((entry) => {
     const stat = fs.statSync(path.join(root, entry), { throwIfNoEntry: false })
-    return stat !== undefined && stat.mtimeMs <= map.scannedAt
+    return stat !== undefined && stat.mtimeMs < map.scannedAt
   })
 }
 
-const scans = new Map<string, CodeMap>()
+const scans = new Map<string, Promise<CodeMap>>()
 
-async function mapOf(root: string, stored: CodeMap | null): Promise<CodeMap> {
-  const found = [stored, scans.get(root)].find((map): map is CodeMap => map !== null && map !== undefined && current(root, map))
-  if (found) return found
-  const fresh = await scan(root)
-  scans.set(root, fresh)
-  return fresh
+async function mapOf(root: string): Promise<CodeMap> {
+  const held = scans.get(root)
+  const last = held ? await held.catch(() => null) : null
+  if (last && current(root, last)) return last
+  if (scans.get(root) === held) {
+    const started = Date.now()
+    scans.set(root, scan(root).then((map) => ({ ...map, scannedAt: started })))
+  }
+  return scans.get(root) as Promise<CodeMap>
 }
 
-export async function impactFor(input: ImpactInput, root: string, architecture: Architecture, stored: CodeMap | null): Promise<Impact> {
+export async function impactFor(input: ImpactInput, root: string, architecture: Architecture): Promise<Impact> {
   try {
-    return impactOf(input, root, architecture, await mapOf(root, stored))
+    return impactOf(input, root, architecture, await mapOf(root))
   } catch (err) {
     const empty = { total: 0, listed: [] }
     return { touched: empty, callers: { ...empty, depths: [], listedThrough: LIST_DEPTH, unlisted: 0 }, components: [], tests: empty, notes: [`impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`] }

@@ -1,25 +1,30 @@
 import { functionsIn } from '../scan/scan'
 
-export type Change = { name: string; nth: number; line: number; change: 'added' | 'changed' | 'removed' }
+export type Change = { name: string; key: string; line: number; change: 'added' | 'changed' | 'removed' }
+
+type Span = { name: string; line: number; endLine: number }
 
 const ORDER: Change['change'][] = ['changed', 'removed', 'added']
 
-type Body = { name: string; nth: number; line: number; text: string }
-
-const keyOf = (body: { name: string; nth: number }) => `${body.name}#${body.nth}`
-
-export function numbered<T extends { name: string }>(fns: T[]): (T & { nth: number })[] {
+export function keysOf(fns: Span[]): string[] {
+  const open: { key: string; endLine: number }[] = []
   const seen = new Map<string, number>()
   return fns.map((fn) => {
-    const nth = seen.get(fn.name) ?? 0
-    seen.set(fn.name, nth + 1)
-    return { ...fn, nth }
+    while (open.length > 0 && (open.at(-1)?.endLine ?? 0) < fn.endLine) open.pop()
+    const base = `${open.at(-1)?.key ?? ''}/${fn.name}`
+    const nth = seen.get(base) ?? 0
+    seen.set(base, nth + 1)
+    const key = `${base}#${nth}`
+    open.push({ key, endLine: fn.endLine })
+    return key
   })
 }
 
-function bodies(source: string, file: string): Map<string, Body> {
+function bodies(source: string, file: string): Map<string, { name: string; key: string; line: number; text: string }> {
   const lines = source.split('\n')
-  return new Map(numbered(functionsIn(source, file)).map((fn) => [keyOf(fn), { name: fn.name, nth: fn.nth, line: fn.line, text: lines.slice(fn.line - 1, fn.endLine).join('\n') }]))
+  const fns = functionsIn(source, file)
+  const keys = keysOf(fns)
+  return new Map(fns.map((fn, i) => [keys[i] ?? '', { name: fn.name, key: keys[i] ?? '', line: fn.line, text: lines.slice(fn.line - 1, fn.endLine).join('\n') }]))
 }
 
 export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number } {
@@ -27,11 +32,11 @@ export function changesOf(file: string, before: string, after: string): { change
   const next = bodies(after, file)
 
   const edited = [...next.values()].flatMap((body): Change[] => {
-    const was = old.get(keyOf(body))
-    if (!was) return [{ name: body.name, nth: body.nth, line: body.line, change: 'added' }]
-    return was.text === body.text ? [] : [{ name: was.name, nth: was.nth, line: was.line, change: 'changed' }]
+    const was = old.get(body.key)
+    if (!was) return [{ name: body.name, key: body.key, line: body.line, change: 'added' }]
+    return was.text === body.text ? [] : [{ name: was.name, key: was.key, line: was.line, change: 'changed' }]
   })
-  const removed = [...old.values()].flatMap((body): Change[] => (next.has(keyOf(body)) ? [] : [{ name: body.name, nth: body.nth, line: body.line, change: 'removed' }]))
+  const removed = [...old.values()].flatMap((body): Change[] => (next.has(body.key) ? [] : [{ name: body.name, key: body.key, line: body.line, change: 'removed' }]))
 
   const order = (change: Change) => ORDER.indexOf(change.change)
   return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size }

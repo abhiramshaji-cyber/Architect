@@ -47,12 +47,21 @@ describe('changesOf', () => {
     const after = 'function a() {\n  return 1\n}\nfunction a() {\n  return 3\n}\nfunction fresh() {}\n'
     expect(changesOf('x.ts', before, after)).toEqual({
       changes: [
-        { name: 'a', nth: 1, line: 4, change: 'changed' },
-        { name: 'gone', nth: 0, line: 7, change: 'removed' },
-        { name: 'fresh', nth: 0, line: 7, change: 'added' },
+        { name: 'a', key: '/a#1', line: 4, change: 'changed' },
+        { name: 'gone', key: '/gone#0', line: 7, change: 'removed' },
+        { name: 'fresh', key: '/fresh#0', line: 7, change: 'added' },
       ],
       parsed: 6,
     })
+  })
+
+  it('keeps inner functions with their outer one when a function is inserted above', () => {
+    const before = 'function a() {\n  const f = () => 0\n  return f()\n}\nfunction b() {\n  const f = () => 1\n  return f()\n}\n'
+    const after = `function z() {\n  const f = () => 2\n  return f()\n}\n${before}`
+    expect(changesOf('x.ts', before, after).changes).toEqual([
+      { name: 'z', key: '/z#0', line: 1, change: 'added' },
+      { name: 'f', key: '/z#0/f#0', line: 2, change: 'added' },
+    ])
   })
 
   it('touches nothing when only code outside every function changes', () => {
@@ -86,7 +95,7 @@ describe('impactOf', () => {
       '3 api/route.ts:3 -> api/handler.ts:3 handle',
     ])
     expect(impact.callers).toMatchObject({ total: 4, listedThrough: 3, unlisted: 1 })
-    expect(impact.notes).toEqual(['1 of 4 callers are counted in depths but not listed; the list stops at depth 3 or 40 callers'])
+    expect(impact.notes).toEqual(['1 of 4 callers are counted in depths but not listed; the list stops at depth 3 or 25 callers'])
     expect(impact.components).toEqual([
       { id: 'api', functions: 2, first: 'api/handler.ts:3' },
       { id: 'store', functions: 2, first: 'store/cache.ts:3' },
@@ -154,19 +163,44 @@ describe('impactOf', () => {
 })
 
 describe('impactFor', () => {
-  it('uses a current stored scan, rescans a stale one, and reports a failure', async () => {
-    const { root, map, architecture } = await project()
+  it('scans once, reuses the scan while nothing changed, rescans after a change, and reports a failure', async () => {
+    const { root, architecture } = await project()
     const input = edit(root, 'store/db.ts', 'return 1', 'return 9')
-    const fake: CodeMap = { ...map, scannedAt: Date.now() + 60_000, folders: map.folders.filter((folder) => folder.path !== 'api') }
-    expect((await impactFor(input, root, architecture, fake)).callers.total).toBe(1)
+    const [first, second] = await Promise.all([impactFor(input, root, architecture), impactFor(input, root, architecture)])
+    expect(first.callers.total).toBe(4)
+    expect(second).toEqual(first)
 
-    const stale = { ...fake, scannedAt: 0 }
-    expect((await impactFor(input, root, architecture, stale)).callers.total).toBe(4)
-    expect((await impactFor(input, root, architecture, null)).callers.total).toBe(4)
+    fs.writeFileSync(path.join(root, 'lib/more.ts'), "import { load } from '../store/db'\n\nexport function more() {\n  return load()\n}\n")
+    expect((await impactFor(input, root, architecture)).callers.total).toBe(5)
 
-    const broken = await impactFor(input, root, {} as Architecture, map)
+    const broken = await impactFor(input, root, {} as Architecture)
     expect(broken.notes[0]).toMatch(/^impact could not be worked out: /)
     expect(broken.callers.total).toBe(0)
+  })
+})
+
+describe('tests reached through files that forward exports', () => {
+  it('follows an index that re-exports, counts past the list and says which import has no line', async () => {
+    const many = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`t/n${String(i).padStart(2, '0')}.test.ts`, "import { load } from '../store'\n"]))
+    const { root, map, architecture } = await project({ ...FILES, 'store/index.ts': "export { load } from './db'\n", 'z/alias.test.ts': "import { load } from '@/store/db'\n", ...many })
+    const withAlias = { ...map, folders: map.folders.map((folder) => ({ ...folder, files: folder.files.map((file) => (file.path === 'z/alias.test.ts' ? { ...file, imports: ['store/db.ts'] } : file)) })) }
+    const impact = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, withAlias)
+
+    expect(impact.tests.total).toBe(14)
+    expect(impact.tests.listed).toHaveLength(10)
+    expect(impact.tests.listed).toContainEqual({ file: 't/n00.test.ts', via: 'import', at: 't/n00.test.ts:1', reaches: 'store/db.ts:1' })
+    expect(impact.notes).toContain('4 of 14 test files are counted but not listed')
+
+    const alias = impactOf(edit(root, 'store/db.ts', 'return 1', 'return 9'), root, architecture, { ...withAlias, folders: withAlias.folders.filter((folder) => folder.path !== 't') })
+    expect(alias.tests.listed).toContainEqual({ file: 'z/alias.test.ts', via: 'import', at: 'z/alias.test.ts', reaches: 'store/db.ts:1' })
+    expect(alias.notes).toContain('z/alias.test.ts imports store/db.ts by a path that is not relative, so its import line is not given')
+  })
+
+  it('says the edge is left to the verdict when a file is given too', async () => {
+    const { root, map, architecture } = await project()
+    const impact = impactOf({ ...edit(root, 'store/db.ts', 'return 1', 'return 9'), from: 'api', to: 'store' }, root, architecture, map)
+    expect(impact.notes[0]).toBe('impact is worked out from store/db.ts; the edge api -> store is answered by the verdict only')
+    expect(impact.touched.total).toBe(1)
   })
 })
 
