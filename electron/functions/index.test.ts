@@ -18,6 +18,7 @@ describe('functionsOf', () => {
   it('returns nothing for an empty project and a full row for a single function', () => {
     expect(functionsOf(mapOf([]), new Map())).toEqual({
       rows: [],
+      calls: [],
       tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
       scope: '',
       folders: [],
@@ -33,9 +34,25 @@ describe('functionsOf', () => {
         exported: false,
         entry: null,
         importance: 3,
-        summary: 'Loads the config.',
       },
     ])
+  })
+
+  it('carries the scanned signature and doc verbatim and leaves them out when the scan has none', () => {
+    const signature = { params: [{ name: 'root', type: 'string' }], returns: 'Config' }
+    const doc = 'Loads it.\n@param root where'
+    const { rows } = functionsOf(mapOf([{ path: 'a.ts', functions: [{ ...fn('load'), signature, doc }, fn('bare')] }]), new Map())
+    expect(rows[0]).toMatchObject({ signature, doc })
+    expect(rows[1]).not.toHaveProperty('signature')
+    expect(rows[1]).not.toHaveProperty('doc')
+  })
+
+  it('lists the calls between rows by row index', () => {
+    const map = mapOf([
+      { path: 'a.ts', functions: [fn('a', [{ file: 'b.ts', fn: 0 }, { file: 'b.ts', fn: 1 }]), fn('c')] },
+      { path: 'b.ts', functions: [fn('b', [{ file: 'a.ts', fn: 1 }]), fn('d')] },
+    ])
+    expect(functionsOf(map, new Map()).calls).toEqual([[2, 3], [], [1], []])
   })
 
   it('fills every row, keeps duplicate names apart and survives a cycle', () => {
@@ -49,7 +66,7 @@ describe('functionsOf', () => {
     ])
     const { rows } = functionsOf(map, new Map())
     expect(rows).toHaveLength(4)
-    expect(rows.every((row) => row.summary !== '' && row.importance >= 1 && row.importance <= 5)).toBe(true)
+    expect(rows.every((row) => row.importance >= 1 && row.importance <= 5)).toBe(true)
     expect(rows.map((row) => row.fanIn)).toEqual([0, 0, 2, 1])
     expect(rows[2]?.importance).toBeGreaterThan(rows[1]?.importance ?? 0)
   })
@@ -115,13 +132,21 @@ describe('functionsOf in a folder', () => {
   it('counts only callers inside the folder and flags outside callers', () => {
     const { rows, scope } = functionsOf(map, new Map(), 'app/core/')
     expect(scope).toBe('app/core')
-    expect(rows.map((row) => [row.name, row.fanIn, row.outside])).toEqual([
+    expect(rows.map((row) => [row.name, row.fanIn, row.outsideCallers])).toEqual([
       ['run', 0, 1],
       ['load', 1, 1],
     ])
-    expect(rows[0]?.summary).toBe('Runs it. Used only from outside this folder.')
-    expect(rows[1]?.summary).toBe('Loads it. Used in 1 place. Also used from outside this folder.')
-    expect(functionsOf(map, new Map()).rows.every((row) => row.outside === undefined)).toBe(true)
+    expect(functionsOf(map, new Map(), 'app/core').calls).toEqual([[1], []])
+    expect(functionsOf(map, new Map()).rows.every((row) => row.outsideCallers === undefined && row.outsideCallees === undefined)).toBe(true)
+  })
+
+  it('counts only callees inside the folder and flags outside callees', () => {
+    const { rows } = functionsOf(map, new Map(), 'app')
+    expect(rows.map((row) => [row.name, row.fanOut, row.outsideCallees])).toEqual([
+      ['main', 1, 1],
+      ['run', 1, undefined],
+      ['load', 0, undefined],
+    ])
   })
 
   it('roots the tree at uncalled functions in the folder with no unreached bucket for them', () => {
@@ -183,13 +208,14 @@ describe('functionsOf in a folder', () => {
     expect(pkg.rows).toHaveLength(21)
     expect(byName(pkg.rows, 'hub')?.importance).toBe(5)
     expect(byName(pkg.rows, 'leaf')?.importance).toBeLessThan(5)
-    expect(byName(pkg.rows, 'leaf')?.outside).toBe(60)
+    expect(byName(pkg.rows, 'leaf')?.outsideCallers).toBe(60)
     expect(new Set(pkg.rows.map((row) => row.importance)).size).toBeGreaterThan(1)
   })
 
   it('handles an empty folder, a missing folder and a path outside the project', () => {
     expect(functionsOf(map, new Map(), 'empty')).toEqual({
       rows: [],
+      calls: [],
       tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
       scope: 'empty',
       folders: [],

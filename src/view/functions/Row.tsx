@@ -2,18 +2,23 @@ import { memo } from 'react'
 import type { Change, FunctionRow } from '../../../shared/types'
 import { baseName } from '../../model/codemap'
 import { describeChange } from '../../model/recency'
+import Facts from './facts/Facts'
+import type { Way } from './facts/calls'
+import { signatureText } from './facts/signature'
 import Mark, { plural } from './Mark'
 import { folderOf } from './scope/pick'
 
 type RowProps = {
   row: FunctionRow
+  at: number
   change?: Change
   step?: number
   onOpen: (row: FunctionRow) => void
   onScope: (scope: string) => void
+  onRelated: (at: number, way: Way) => void
 }
 
-export default memo(function Row({ row, change, step, onOpen, onScope }: RowProps) {
+export default memo(function Row({ row, at, change, step, onOpen, onScope, onRelated }: RowProps) {
   const folder = folderOf(row.file)
   const hint = describeChange(change, Date.now())
   return (
@@ -33,7 +38,10 @@ export default memo(function Row({ row, change, step, onOpen, onScope }: RowProp
         <Mark importance={row.importance} />
         <span className="fn-main">
           <span className="fn-head">
-            <span className="fn-name">{row.name}</span>
+            <span className="fn-name" title={row.name + signatureText(row.signature)}>
+              {row.name}
+              <span className="fn-sig">{signatureText(row.signature)}</span>
+            </span>
             <span className="fn-file">
               <bdi>
                 {folder !== '' && (
@@ -48,11 +56,19 @@ export default memo(function Row({ row, change, step, onOpen, onScope }: RowProp
                     {folder}/
                   </button>
                 )}
-                {baseName(row.file)}
+                {baseName(row.file)}:{row.line}
               </bdi>
             </span>
           </span>
-          <span className="fn-summary">{row.summary}</span>
+          {row.doc !== undefined && (
+            <span className="fn-doc" title={row.doc}>
+              {row.doc}
+            </span>
+          )}
+          <span className="fn-foot">
+            <Facts row={row} at={at} onRelated={onRelated} />
+            {row.exported && <span className="fn-badge">exported</span>}
+          </span>
         </span>
         <span className="fn-lines" aria-label={plural(row.lines, 'line')}>
           {row.lines.toLocaleString()}

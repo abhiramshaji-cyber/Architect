@@ -12,7 +12,6 @@ const row = (over: Partial<FunctionRow>): FunctionRow => ({
   exported: false,
   entry: null,
   importance: 1,
-  summary: '',
   ...over,
 })
 
@@ -21,22 +20,22 @@ const rows = [
     name: 'small',
     lines: 2,
     fanIn: 9,
-    importance: 2, summary: 'Adds numbers.',
+    importance: 2, doc: 'Adds numbers.',
   }),
   row({
     name: 'core',
     lines: 40,
     fanIn: 1,
-    importance: 5, summary: 'Runs the app.',
+    importance: 5, doc: 'Runs the app.',
   }),
   row({
     name: 'bigcore',
     lines: 80,
     fanIn: 0,
     file: 'src/main.ts',
-    importance: 5, summary: 'Starts up.',
+    importance: 5, doc: 'Starts up.',
   }),
-  row({ name: 'loose', lines: 300, fanIn: 3, importance: 2, summary: 'Spare.' }),
+  row({ name: 'loose', lines: 300, fanIn: 3, importance: 2, doc: 'Spare.' }),
 ]
 
 const names = (placed: ReturnType<typeof arrange>) => placed.map((p) => p.row.name)
@@ -61,7 +60,7 @@ describe('arrange', () => {
     expect(names(arrange(rows, 'recent', ''))).toEqual(['bigcore', 'core', 'loose', 'small'])
   })
 
-  it('filters by name, path or summary, ignoring case and surrounding space', () => {
+  it('filters by name, path or doc comment, ignoring case and surrounding space', () => {
     expect(names(arrange(rows, 'name', '  RUNS '))).toEqual(['core'])
     expect(names(arrange(rows, 'name', 'src/'))).toEqual(['bigcore'])
     expect(names(arrange(rows, 'name', 'lo'))).toEqual(['loose'])

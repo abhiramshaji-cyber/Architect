@@ -3,7 +3,7 @@ import type { FunctionRow, FunctionTree } from '../../../../shared/types'
 import { layoutOf } from './layout'
 import { PROJECT, UNREACHED, forcedOf, hitsOf, isOpen, lineageOf, outlineOf, shownOf, type Outline } from './outline'
 
-const row = (name: string, summary = ''): FunctionRow => ({
+const row = (name: string, doc?: string): FunctionRow => ({
   file: 'src/a.ts',
   name,
   line: 1,
@@ -13,7 +13,7 @@ const row = (name: string, summary = ''): FunctionRow => ({
   exported: false,
   entry: null,
   importance: 1,
-  summary,
+  ...(doc === undefined ? {} : { doc }),
 })
 
 const rows = [row('main'), row('load'), row('parse', 'Reads the config.'), row('dead'), row('deadKid'), row('page')]

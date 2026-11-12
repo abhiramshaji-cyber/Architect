@@ -318,7 +318,7 @@ describe("drafting a first contract", () => {
     expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
   });
 
-  it("lists every function with its facts, importance and summary without asking the agent", async () => {
+  it("lists every function with its facts and importance without asking the agent", async () => {
     const root = repo();
     fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ main: "./ui/page.ts" }));
     const claude = vi.fn();
@@ -331,7 +331,7 @@ describe("drafting a first contract", () => {
     ]);
     expect(tree.starts).toEqual([1]);
     expect(tree.children[1]).toEqual([0]);
-    expect(rows.every((r) => r.summary !== "" && r.importance >= 1 && r.importance <= 5)).toBe(true);
+    expect(rows.every((r) => r.importance >= 1 && r.importance <= 5)).toBe(true);
     expect(claude).not.toHaveBeenCalled();
   });
 
@@ -1048,7 +1048,7 @@ describe("code map migration", () => {
     fs.writeFileSync(
       path.join(tmpRoot, ".architect", "map.json"),
       JSON.stringify({
-        version: 6,
+        version: 7,
         map: {
           root: tmpRoot,
           scannedAt: 1,

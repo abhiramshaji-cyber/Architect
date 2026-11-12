@@ -3,7 +3,6 @@ import { entryFiles, type EntryFiles } from './entries'
 import { edgesOf, factsOf } from './facts'
 import { importanceOf } from './importance'
 import { foldersOf, scopeOf, subgraphOf, within } from './scope'
-import { sentenceOf } from './summary/sentence'
 import { treeOf } from './tree'
 
 export function indexOf(map: CodeMap, declared: EntryFiles, scope: string): { rows: FunctionRow[]; calls: number[][] } {
@@ -23,14 +22,17 @@ export function indexOf(map: CodeMap, declared: EntryFiles, scope: string): { ro
   const importance = importanceOf(sub, local)
   const rows = local.flatMap((fact, i) => {
     const entry = entries[keep[i] ?? -1]
-    const outside = (facts[keep[i] ?? -1]?.fanIn ?? 0) - fact.fanIn
-    if (!entry) return []
-    const row = {
+    const whole = facts[keep[i] ?? -1]
+    if (!entry || !whole) return []
+    const row: FunctionRow = {
       ...fact,
       importance: importance[i] ?? 1,
-      summary: sentenceOf(entry, fact, outside),
     }
-    return [outside > 0 ? { ...row, outside } : row]
+    if (entry.signature !== undefined) row.signature = entry.signature
+    if (entry.doc !== undefined) row.doc = entry.doc
+    if (whole.fanIn > fact.fanIn) row.outsideCallers = whole.fanIn - fact.fanIn
+    if (whole.fanOut > fact.fanOut) row.outsideCallees = whole.fanOut - fact.fanOut
+    return [row]
   })
   return { rows, calls: sub }
 }
@@ -40,6 +42,7 @@ export function functionsOf(map: CodeMap, declared: EntryFiles, asked?: unknown)
   const { rows, calls } = indexOf(map, declared, scope)
   return {
     rows,
+    calls,
     tree: treeOf(rows, calls, scope !== ''),
     scope,
     folders: foldersOf(map, scope),
