@@ -8,7 +8,7 @@ import Matrix from './Matrix'
 import { useLayers } from './useLayers'
 
 export default function LayersView({ show }: ViewProps) {
-  const { currentRoot, codeMap, architecture } = useProject()
+  const { currentRoot, codeMap, codeError, architecture, contract } = useProject()
   const { layers, error } = useLayers(currentRoot, codeMap, architecture)
   const [pair, setPair] = useState<{ from: string; to: string } | null>(null)
   const picked = layers?.cells.find((cell) => cell.from === pair?.from && cell.to === pair.to) ?? null
@@ -30,6 +30,10 @@ export default function LayersView({ show }: ViewProps) {
   const onPick = useCallback(({ from, to }: LayerCell) => setPair({ from, to }), [])
 
   if (!currentRoot) return null
+  const source = !layers ? 'Reading calls…' : layers.contract
+      ? 'architect.md components'
+      : `top level folders, ${contract?.status === 'invalid' ? 'architect.md does not parse' : 'no architect.md'}`
+  const problem = codeError ?? error ?? (contract?.status === 'invalid' ? `architect.md does not parse: ${contract.error}` : null)
   const statuses = layers?.contract ? (['allowed', 'forbidden', 'undrawn', 'stale'] as const) : (['free'] as const)
 
   return (
@@ -40,18 +44,19 @@ export default function LayersView({ show }: ViewProps) {
       </header>
 
       <div className="layers-bar">
-        <span className="layers-source">{layers?.contract ? 'architect.md components' : 'top level folders, no architect.md'}</span>
-        {statuses.map((status) => (
-          <span key={status} className={`layers-tag ${status}`}>
-            {STATUS_LABEL[status]}
-          </span>
-        ))}
-        <span className="layers-tag cycle">cycle</span>
+        <span className="layers-source">{source}</span>
+        {layers &&
+          statuses.map((status) => (
+            <span key={status} className={`layers-tag ${status}`}>
+              {STATUS_LABEL[status]}
+            </span>
+          ))}
+        {layers && <span className="layers-tag cycle">call cycle</span>}
       </div>
 
-      {error && (
+      {problem && (
         <p className="fn-notice" role="status">
-          {error}
+          {problem}
         </p>
       )}
 

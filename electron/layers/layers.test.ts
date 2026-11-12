@@ -98,6 +98,19 @@ describe('layersOf', () => {
     expect(layers.contract).toBe(true)
   })
 
+  it('keeps a drawn edge allowed when its files only import each other, and stale when they share nothing', () => {
+    const map = codeMap(file('ui/a.ts'), { ...file('log/l.ts'), imports: ['core/b.ts'] }, file('core/b.ts'))
+    const status = Object.fromEntries(
+      layersOf(contract([['log', 'core'], ['ui', 'core']]), map).cells.map((c) => [`${c.from}>${c.to}`, `${c.status}:${c.calls.length}`]),
+    )
+    expect(status).toEqual({ 'log>core': 'allowed:0', 'ui>core': 'stale:0' })
+  })
+
+  it('shows no cell for an undrawn import with no calls, matching architect check', () => {
+    const map = codeMap({ ...file('log/l.ts'), imports: ['core/b.ts', 'log/m.ts'] }, file('core/b.ts'))
+    expect(layersOf(contract([]), map).cells).toEqual([])
+  })
+
   it('orders rows by level with the cycle as one block above the diagonal', () => {
     const { rows } = layersOf(contract([['ui', 'core'], ['core', 'db']]), MAP)
     expect(rows).toEqual([

@@ -40,7 +40,6 @@ export function levelize(ids: string[], calls: Edge[]): LayerRow[] {
   const blockOf = new Map(blocks.flatMap((members, at) => members.map((id) => [id, at] as const)))
   const level: number[] = []
 
-  // tarjan emits every block after the blocks it calls, so their levels are already set
   for (const [at, members] of blocks.entries()) {
     const inside = new Set(members)
     const below = calls

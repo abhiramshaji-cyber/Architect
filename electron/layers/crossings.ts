@@ -19,19 +19,23 @@ export function folderOf(path: string): string {
   return slash > 0 ? path.slice(0, slash) : '.'
 }
 
+export function ownersOf(map: CodeMap, architecture: Architecture | null): (path: string) => string[] {
+  return architecture ? contractOwners(architecture, map) : (path) => [folderOf(path)]
+}
+
 export function crossings(map: CodeMap, architecture: Architecture | null): Crossing[] {
-  const ownersOf = architecture ? contractOwners(architecture, map) : (path: string) => [folderOf(path)]
+  const ownerOf = ownersOf(map, architecture)
   const files = new Map<string, FileEntry>(map.folders.flatMap((folder) => folder.files.map((file) => [file.path, file])))
   const found: Crossing[] = []
 
   for (const file of files.values()) {
-    const from = ownersOf(file.path)
+    const from = ownerOf(file.path)
     if (from.length === 0) continue
 
     for (const fn of file.functions) {
       for (const ref of fn.calls) {
         if (ref.file === file.path) continue
-        const to = ownersOf(ref.file)
+        const to = ownerOf(ref.file)
         const target = files.get(ref.file)?.functions[ref.fn]
         const call: LayerCall = {
           file: file.path,

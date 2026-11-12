@@ -19,8 +19,10 @@ function sortedCalls(cell: LayerCell): LayerCell['calls'] {
 function reasonOf(cell: LayerCell): string | null {
   const verdict = cell.verdict
   if (verdict?.status === 'forbidden') return verdict.reason
-  if (verdict?.status === 'cycle') return `cycle: ${verdict.path.join(' → ')}`
-  if (verdict?.status === 'unknown-component') return `unknown: ${verdict.ids.join(', ')}`
+  if (verdict?.status === 'cycle') return `drawing this edge would close a contract cycle: ${verdict.path.join(' → ')}`
+  if (verdict?.status === 'unknown-component') return `not in architect.md: ${verdict.ids.join(', ')}`
+  if (cell.status === 'stale') return 'drawn in architect.md, no calls or imports between them'
+  if (cell.calls.length === 0) return 'drawn in architect.md, imports only, no calls between functions'
   return null
 }
 
