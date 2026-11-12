@@ -9,7 +9,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-const MAP_VERSION = 6
+const MAP_VERSION = 7
 
 const LEGACY_MAP = path.join('.architect', 'map.json')
 
@@ -62,9 +62,16 @@ function isFunctionEntry(value: unknown): boolean {
   return typeof fn.name === 'string' && typeof fn.line === 'number' && typeof fn.description === 'string'
 }
 
+function isFileStart(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const start = value as Record<string, unknown>
+  return typeof start.kind === 'string' && Array.isArray(start.calls) && start.calls.every(isCallRef)
+}
+
 function isFileEntry(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const file = value as Record<string, unknown>
+  if (file.starts !== undefined && !(Array.isArray(file.starts) && file.starts.every(isFileStart))) return false
   return typeof file.path === 'string' && Array.isArray(file.functions) && file.functions.every(isFunctionEntry)
 }
 

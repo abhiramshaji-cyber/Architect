@@ -1,19 +1,22 @@
-import type { CodeMap, FunctionFacts } from '../../shared/types'
+import { isTestFile } from '../scan/starts'
+import type { CodeMap, Entry, EntryReason, FileEntry, FunctionFacts } from '../../shared/types'
+import type { EntryFiles } from './entries'
 
-const TEST_FILE = /(^|\/)(__tests__|__mocks__)\/|\.(test|spec)\.[cm]?[jt]sx?$/
+export const REASONS: EntryReason[] = [
+  'mcpTool',
+  'ipcHandler',
+  'bridge',
+  'cliCommand',
+  'electronMain',
+  'preload',
+  'renderer',
+  'page',
+  'bin',
+  'main',
+  'script',
+]
 
-function relativeEntry(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim().replace(/^\.\//, '')
-  return trimmed === '' ? null : trimmed
-}
-
-export function declaredEntries(manifest: unknown): Set<string> {
-  if (typeof manifest !== 'object' || manifest === null) return new Set()
-  const { main, bin } = manifest as { main?: unknown; bin?: unknown }
-  const bins = typeof bin === 'object' && bin !== null ? Object.values(bin) : [bin]
-  return new Set([main, ...bins].map(relativeEntry).filter((entry) => entry !== null))
-}
+const HANDLERS = new Set<string>(['mcpTool', 'ipcHandler', 'bridge', 'cliCommand'])
 
 export function edgesOf(map: CodeMap): number[][] {
   const files = map.folders.flatMap((folder) => folder.files)
@@ -39,16 +42,48 @@ export function edgesOf(map: CodeMap): number[][] {
   )
 }
 
-export function factsOf(map: CodeMap, declared: Set<string>, edges = edgesOf(map)): FunctionFacts[] {
+function claimsOf(file: FileEntry, reasons: EntryReason[]): { reason: EntryReason; file: string; fn: number }[] {
+  const starts = file.starts ?? []
+  const handlers = starts.flatMap((start) =>
+    HANDLERS.has(start.kind) ? start.calls.map((call) => ({ ...call, reason: start.kind as EntryReason })) : [],
+  )
+  const loaded = starts.filter((start) => start.kind === 'load').flatMap((start) => start.calls)
+  const api = [
+    ...file.functions.flatMap((fn, at) => (fn.exported === true ? [{ file: file.path, fn: at }] : [])),
+    ...starts.filter((start) => start.kind === 'exports').flatMap((start) => start.calls),
+  ]
+  const opened = reasons.flatMap((reason) =>
+    [...loaded, ...(reason === 'main' ? api : [])].map((call) => ({ ...call, reason })),
+  )
+  return [...handlers, ...opened].map(({ reason, file: target, fn }) => ({ reason, file: target, fn }))
+}
+
+export function entriesOf(map: CodeMap, entries: EntryFiles): Map<string, Entry> {
+  const best = new Map<string, Entry>()
+  const files = map.folders.flatMap((folder) => folder.files).filter((file) => !isTestFile(file.path))
+  files.sort((a, b) => a.path.localeCompare(b.path))
+  for (const file of files) {
+    for (const { reason, file: target, fn } of claimsOf(file, entries.get(file.path) ?? [])) {
+      if (isTestFile(target)) continue
+      const key = `${target}\0${fn}`
+      const held = best.get(key)
+      if (held === undefined || REASONS.indexOf(reason) < REASONS.indexOf(held.reason)) {
+        best.set(key, { reason, file: file.path })
+      }
+    }
+  }
+  return best
+}
+
+export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map)): FunctionFacts[] {
   const files = map.folders.flatMap((folder) => folder.files)
-  const loaded = new Set(files.flatMap((file) => file.imports ?? []))
+  const claimed = entriesOf(map, entries)
   const callers = new Array<number>(edges.length).fill(0)
   for (const out of edges) for (const to of out) callers[to] = (callers[to] ?? 0) + 1
 
   let at = 0
-  return files.flatMap((file) => {
-    const entry = declared.has(file.path) || (!loaded.has(file.path) && !TEST_FILE.test(file.path))
-    return file.functions.map((fn) => {
+  return files.flatMap((file) =>
+    file.functions.map((fn, index) => {
       const self = at++
       return {
         file: file.path,
@@ -58,8 +93,8 @@ export function factsOf(map: CodeMap, declared: Set<string>, edges = edgesOf(map
         fanIn: callers[self] ?? 0,
         fanOut: edges[self]?.length ?? 0,
         exported: fn.exported === true,
-        entry,
+        entry: claimed.get(`${file.path}\0${index}`) ?? null,
       }
-    })
-  })
+    }),
+  )
 }

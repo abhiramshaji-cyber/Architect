@@ -6,6 +6,7 @@ import type { Way } from '../facts/calls'
 import { plural } from '../Mark'
 import Card, { type CardNode } from './Card'
 import { CARD_W, layoutOf, type Spot } from './layout'
+import { REASON } from './reasons'
 import { PROJECT, UNREACHED, forcedOf, hitsOf, indexOf, isOpen, lineageOf, outlineOf, shownOf } from './outline'
 
 type Anchor = { id: string; before: Spot } | null
@@ -118,8 +119,10 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated }
         const at = indexOf(id)
         const row = rows[at] ?? null
         const kids = outline.kids.get(id)?.length ?? 0
-        const group =
-          id === PROJECT
+        const entry = outline.groups.get(id)
+        const group = entry
+          ? { title: REASON[entry.reason], note: `${entry.file} · ${plural(entry.members.length, 'function')}` }
+          : id === PROJECT
             ? { title: project, note: plural(rows.length, 'function') }
             : id === UNREACHED
               ? {
