@@ -139,8 +139,12 @@ async function callTool(req: RequestInput, socketPath: string): Promise<ToolResu
 
 export const getArchitecture = (socketPath = SOCKET_PATH) => callTool({ op: 'get_architecture' }, socketPath)
 
-export const checkChange = (from: string, to: string, socketPath = SOCKET_PATH) =>
-  callTool({ op: 'check_change', from, to }, socketPath)
+export const checkChange = (
+  from: string,
+  to: string,
+  socketPath = SOCKET_PATH,
+  session = process.env.CLAUDE_CODE_SESSION_ID || undefined,
+) => callTool({ op: 'check_change', from, to, ...(session ? { session } : {}) }, socketPath)
 
 export const proposeChange = (proposal: Proposal, rationale: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'propose_change', proposal, rationale }, socketPath)

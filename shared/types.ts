@@ -90,13 +90,29 @@ export type Edit = { id: string; status: EditStatus; architecture: Architecture 
 
 export type EditSummary = { id: string; status: EditStatus; title: string; error?: string }
 
-export type Verdict =
-  | { status: 'allowed' }
-  | { status: 'forbidden'; reason: string }
-  | { status: 'unknown-component'; ids: string[] }
-  | { status: 'cycle'; path: string[] }
-  | { status: 'undrawn-edge' }
-  | { status: 'unknown'; reason?: string }
+export const verdictSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('allowed') }),
+  z.object({ status: z.literal('forbidden'), reason: z.string() }),
+  z.object({ status: z.literal('unknown-component'), ids: z.array(z.string()) }),
+  z.object({ status: z.literal('cycle'), path: z.array(z.string()) }),
+  z.object({ status: z.literal('undrawn-edge') }),
+  z.object({ status: z.literal('unknown'), reason: z.string().optional() }),
+])
+
+export type Verdict = z.infer<typeof verdictSchema>
+
+export const verdictRecordSchema = z.object({
+  id: z.string(),
+  root: z.string(),
+  at: z.number(),
+  from: z.string(),
+  to: z.string(),
+  verdict: verdictSchema,
+  stale: z.literal(true).optional(),
+  session: z.string().optional(),
+})
+
+export type VerdictRecord = z.infer<typeof verdictRecordSchema>
 
 export type Decision =
   | { status: 'approved' }
@@ -161,7 +177,14 @@ export type ReviewDetail = {
 
 export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('get_architecture'), cwd: z.string() }),
-  z.object({ id: z.string(), op: z.literal('check_change'), cwd: z.string(), from: z.string(), to: z.string() }),
+  z.object({
+    id: z.string(),
+    op: z.literal('check_change'),
+    cwd: z.string(),
+    from: z.string(),
+    to: z.string(),
+    session: z.string().optional(),
+  }),
   z.object({
     id: z.string(),
     op: z.literal('propose_change'),
@@ -513,6 +536,7 @@ export type ArchitectApi = {
   readTree(root: string, dir: string): Promise<TreeListing>
   search(query: string): Promise<SearchResult>
   history(root: string): Promise<HistoryEntry[]>
+  verdicts(root: string): Promise<VerdictRecord[]>
   onChange(fn: (root: string, architecture: Architecture) => void): void
   onHistory(fn: (entry: HistoryEntry) => void): () => void
   onProjects(fn: (p: ProjectSummary[]) => void): void

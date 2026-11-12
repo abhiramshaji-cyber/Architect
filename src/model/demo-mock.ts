@@ -378,6 +378,9 @@ export function installMock() {
     async history(root) {
       return historyByRoot[root] ?? []
     },
+    async verdicts() {
+      return []
+    },
     async edits(root) {
       return (editsByRoot[root] ?? []).map(({ id, status, architecture }) => ({
         id,

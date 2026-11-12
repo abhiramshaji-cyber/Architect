@@ -18,6 +18,8 @@ import {
   type Recency,
   type HistoryEntry,
   historyEntrySchema,
+  type VerdictRecord,
+  verdictRecordSchema,
   type OpenedProject,
   type Ownership,
   type ProjectSummary,
@@ -47,10 +49,7 @@ import { listFunctions } from './functions'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
 import { createReview } from './review'
-
-function historyPath(dir: string, root: string) {
-  return path.join(dir, 'history', `${cacheKey(root)}.json`)
-}
+import { createJournal } from './journal'
 
 const HISTORY_LIMIT = 200
 
@@ -204,7 +203,8 @@ export function createDaemon(options: DaemonOptions = {}) {
   const claude = options.claude ?? runClaude
 
   const projects = new Map<string, ProjectState>()
-  const histories = new Map<string, HistoryEntry[]>()
+  const histories = createJournal((root) => path.join(cacheDir, 'history', `${cacheKey(root)}.json`), historyEntrySchema, HISTORY_LIMIT)
+  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema, HISTORY_LIMIT)
   let changeListener: ((root: string, architecture: Architecture) => void) | null = null
   let historyListener: ((entry: HistoryEntry) => void) | null = null
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null
@@ -418,35 +418,11 @@ export function createDaemon(options: DaemonOptions = {}) {
     saveProjects()
   }
 
-  function historyOf(root: string): HistoryEntry[] {
-    const known = histories.get(root)
-    if (known) return known
-
-    let stored: unknown
-    try {
-      stored = JSON.parse(fs.readFileSync(historyPath(cacheDir, root), 'utf8'))
-    } catch {
-      stored = []
-    }
-    const entries = Array.isArray(stored) ? stored.flatMap((raw) => historyEntrySchema.safeParse(raw).data ?? []) : []
-    histories.set(root, entries)
-    return entries
-  }
-
   function record(root: string, source: HistoryEntry['source'], diff: Diff, file?: string, at = Date.now()) {
     if (isEmpty(diff)) return
 
     const entry: HistoryEntry = { id: randomUUID(), root, at, source, ...diff, ...(file === undefined ? {} : { file }) }
-    const entries = [entry, ...historyOf(root)].slice(0, HISTORY_LIMIT)
-    histories.set(root, entries)
-
-    try {
-      const target = historyPath(cacheDir, root)
-      fs.mkdirSync(path.dirname(target), { recursive: true })
-      fs.writeFileSync(target, JSON.stringify(entries))
-    } catch (err) {
-      console.error('could not persist history:', errorText(err))
-    }
+    histories.append(root, entry)
     historyListener?.(entry)
   }
 
@@ -783,6 +759,19 @@ export function createDaemon(options: DaemonOptions = {}) {
     return { status: 'unknown', reason: note }
   }
 
+  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null) {
+    verdicts.append(root, {
+      id: randomUUID(),
+      root,
+      at: Date.now(),
+      from: req.from,
+      to: req.to,
+      verdict,
+      ...(stale === null ? {} : { stale: true as const }),
+      ...(req.session ? { session: req.session } : {}),
+    })
+  }
+
   function handleConnection(socket: net.Socket) {
     let buf = ''
     const closed = new AbortController()
@@ -804,8 +793,14 @@ export function createDaemon(options: DaemonOptions = {}) {
           if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
           const state = loadProject(root)
           const stale = state.contract.status === 'invalid' ? state.contract.error : null
-          if (!state.architecture) return { id: req.id, ok: false, error: stale ?? `${root} has no architect.md` }
-          return { id: req.id, ok: true, result: verdictFor(state.architecture, stale, req.from, req.to) }
+          if (!state.architecture) {
+            const error = stale ?? `${root} has no architect.md`
+            logVerdict(root, req, { status: 'unknown', reason: error }, stale)
+            return { id: req.id, ok: false, error }
+          }
+          const verdict = verdictFor(state.architecture, stale, req.from, req.to)
+          logVerdict(root, req, verdict, stale)
+          return { id: req.id, ok: true, result: verdict }
         }
 
         if (req.op === 'propose_change') {
@@ -934,7 +929,8 @@ export function createDaemon(options: DaemonOptions = {}) {
     open,
     createContract,
     draftContract: (root: string) => draftContract(root),
-    history: (root: string): HistoryEntry[] => historyOf(root),
+    history: (root: string): HistoryEntry[] => histories.list(root),
+    verdicts: (root: string): VerdictRecord[] => verdicts.list(root),
     edits: (root: string): EditSummary[] => {
       loadProject(root)
       return listEdits(root)
