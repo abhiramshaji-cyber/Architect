@@ -241,7 +241,7 @@ export type StartKind = 'load' | 'exports' | 'value' | StartReason
 
 export type FileStart = { kind: StartKind; calls: CallRef[]; channel?: string; member?: string; line?: number; sites?: CallSite[] }
 
-export type FileEntry = { path: string; lines?: number; functions: FunctionEntry[]; imports?: string[]; starts?: FileStart[] }
+export type FileEntry = { path: string; lines?: number; functions: FunctionEntry[]; imports?: string[]; typeImports?: string[]; starts?: FileStart[] }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 

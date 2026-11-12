@@ -42,7 +42,7 @@ export function declaredIn(manifest: unknown): Declared[] {
     .flatMap((command) => (typeof command === 'string' ? command.split(/[\s;&|()]+/) : []))
     .map((word) => word.replace(/^["']|["']$/g, ''))
   return [
-    ...[main].map((file) => ({ reason: 'main' as const, file: clean(file), subpath: '.' })),
+    ...[main].map((file) => ({ reason: 'main' as const, file: clean(file), subpath: fields.main === undefined ? undefined : '.' })),
     ...subpathsOf(exports).flatMap(([subpath, value]) =>
       targetsOf(value).map((file) => ({ reason: 'exports' as const, file: clean(file), subpath })),
     ),

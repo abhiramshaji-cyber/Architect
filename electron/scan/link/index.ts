@@ -21,6 +21,7 @@ export type Parsed = {
   pending: Pending[]
   raw: Map<number, Raw[]>
   specs: Set<string>
+  typed: Set<string>
 }
 
 const BASE: ts.CompilerOptions = { allowJs: true, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler }
@@ -63,7 +64,7 @@ function realRoot(root: string): string {
   }
 }
 
-export function link(root: string, parsed: Map<string, Parsed>): Map<string, string[]> {
+export function link(root: string, parsed: Map<string, Parsed>): { imports: Map<string, string[]>; typed: Map<string, string[]> } {
   const optionsOf = resolversOf(root, [...parsed.keys()])
   const caches = new Map<ts.CompilerOptions, ts.ModuleResolutionCache>()
   const bases = [...new Set([root, realRoot(root)])]
@@ -143,10 +144,14 @@ export function link(root: string, parsed: Map<string, Parsed>): Map<string, str
 
   starred(parsed, target)
 
+  const resolvedOf = (file: string, specs: Iterable<string>) =>
+    [...new Set([...specs].flatMap((spec) => target(file, spec) ?? []))].filter((to) => to !== file).sort()
   const imports = new Map<string, string[]>()
+  const typed = new Map<string, string[]>()
   for (const [file, at] of parsed) {
-    const resolved = [...at.specs].map((spec) => target(file, spec)).filter((to) => to !== undefined && to !== file)
-    imports.set(file, [...new Set(resolved as string[])].sort())
+    const loaded = resolvedOf(file, at.specs)
+    imports.set(file, [...new Set([...loaded, ...resolvedOf(file, at.typed)])].sort())
+    typed.set(file, resolvedOf(file, at.typed).filter((to) => !loaded.includes(to)))
   }
-  return imports
+  return { imports, typed }
 }

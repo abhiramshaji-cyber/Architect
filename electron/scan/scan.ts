@@ -53,7 +53,7 @@ function isFunctionValue(node: ts.Node | undefined): boolean {
 function declaredName(node: ts.Node, owner: string): string | undefined {
   const prefix = owner ? `${owner}.` : ''
 
-  if (ts.isFunctionDeclaration(node)) return node.name?.text ?? 'default'
+  if (ts.isFunctionDeclaration(node)) return (ts.isModuleBlock(node.parent) ? prefix : '') + (node.name?.text ?? 'default')
   if (ts.isConstructorDeclaration(node)) return `${owner || 'default'}.constructor`
 
   if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
@@ -84,6 +84,10 @@ function declaredName(node: ts.Node, owner: string): string | undefined {
 function ownerFor(node: ts.Node, owner: string): string {
   if (ts.isClassDeclaration(node) && node.name === undefined) return 'default'
   if (ts.isClassLike(node)) return node.name?.text ?? owner
+  if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name) && !(node.flags & ts.NodeFlags.GlobalAugmentation)) {
+    return owner ? `${owner}.${node.name.text}` : node.name.text
+  }
+  if (ts.isModuleBlock(node)) return owner
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text
   if (ts.isObjectLiteralExpression(node)) return owner
 
@@ -196,6 +200,8 @@ function exportedFrom(
   if (!hasKeyword(statement, ts.SyntaxKind.ExportKeyword)) return
   const fallback = hasKeyword(statement, ts.SyntaxKind.DefaultKeyword)
 
+  if (ts.isModuleDeclaration(statement) && ts.isIdentifier(statement.name)) return void into.set(statement.name.text, statement.name.text)
+
   if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) {
     const name = statement.name?.text ?? 'default'
     into.set(name, name)
@@ -270,6 +276,8 @@ function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
     if (previous === undefined || !isOverloadSignature(f.node) || isOverloadSignature(previous.node)) {
       names.set(f.entry.name, i)
     }
+    const bare = f.entry.name.split('.').pop() ?? f.entry.name
+    if (ts.isModuleBlock(f.node.parent) && !names.has(bare)) names.set(bare, i)
   }
 
   return byScope
@@ -357,7 +365,16 @@ function distinct(sites: Site[]): Call[] {
 }
 
 function empty(): Parsed {
-  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], raw: new Map(), specs: new Set() }
+  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], raw: new Map(), specs: new Set(), typed: new Set() }
+}
+
+function isTypeOnly(node: ts.Node): boolean {
+  if (ts.isExportDeclaration(node)) return node.isTypeOnly
+  if (!ts.isImportDeclaration(node) || node.importClause === undefined) return false
+  const clause = node.importClause
+  const named = clause.namedBindings
+  const elements = named && ts.isNamedImports(named) ? named.elements : undefined
+  return clause.isTypeOnly || (clause.name === undefined && elements !== undefined && elements.length > 0 && elements.every((one) => one.isTypeOnly))
 }
 
 function loadedSpec(node: ts.Node): string | undefined {
@@ -380,10 +397,11 @@ function parseFile(source: string, file: string): Parsed {
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind)
     const found: Found[] = []
     const specs = new Set<string>()
+    const typed = new Set<string>()
 
     const visit = (node: ts.Node, owner: string): void => {
       const spec = loadedSpec(node)
-      if (spec !== undefined) specs.add(spec)
+      if (spec !== undefined) (isTypeOnly(node) ? typed : specs).add(spec)
 
       const name = declaredName(node, owner)
       if (name !== undefined) {
@@ -500,7 +518,7 @@ function parseFile(source: string, file: string): Parsed {
       if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
     }
 
-    return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs }
+    return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs, typed }
   } catch {
     return empty()
   }
@@ -574,13 +592,15 @@ export async function scan(root: string, digests = new Map<string, string>()): P
   const parsed = new Map<string, Parsed>()
 
   await walk(root, '', { into: folders, parsed, counter: { seen: 0 }, digests })
-  const imports = link(root, parsed)
+  const { imports, typed } = link(root, parsed)
   folders.sort((a, b) => a.path.localeCompare(b.path))
 
   for (const folder of folders) {
     for (const file of folder.files) {
       const found = imports.get(file.path)
       if (found !== undefined && found.length > 0) file.imports = found
+      const types = typed.get(file.path)
+      if (types !== undefined && types.length > 0) file.typeImports = types
       const starts = parsed.get(file.path)?.starts
       if (starts !== undefined && starts.length > 0) file.starts = starts
     }

@@ -116,6 +116,18 @@ describe('a library published through package.json exports', () => {
     expect(list.rows.find((row) => row.name === 'Page')?.untraced).toBe('orphan')
   })
 
+  it('follows namespace members and ignores a type only import when asking whether a file is imported', async () => {
+    const { unreached, unknown } = await listOf({
+      'package.json': JSON.stringify({ name: 'app', exports: './src/index.ts' }),
+      'src/index.ts': "import type { Props } from './page'\nimport { N } from './ns'\nexport function main(p?: Props) { return N.f() }\n",
+      'src/ns.ts': 'export namespace N {\n  export function f() { return g() }\n  function g() { return 1 }\n  export function idle() {}\n}\n',
+      'src/page.tsx': 'export type Props = { a: 1 }\nexport default function Page() { return helper() }\nfunction helper() { return 1 }\n',
+      'src/app.ts': 'export function dead() {}\n',
+    })
+    expect(unreached).toEqual(['N.idle'])
+    expect(unknown).toEqual(['Page', 'dead', 'helper'])
+  })
+
   it('counts the members of an anonymous default class as library API', async () => {
     const { unreached, list } = await listOf({
       'package.json': JSON.stringify({ exports: { '.': './src/index.ts' } }),
