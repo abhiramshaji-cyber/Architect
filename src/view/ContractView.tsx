@@ -19,6 +19,7 @@ import {
   useProject,
 } from '../model/store'
 import type { ViewProps } from '../shell/views'
+import { useRecency } from './recency/useRecency'
 
 const RAIL_PREFIX = 'rail:'
 
@@ -49,6 +50,7 @@ function draftNote(failure: DraftFailure): string {
 export default function ContractView({ theme, show }: ViewProps) {
   const project = useProject()
   const { currentRoot, architecture, contract, draft, owners, recent, busy, drafting, draftError, folderShaped } = project
+  const recency = useRecency(currentRoot, project.codeMap, architecture)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const waiting = useReview().items.filter((item) => item.root === currentRoot && item.kind === 'proposal').length
   const [rail, setRail] = useState(() => ({ root: currentRoot, open: railOpen(currentRoot) }))
@@ -137,6 +139,7 @@ export default function ContractView({ theme, show }: ViewProps) {
               key={draft ? `${currentRoot}:${draft.id}:${draft.status}` : currentRoot}
               architecture={shown}
               ownership={draft ? null : owners}
+              changes={draft ? undefined : recency?.components}
               recent={draft ? {} : recent}
               theme={theme}
               selectedId={selectedId}

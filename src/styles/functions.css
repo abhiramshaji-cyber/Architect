@@ -78,6 +78,7 @@
   background: transparent;
   border: none;
   border-radius: var(--radius);
+  box-shadow: inset 3px 0 0 var(--aged, transparent);
   color: var(--text);
 }
 

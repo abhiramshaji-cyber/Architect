@@ -19,6 +19,7 @@
   --ok: #9fbfa6;
   --live: #7aa7ff;
   --live-glow: rgb(122 167 255 / 0.32);
+  --age: #e2a457;
   --node-bg: #141415;
   --shadow: rgb(0 0 0 / 0.4);
   --ink: #6e6e72;
@@ -85,6 +86,7 @@
   --ok: #3f6b4a;
   --live: #2f6bd8;
   --live-glow: rgb(47 107 216 / 0.22);
+  --age: #b8650f;
   --node-bg: #ffffff;
   --shadow: rgb(0 0 0 / 0.06);
   --ink: #9a9a9a;

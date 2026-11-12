@@ -51,6 +51,16 @@ describe('arrange', () => {
     expect(names(arrange(rows, 'name', ''))).toEqual(['bigcore', 'core', 'loose', 'small'])
   })
 
+  it('sorts by most recent change, uncommitted first and unknown last', () => {
+    const changes = {
+      'a.ts:1:small': { at: 5, sha: 'b', subject: '' },
+      'a.ts:1:core': { at: 1, sha: 'a', subject: '' },
+      'src/main.ts:1:bigcore': 'uncommitted' as const,
+    }
+    expect(names(arrange(rows, 'recent', '', changes))).toEqual(['bigcore', 'small', 'core', 'loose'])
+    expect(names(arrange(rows, 'recent', ''))).toEqual(['bigcore', 'core', 'loose', 'small'])
+  })
+
   it('filters by name, path or summary, ignoring case and surrounding space', () => {
     expect(names(arrange(rows, 'name', '  RUNS '))).toEqual(['core'])
     expect(names(arrange(rows, 'name', 'src/'))).toEqual(['bigcore'])
