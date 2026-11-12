@@ -1,4 +1,4 @@
-import type { CallRef, FileStart } from '../../shared/types'
+import type { CallRef, FileStart } from '../../../shared/types'
 
 type Linked = { functions: { exported?: true }[]; starts: FileStart[]; stars: string[] }
 
@@ -28,6 +28,6 @@ export function starred(parsed: Map<string, Linked>, target: (file: string, spec
 
   for (const at of parsed.values()) {
     for (const start of at.starts) start.calls.sort(order)
-    at.starts = at.starts.filter((start) => start.calls.length > 0)
+    at.starts = at.starts.filter((start) => start.calls.length > 0 || start.channel !== undefined)
   }
 }
