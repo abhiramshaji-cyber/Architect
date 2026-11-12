@@ -37,6 +37,8 @@ const sameAs = (a: Stored | null, b: Stored) =>
   a.root === b.root &&
   a.days === b.days &&
   a.error === b.error &&
+  a.capped === b.capped &&
+  a.since === b.since &&
   a.commits.length === b.commits.length &&
   a.commits[0]?.sha === b.commits[0]?.sha &&
   a.verdicts.length === b.verdicts.length &&
