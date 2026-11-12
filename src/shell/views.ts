@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
+import CouplingView from '../view/coupling/CouplingView'
 import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
 import LayersView from '../view/layers/LayersView'
@@ -10,7 +11,7 @@ import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'layers' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'functions' | 'layers' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'coupling' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
@@ -22,6 +23,7 @@ export const views: Record<ViewId, { label: string; component: ComponentType<Vie
   review: { label: 'Review', component: ReviewView },
   files: { label: 'Files', component: FilesView },
   hotspots: { label: 'Hotspots', component: HotspotsView },
+  coupling: { label: 'Coupling', component: CouplingView },
   terminal: { label: 'Terminal', component: TerminalView },
   shell: { label: 'Shell', component: PlainShell },
   repos: { label: 'Repos', component: RepoPicker },
