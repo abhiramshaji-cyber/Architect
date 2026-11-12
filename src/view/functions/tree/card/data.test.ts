@@ -56,6 +56,7 @@ describe('cardOf', () => {
     })
     expect(cardOf(outline, 'f2', list, 'demo')).toMatchObject({ title: 'fn2', notes: [], at: 2, also: 1, elsewhere: 0, pill: '0 callers' })
     expect(cardOf(outline, 'f2', { ...list, rows: rows.map((one, at) => (at === 2 ? { ...one, fanIn: 1 } : one)) }, 'demo').pill).toBe('1 caller')
+    expect(cardOf(outline, 'f2', { ...list, rows: rows.map((one, at) => (at === 2 ? { ...one, outsideCallers: 5 } : one)) }, 'demo').pill).toBe('0 callers +5 outside')
     expect(cardOf(outline, 'f1', list, 'demo')).toMatchObject({ elsewhere: 1 })
   })
 

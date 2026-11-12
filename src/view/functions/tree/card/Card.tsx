@@ -1,11 +1,11 @@
 import { memo } from 'react'
-import { Handle, Position, useStore, type Node, type NodeProps, type ReactFlowState } from '@xyflow/react'
+import { Handle, Position, useStore, type Node, type NodeHandle, type NodeProps, type ReactFlowState } from '@xyflow/react'
 import type { FunctionRow } from '../../../../../shared/types'
 import Facts from '../../facts/Facts'
 import type { Way } from '../../facts/calls'
 import { signatureText } from '../../facts/signature'
 import Mark, { plural } from '../../Mark'
-import { TRUNK } from '../layout'
+import { CARD_H, TRUNK } from '../layout'
 import Pill from './Pill'
 
 export type CardData = {
@@ -31,6 +31,13 @@ export type CardData = {
 export type CardNode = Node<CardData, 'card'>
 
 export const PILL_ZOOM = 0.5
+
+const HANDLE = 6
+
+export const HANDLES: NodeHandle[] = [
+  { type: 'target', position: Position.Left, x: -HANDLE / 2, y: CARD_H / 2 - HANDLE / 2, width: HANDLE, height: HANDLE },
+  { type: 'source', position: Position.Bottom, x: TRUNK - HANDLE / 2, y: CARD_H - HANDLE / 2, width: HANDLE, height: HANDLE },
+]
 
 export const farOf = (state: ReactFlowState) => state.transform[2] < PILL_ZOOM
 

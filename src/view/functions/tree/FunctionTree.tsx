@@ -3,10 +3,10 @@ import { Background, Controls, ReactFlow, type Edge } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { FunctionList, FunctionRow } from '../../../../shared/types'
 import type { Way } from '../facts/calls'
-import Card, { type CardNode } from './card/Card'
+import Card, { HANDLES, type CardNode } from './card/Card'
 import { cardOf, elsewhereOf } from './card/data'
 import Keep, { FIT, type Anchor } from './Keep'
-import { layoutOf } from './layout'
+import { CARD_H, CARD_W, layoutOf } from './layout'
 import {
   PROJECT,
   forcedOf,
@@ -99,6 +99,9 @@ export default function FunctionTree({ list, query, project, onOpen, onRelated, 
           id,
           type: 'card',
           position: spots.get(id) ?? { x: 0, y: 0 },
+          width: CARD_W,
+          height: CARD_H,
+          handles: HANDLES,
           data: {
             ...card,
             open: card.count > 0 && isOpen(outline, id, overrides, forced),
