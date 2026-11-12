@@ -15,17 +15,18 @@ const bare = (file: string) => file.replace(/\.[cm]?[jt]sx?$/, '').replace(/\/in
 
 type Loaded = { target: string; line: number; names: string[] | null }
 
-function namesOf(node: ts.Node): string[] | null | undefined {
+const picked = (elements: readonly (ts.ImportSpecifier | ts.ExportSpecifier)[], types: boolean) => elements.filter((element) => types || !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text)
+
+function namesOf(node: ts.Node, types: boolean): string[] | null {
   if (ts.isImportDeclaration(node)) {
     const clause = node.importClause
-    if (clause?.isTypeOnly) return []
-    if (!clause) return []
+    if (!clause || (clause.isTypeOnly && !types)) return []
     if (clause.name || (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings))) return null
-    return (clause.namedBindings?.elements ?? []).filter((element) => !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text)
+    return picked(clause.namedBindings?.elements ?? [], types || clause.isTypeOnly)
   }
   if (ts.isExportDeclaration(node)) {
-    if (node.isTypeOnly) return []
-    return node.exportClause && ts.isNamedExports(node.exportClause) ? node.exportClause.elements.filter((element) => !element.isTypeOnly).map((element) => (element.propertyName ?? element.name).text) : null
+    if (node.isTypeOnly && !types) return []
+    return node.exportClause && ts.isNamedExports(node.exportClause) ? picked(node.exportClause.elements, types || node.isTypeOnly) : null
   }
   return null
 }
@@ -37,7 +38,7 @@ function specOf(node: ts.Node): ts.Expression | undefined {
   return loads ? node.arguments[0] : undefined
 }
 
-export function importsOf(root: string, test: string): Loaded[] | 'unreadable' {
+export function importsOf(root: string, test: string, types = false): Loaded[] | 'unreadable' {
   let text: string
   try {
     text = fs.readFileSync(path.join(root, test), 'utf8')
@@ -48,7 +49,7 @@ export function importsOf(root: string, test: string): Loaded[] | 'unreadable' {
   const found: Loaded[] = []
   const visit = (node: ts.Node): void => {
     const spec = specOf(node)
-    const names = spec === undefined ? undefined : namesOf(node)
+    const names = spec === undefined ? undefined : namesOf(node, types)
     if (spec !== undefined && names !== undefined && ts.isStringLiteralLike(spec) && spec.text.startsWith('.')) {
       found.push({ target: bare(path.posix.join(path.posix.dirname(test), spec.text)), line: source.getLineAndCharacterOfPosition(spec.getStart(source)).line + 1, names })
     }
@@ -109,14 +110,23 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
 
   const exposed = exposedBy(fns, files)
   const named = (fn: { name: string }, names: string[] | null) => names === null || names.includes(fn.name.split('.')[0] ?? '')
+  const memo = new Map<string, Map<string, string>>()
+  const renamed = (file: string) => memo.get(file) ?? (memo.set(file, aliasesOf(root, file)).get(file) as Map<string, string>)
+  const originals = (target: string, names: string[] | null) => {
+    if (names === null) return null
+    const forwarded = [...new Set((exposed.get(target) ?? []).map((i) => fns[i]?.file ?? target))].filter((file) => file !== target)
+    return names.flatMap((name) => {
+      const one = renamed(target).get(name) ?? name
+      return [one, ...forwarded.flatMap((file) => renamed(file).get(one) ?? [])]
+    })
+  }
   const reachable = (target: string) => target === whole || added.some((spot) => spot.file === target) || (exposed.get(target) ?? []).some((i) => reach.depth.has(i) && fns[i]?.test === false)
   for (const file of files) {
     if (!isTestFile(file.path) || found.has(file.path) || !(file.imports ?? []).some(reachable)) continue
     const loaded = importsOf(root, file.path)
     for (const target of file.imports ?? []) {
       const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === bare(target))
-      const aliases = (files.find((entry) => entry.path === target)?.starts ?? []).some((start) => start.kind === 'exports') ? aliasesOf(root, target) : new Map<string, string>()
-      const ways = (entries.length > 0 ? entries : [{ target, line: 0, names: null }]).map((way) => ({ ...way, names: way.names?.map((name) => aliases.get(name) ?? name) ?? null }))
+      const ways = (entries.length > 0 ? entries : [{ target, line: 0, names: null }]).map((way) => ({ ...way, names: originals(target, way.names) }))
       const hit = ways.flatMap((way) => {
         const index = (exposed.get(target) ?? []).find((i) => reach.depth.has(i) && fns[i]?.test === false && named(fns[i] as Fn, way.names))
         const reached = index === undefined ? undefined : fns[index]
@@ -132,7 +142,8 @@ export function testsOf(root: string, fns: Fn[], files: FileEntry[], reach: Reac
     }
   }
 
-  const shown = [...found].sort(([a], [b]) => a.localeCompare(b)).slice(0, LISTED)
+  const rank = (hit: Hit) => ['touched', 'call', 'import'].indexOf(hit.via)
+  const shown = [...found].sort(([a, x], [b, y]) => rank(x) - rank(y) || a.localeCompare(b)).slice(0, LISTED)
   const listed = shown.map(([file, { via, at: line, reaches }]): TestReach => ({ file, via, at: line, reaches }))
   const lineless = shown.flatMap(([, hit]) => (hit.unchecked ? [hit.unchecked] : []))
   const cut = found.size > LISTED ? [`${found.size - LISTED} of ${found.size} test files are counted but not listed`] : []

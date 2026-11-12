@@ -1,3 +1,4 @@
+import ts from 'typescript'
 import { functionsIn } from '../scan/scan'
 
 export type Change = { name: string; key: string; line: number; change: 'added' | 'changed' | 'removed'; shares: string[] }
@@ -33,7 +34,7 @@ function bodies(source: string, file: string): Map<string, Body> {
       const key = keys[i] ?? ''
       const inner = fns.filter((_, j) => (keys[j] ?? '').startsWith(`${key}/`))
       const own = (line: number) => line === fn.line || line === fn.endLine || !inner.some((child) => child.line <= line && line <= child.endLine)
-      const text = lines.slice(fn.line - 1, fn.endLine).filter((_, at) => own(fn.line + at)).join('\n')
+      const text = tokens(lines.slice(fn.line - 1, fn.endLine).filter((_, at) => own(fn.line + at)).join('\n'))
       return [key, { name: fn.name, key, line: fn.line, endLine: fn.endLine, text }]
     }),
   )
@@ -44,12 +45,52 @@ function sharing(all: Map<string, Body>, body: Body): string[] {
   return [...all.values()].filter((other) => other !== body && !related(other) && other.line <= body.endLine && body.line <= other.endLine).map((other) => other.name)
 }
 
-function outside(source: string, file: string): string {
-  const spans = functionsIn(source, file)
-  return source.split(/\r?\n/).flatMap((line, at) => (spans.some((fn) => fn.line <= at + 1 && at + 1 <= fn.endLine) || line.trim() === '' ? [] : [line.trim()])).join('\n')
+function tokens(text: string): string {
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text)
+  const found: string[] = []
+  while (scanner.scan() !== ts.SyntaxKind.EndOfFileToken) found.push(scanner.getTokenText())
+  return found.join(' ')
 }
 
-export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: boolean } {
+function shape(node: ts.Node, source: ts.SourceFile): string {
+  const body = ts.isFunctionLike(node) ? (node as { body?: ts.Node }).body : undefined
+  const kids = node.getChildren(source)
+  if (kids.length === 0) return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) ? JSON.stringify(node.text) : node.getText(source)
+  return kids.filter((kid) => kid !== body).map((kid) => shape(kid, source)).join(' ')
+}
+
+const isFunction = (node: ts.Node | undefined) => node !== undefined && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
+
+function declared(statement: ts.Statement): string[] | 'function' {
+  if (ts.isFunctionDeclaration(statement)) return 'function'
+  if (ts.isVariableStatement(statement)) {
+    const list = statement.declarationList.declarations
+    return list.every((one) => isFunction(one.initializer)) ? 'function' : list.map((one) => one.name.getText())
+  }
+  if ((ts.isClassDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name) return [statement.name.text]
+  return ts.isExportAssignment(statement) ? ['default'] : []
+}
+
+function topLevel(text: string, file: string): { named: Map<string, string>; other: string[] } {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true)
+  const named = new Map<string, string>()
+  const other: string[] = []
+  for (const statement of source.statements) {
+    const names = declared(statement)
+    if (names === 'function') continue
+    if (names.length === 0) other.push(shape(statement, source))
+    for (const name of names) named.set(name, shape(statement, source))
+  }
+  return { named, other: other.sort() }
+}
+
+function outsideOf(file: string, before: string, after: string): string[] | 'all' {
+  const [old, next] = [topLevel(before, file), topLevel(after, file)]
+  if (old.other.join('\n') !== next.other.join('\n')) return 'all'
+  return [...new Set([...old.named.keys(), ...next.named.keys()])].filter((name) => old.named.get(name) !== next.named.get(name)).sort()
+}
+
+export function changesOf(file: string, before: string, after: string): { changes: Change[]; parsed: number; outside: string[] | 'all' } {
   const old = bodies(before, file)
   const next = bodies(after, file)
   const change = (all: Map<string, Body>, body: Body, kind: Change['change']): Change => ({ name: body.name, key: body.key, line: body.line, change: kind, shares: sharing(all, body) })
@@ -62,5 +103,5 @@ export function changesOf(file: string, before: string, after: string): { change
   const removed = [...old.values()].flatMap((body): Change[] => (next.has(body.key) ? [] : [change(old, body, 'removed')]))
 
   const order = (entry: Change) => ORDER.indexOf(entry.change)
-  return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outside(before, file) !== outside(after, file) }
+  return { changes: [...edited, ...removed].sort((a, b) => order(a) - order(b) || a.line - b.line || a.name.localeCompare(b.name)), parsed: old.size + next.size, outside: outsideOf(file, before, after) }
 }

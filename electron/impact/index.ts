@@ -8,7 +8,7 @@ import { isTestFile } from '../scan/starts'
 import { projectPath, type Fn } from '../where/refs'
 import { callersOf, LIST_DEPTH, LISTED, type Reach } from './callers'
 import type { Impact, Touch } from './schema'
-import { testsOf } from './tests'
+import { importsOf, testsOf } from './tests'
 import { changesOf, keysOf } from './touched'
 
 export { impactSchema, type Impact } from './schema'
@@ -60,8 +60,9 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   const notes = same ? [`the proposed content of ${file} is the same as the file on disk, so no function is touched`] : parsed === 0 && !code ? [`${file} holds no function the scan parses, so no function is touched`] : []
   const offset = fns.findIndex((fn) => fn.file === file)
   const scanned = keysOf(files.find((entry) => entry.path === file)?.functions ?? [])
-  const wide = !same && outside && code ? outsideSeeds(file, files, fns) : null
+  const wide = !same && code && (outside === 'all' || outside.length > 0) ? outsideSeeds(root, file, outside, files, fns) : null
   if (wide) notes.push(wide.note)
+  if (!same && code && !wide && changes.length === 0) notes.push(`the change to ${file} only touches formatting, quotes or comments, so nothing is counted`)
 
   const sharing = changes.filter((change) => change.change === 'changed' && change.shares.length > 0)
   if (sharing.length > 0) notes.push(`${sharing.length} changed functions share a line with another function (${sharing.slice(0, NAMED).map((change) => `${change.name} at ${file}:${change.line}`).join(', ')}${sharing.length > NAMED ? ', ...' : ''}); the scan gives lines, not columns, so an edit on that line counts as a change to each`)
@@ -80,11 +81,17 @@ function fileSeeds(input: ImpactInput & { file: string; content: string }, root:
   return { seeds: [...new Set([...seeds, ...(wide?.seeds ?? [])])], ...(same ? {} : { edited: { file, line: firstDiff(current, input.content), name: '' } }), touched, added, file, notes, ...(wide ? { whole: file, users: wide.users } : {}) }
 }
 
-function outsideSeeds(file: string, files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; note: string } {
-  const importers = new Set(files.filter((entry) => !isTestFile(entry.path) && (entry.imports ?? []).includes(file)).map((entry) => entry.path))
+function outsideSeeds(root: string, file: string, names: string[] | 'all', files: FileEntry[], fns: Fn[]): { seeds: number[]; users: number[]; note: string } {
+  const uses = (importer: FileEntry) => {
+    const loaded = importsOf(root, importer.path, true)
+    const entries = loaded === 'unreadable' ? [] : loaded.filter((entry) => entry.target === file.replace(/\.[cm]?[jt]sx?$/, '').replace(/\/index$/, ''))
+    return names === 'all' || entries.length === 0 || entries.some((entry) => entry.names === null || entry.names.some((name) => names.includes(name)))
+  }
+  const importers = new Set(files.filter((entry) => !isTestFile(entry.path) && (entry.imports ?? []).includes(file) && uses(entry)).map((entry) => entry.path))
   const own = fns.flatMap((fn, i) => (fn.file === file ? [i] : []))
   const using = fns.flatMap((fn, i) => (importers.has(fn.file) ? [i] : []))
-  const note = `code outside every function in ${file} changed (a top level value, an import, a type or a field), so callers are counted from its ${own.length} functions, and the ${using.length} functions in the ${importers.size} files that import it count as its callers`
+  const what = names === 'all' ? 'a statement with no name, such as a module load' : names.slice(0, NAMED).join(', ') + (names.length > NAMED ? ', ...' : '')
+  const note = `code outside every function in ${file} changed (${what}), so callers are counted from its ${own.length} functions, and the ${using.length} functions in the ${importers.size} files that import ${names === 'all' ? 'it' : 'those names'} count as its callers`
   return { seeds: own, users: using, note }
 }
 
