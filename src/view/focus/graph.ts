@@ -1,4 +1,3 @@
-import { CARD_H } from '../functions/tree/layout'
 import type { Way } from '../functions/facts/calls'
 import type { Sides } from './sides'
 
@@ -11,8 +10,6 @@ export type Link = { from: string; to: string; kind: 'call' | 'mutual' | 'cross'
 export const CENTER = 'center'
 
 export const SIDE_H = 84
-
-export const heightOf = (id: string): number => (id === CENTER ? CARD_H : SIDE_H)
 
 const PREFIX: Record<Way, string> = { callers: 'in', callees: 'out' }
 

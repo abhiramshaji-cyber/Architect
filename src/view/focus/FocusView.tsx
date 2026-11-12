@@ -3,10 +3,10 @@ import { Background, Controls, Panel, ReactFlow, useReactFlow, type Edge } from 
 import '@xyflow/react/dist/style.css'
 import type { FunctionList, FunctionRow } from '../../../shared/types'
 import { callersOf, type Way } from '../functions/facts/calls'
-import { layoutOf, type Spot } from '../functions/tree/layout'
+import { CARD_H, layoutOf, type Spot } from '../functions/tree/layout'
 import FocusCard, { type FocusNode } from './FocusCard'
-import { CENTER, graphOf, heightOf } from './graph'
-import { back, forward, go, keyOf, placeOf, resolve, type Trail } from './history'
+import { CENTER, SIDE_H, graphOf } from './graph'
+import { keyOf, placeOf, resolve, walk, type Step, type Trail } from './history'
 import { FIRST, PAGE, byRank, sidesOf, type Limits } from './sides'
 
 type FocusProps = {
@@ -23,6 +23,8 @@ const nodeTypes = { focus: FocusCard }
 const FIT = { padding: 0.12, minZoom: 0.7, maxZoom: 1 }
 
 const START: Limits = { callers: FIRST, callees: FIRST }
+
+const heightOf = (id: string): number => (id === CENTER ? CARD_H : SIDE_H)
 
 function Fit({ now, center }: { now: string; center: Spot | undefined }) {
   const { fitView, getViewport, setViewport } = useReactFlow()
@@ -48,7 +50,7 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
   const callers = useMemo(() => callersOf(list.calls), [list.calls])
   const first = useMemo(() => {
     const top = rows[rows.map((_, at) => at).sort(byRank(rows))[0] ?? -1]
-    return top ? go(null, keyOf(top)) : null
+    return top ? walk(null, { to: keyOf(top) }) : null
   }, [rows])
   const shown = trail ?? first
   const at = useMemo(() => (shown ? resolve(rows, shown.now) : -1), [rows, shown])
@@ -68,7 +70,8 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
   const onGo = useCallback(
     (to: number) => {
       const row = rows[to]
-      if (row) onTrail(go(shown, keyOf(row)))
+      const next = row && walk(shown, { to: keyOf(row) })
+      if (next) onTrail(next)
     },
     [rows, shown, onTrail],
   )
@@ -108,12 +111,17 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
 
   if (!shown) return null
 
+  const move = (step: Step) => {
+    const next = walk(shown, step)
+    if (next) onTrail(next)
+  }
+
   const steps = (
     <div className="fn-sort focus-steps" role="group" aria-label="Focus history">
-      <button className="mode" disabled={shown.back.length === 0} onClick={() => onTrail(back(shown))} aria-label="Back">
+      <button className="mode" disabled={shown.back.length === 0} onClick={() => move('back')} aria-label="Back">
         ←
       </button>
-      <button className="mode" disabled={shown.forward.length === 0} onClick={() => onTrail(forward(shown))} aria-label="Forward">
+      <button className="mode" disabled={shown.forward.length === 0} onClick={() => move('forward')} aria-label="Forward">
         →
       </button>
     </div>

@@ -19,18 +19,18 @@ export function resolve(rows: FunctionRow[], key: string): number {
   return same.length === 1 ? (same[0] ?? -1) : -1
 }
 
-export function go(trail: Trail | null, key: string): Trail {
-  if (!trail) return { back: [], now: key, forward: [] }
-  if (trail.now === key) return trail
-  return { back: [...trail.back, trail.now], now: key, forward: [] }
-}
+export type Step = { to: string } | 'back' | 'forward'
 
-export function back(trail: Trail): Trail {
-  const now = trail.back.at(-1)
-  return now === undefined ? trail : { back: trail.back.slice(0, -1), now, forward: [trail.now, ...trail.forward] }
-}
-
-export function forward(trail: Trail): Trail {
-  const [now, ...rest] = trail.forward
-  return now === undefined ? trail : { back: [...trail.back, trail.now], now, forward: rest }
+export function walk(trail: Trail | null, step: Step): Trail | null {
+  if (step === 'back') {
+    const now = trail?.back.at(-1)
+    return !trail || now === undefined ? trail : { back: trail.back.slice(0, -1), now, forward: [trail.now, ...trail.forward] }
+  }
+  if (step === 'forward') {
+    const [now, ...rest] = trail?.forward ?? []
+    return !trail || now === undefined ? trail : { back: [...trail.back, trail.now], now, forward: rest }
+  }
+  if (!trail) return { back: [], now: step.to, forward: [] }
+  if (trail.now === step.to) return trail
+  return { back: [...trail.back, trail.now], now: step.to, forward: [] }
 }

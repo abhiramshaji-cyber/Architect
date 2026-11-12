@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FunctionRow } from '../../../shared/types'
-import { back, forward, go, keyOf, placeOf, resolve } from './history'
+import { keyOf, placeOf, resolve, walk } from './history'
 
 const row = (name: string, file = 'a.ts', line = 1): FunctionRow => ({
   file,
@@ -10,26 +10,35 @@ const row = (name: string, file = 'a.ts', line = 1): FunctionRow => ({
   fanIn: 0,
   fanOut: 0,
   exported: false,
-  entry: false,
+  entry: null,
   importance: 1,
 })
 
-describe('trail', () => {
+describe('walk', () => {
+  const to = (key: string) => ({ to: key })
+
   it('starts, moves, goes back and forward, and drops forward on a new step', () => {
-    const a = go(null, 'a')
-    const c = go(go(a, 'b'), 'c')
+    const a = walk(null, to('a'))
+    const c = walk(walk(a, to('b')), to('c'))
     expect(c).toEqual({ back: ['a', 'b'], now: 'c', forward: [] })
-    const twice = back(back(c))
+    const twice = walk(walk(c, 'back'), 'back')
     expect(twice).toEqual({ back: [], now: 'a', forward: ['b', 'c'] })
-    expect(forward(twice)).toEqual({ back: ['a'], now: 'b', forward: ['c'] })
-    expect(go(twice, 'd')).toEqual({ back: ['a'], now: 'd', forward: [] })
+    expect(walk(twice, 'forward')).toEqual({ back: ['a'], now: 'b', forward: ['c'] })
+    expect(walk(twice, to('d'))).toEqual({ back: ['a'], now: 'd', forward: [] })
   })
 
-  it('stays put at either end and on a step to the same place', () => {
-    const a = go(null, 'a')
-    expect(back(a)).toBe(a)
-    expect(forward(a)).toBe(a)
-    expect(go(a, 'a')).toBe(a)
+  it('stays put at either end, with no trail, and on a step to the same place', () => {
+    const a = walk(null, to('a'))
+    expect(walk(a, 'back')).toBe(a)
+    expect(walk(a, 'forward')).toBe(a)
+    expect(walk(a, to('a'))).toBe(a)
+    expect(walk(null, 'back')).toBeNull()
+    expect(walk(null, 'forward')).toBeNull()
+  })
+
+  it('records a step between two functions that share a name in one file', () => {
+    const first = walk(null, to(keyOf(row('run', 'a.ts', 3))))
+    expect(walk(first, to(keyOf(row('run', 'a.ts', 9))))?.back).toEqual([keyOf(row('run', 'a.ts', 3))])
   })
 })
 

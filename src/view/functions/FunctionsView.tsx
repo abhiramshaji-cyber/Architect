@@ -5,7 +5,7 @@ import { folderName } from '../../model/layout'
 import { ranker } from '../../model/recency'
 import { loadCodeMap, openFile, useProject } from '../../model/store'
 import FocusView from '../focus/FocusView'
-import { go, keyOf, type Trail } from '../focus/history'
+import { keyOf, walk, type Trail } from '../focus/history'
 import { useRecency } from '../recency/useRecency'
 import type { ViewProps } from '../../shell/views'
 import Bar from './bar/Bar'
@@ -74,7 +74,7 @@ export default function FunctionsView({ show }: ViewProps) {
     (at: number) => {
       const row = rows?.[at]
       if (!row) return
-      setTrail((prev) => go(prev, keyOf(row)))
+      setTrail((prev) => walk(prev, { to: keyOf(row) }))
       related.close()
       pickMode('focus')
     },
