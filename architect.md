@@ -41,8 +41,9 @@ Opt in change review. Persists the on or off switch, holds contract proposals an
 owns: `electron/review/**`
 
 ### app
-Electron lifecycle, tray and the preload bridge to the renderer. Every window is a native macOS tab in one group, holding its own pty host and a claim on at most one project root, so a project is open in at most one tab and closing a tab tears down only its terminals.
+Electron lifecycle, tray and the preload bridge to the renderer. Every window is a native macOS tab in one group, holding its own pty host and a claim on at most one project root, so a project is open in at most one tab and closing a tab tears down only its terminals. Runs as a single instance and opens a folder handed to it from outside, by `open -a Architect <folder>`, a path on the command line or a second launch, as a tab of its own, or brings forward the tab that already holds it.
 owns: `electron/main.ts`
+owns: `electron/app/**`
 
 ### pty
 Spawns and owns pty processes in the main process, keyed by session id, and batches their output into a single streaming channel. A session runs `tmux new-session -A -s <name derived from its cwd>` when tmux is available, so tearing the pty down detaches rather than kills, and falls back to a plain shell otherwise.
