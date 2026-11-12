@@ -75,6 +75,15 @@ describe('scan', () => {
     expect(folder(map, '').files.map((f) => f.path)).toEqual(['a.ts'])
   })
 
+  it('counts the lines of every file and marks the code files', async () => {
+    const map = await scan(
+      fixture({ 'a.ts': 'one\ntwo\n', 'b.tsx': 'one\ntwo\nthree', 'c.d.ts': 'x\n', 'd.md': '# x\n', 'e.ts': '' }),
+    )
+    const files = Object.fromEntries(folder(map, '').files.map((f) => [f.path, [f.lines, f.code]]))
+
+    expect(files).toEqual({ 'a.ts': [2, true], 'b.tsx': [3, true], 'c.d.ts': [1, undefined], 'd.md': [1, undefined], 'e.ts': [0, true] })
+  })
+
   it('flattens every folder for O(1) lookup', async () => {
     const map = await scan(fixture({ 'src/deep/nested/a.ts': '', 'src/b.ts': '' }))
 
@@ -125,6 +134,13 @@ describe('scan', () => {
     const map = await scan(fixture({ 'readme.md': '# hi\n\nfunction fake() {}\n', 'a.ts': '' }))
 
     expect(names(map, 'readme.md')).toEqual([])
+  })
+
+  it('counts each file’s lines whether or not it ends in a newline', async () => {
+    const map = await scan(fixture({ 'empty.ts': '', 'one.ts': 'x', 'two.ts': 'a\nb\n', 'gap.ts': 'a\n\nb', 'blank.ts': '\n' }))
+    const lines = Object.fromEntries(folder(map, '').files.map((f) => [f.path, f.lines]))
+
+    expect(lines).toEqual({ 'blank.ts': 1, 'empty.ts': 0, 'gap.ts': 3, 'one.ts': 1, 'two.ts': 2 })
   })
 
   it('finds function declarations including nested and default', async () => {
@@ -803,5 +819,34 @@ describe('exports and imports', () => {
     const file = folder(map, '').files.find((f) => f.path === 'a.ts')
     expect(file?.imports).toEqual(['b.ts', 'c.ts', 'd.ts', 'e.js', 't.ts'])
     expect(folder(map, '').files.find((f) => f.path === 'b.ts')?.imports).toBeUndefined()
+  })
+
+  it('lists the scanned files a file passes on through star, named, namespace and imported then exported bindings, apart from what it only imports', async () => {
+    const map = await scan(
+      fixture({
+        'index.ts': [
+          "export * from './a'",
+          "export { b as bee } from './b'",
+          "export * as c from './c'",
+          "export type { T } from './t'",
+          "import { d } from './d'",
+          "export { d }",
+          "import { e } from './e'",
+          "export * from 'node:fs'",
+          "export * from './index'",
+        ].join('\n'),
+        'a.ts': 'export const a = 1',
+        'b.ts': 'export const b = 1',
+        'c.ts': 'export const c = 1',
+        'd.ts': 'export const d = 1',
+        't.ts': 'export type T = 1',
+        'e.ts': 'export const e = 1',
+      }),
+    )
+
+    const index = folder(map, '').files.find((f) => f.path === 'index.ts')
+    expect(index?.reexports).toEqual(['a.ts', 'b.ts', 'c.ts', 'd.ts', 't.ts'])
+    expect(index?.imports).toEqual(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 't.ts'])
+    expect(folder(map, '').files.find((f) => f.path === 'a.ts')?.reexports).toBeUndefined()
   })
 })

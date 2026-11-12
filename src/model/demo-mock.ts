@@ -461,13 +461,14 @@ export function installMock() {
     async ownership(root) {
       return ownerships[root] ?? null
     },
-    async layers() {
-      return { contract: false, rows: [], cells: [] }
-    },
+    layers: async () => ({ contract: false, rows: [], cells: [] }),
+    flow: async () => Promise.reject(new Error('the flow is drawn from a scan, open a project in the app')),
     async recency() {
       return { functions: {}, components: {} }
     },
     churn: async () => ({ days: 90, files: {}, functions: {} }),
+    coupling: async (_root, ask) => ({ ok: true, value: { ask: { days: 90, minShared: 3, minConfidence: 0.5, maxFiles: 30, ...ask }, skipped: 0, historyFrom: null, commits: {}, sessions: {}, pairs: [] } }),
+    style: async () => [],
     async rescan(root) {
       const scanned = mockCodeMap(root)
       codeMaps[root] = scanned

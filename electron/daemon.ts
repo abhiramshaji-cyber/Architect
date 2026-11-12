@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
-import chokidar, { type FSWatcher } from 'chokidar'
+import chokidar from 'chokidar'
 import { folderShaped } from '../shared/folders'
 import { SOCKET_PATH } from '../shared/socket'
 import {
@@ -47,16 +47,19 @@ import { createClaims } from './contract/claims'
 import { IGNORED_DIRS, scan } from './scan/scan'
 import { locateSession } from './git/session'
 import { listFunctions } from './functions'
+import { flowIn } from './flow'
 import { layersOf } from './layers'
 import { blameFiles } from './git/blame'
 import { recencyOf } from './recency'
 import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
+import { styleIn } from './rules/style'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
 import { impactFor, impactSchema, type Impact } from './impact'
 import { changeVerdict } from './verdict'
+import { watchContract } from './watch/contract'
 
 const HISTORY_LIMIT = 200
 
@@ -140,7 +143,7 @@ type ProjectState = {
   root: string
   architecture: Architecture | null
   contract: ContractState
-  watcher: FSWatcher
+  watcher: Closable
   sources: Closable
   rescanTimer: ReturnType<typeof setTimeout> | null
   rescanning: boolean
@@ -551,7 +554,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       architecture: null,
       contract: { status: 'missing' },
       lastWrittenContent: null,
-      watcher: null as unknown as FSWatcher,
+      watcher: null as unknown as Closable,
       sources: null as unknown as Closable,
       rescanTimer: null,
       rescanning: false,
@@ -586,17 +589,8 @@ export function createDaemon(options: DaemonOptions = {}) {
       absorb(content)
     }
 
-    reread()
-
-    const watcher = chokidar.watch(filePath, {
-      ignoreInitial: true,
-      usePolling: true,
-      interval: 30,
-      awaitWriteFinish: { stabilityThreshold: 20, pollInterval: 10 },
-    })
-    watcher.on('all', (event) => {
-      if (event !== 'add' && event !== 'change' && event !== 'unlink') return
-
+    // watch before the first read, or a save landing in between is never seen
+    state.watcher = watchContract(filePath, () => {
       const contract = state.contract
       const architecture = state.architecture
       reread()
@@ -606,7 +600,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       record(state.root, 'contract', contractDiff(architecture, state.architecture))
       if (state.contract.status === 'ready' && state.architecture) contractChanged(state.root, state.architecture, architecture)
     })
-    state.watcher = watcher
+    reread()
 
     state.sources = watchSources(root, () => scheduleRescan(state))
 
@@ -977,6 +971,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       return ownership(scoped, architecture.components)
     },
     layers: async (root: string) => layersOf(loadProject(root).architecture, await mapOf(root)),
+    flow: async (root: string, ask: unknown) => flowIn(root, loadProject(root).architecture, await mapOf(root), ask),
     readSource,
     openSource,
     writeSource,
@@ -993,6 +988,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       return recencyOf(map, loadProject(root).architecture, blamed)
     },
     churn: async (root: string, days?: unknown) => churnOf(root, await mapOf(loadProject(root).root), days),
+    style: async (root: string) => styleIn(root, await mapOf(loadProject(root).root), loadProject(root).architecture),
     onChange: (fn: (root: string, architecture: Architecture) => void) => {
       changeListener = fn
     },
@@ -1012,11 +1008,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     setReview: review.setEnabled,
     decide: (id: string, approved: boolean, feedback?: string) => review.decide(id, approved, feedback, proposeChange),
     reviewDetail: (id: string) =>
-      review.detail(
-        id,
-        (root) => loadProject(root).architecture,
-        async (root) => listFunctions(root, await mapOf(root)).rows,
-      ),
+      review.detail(id, (root) => loadProject(root).architecture, async (root) => listFunctions(root, await mapOf(root)).rows),
     onReview: (fn: (state: ReviewState) => void) => {
       reviewListener = fn
     },

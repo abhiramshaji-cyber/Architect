@@ -2,7 +2,7 @@ import type { FunctionRow } from '../../../shared/types'
 
 export type Trail = { back: string[]; now: string; forward: string[] }
 
-export function keyOf(row: FunctionRow): string {
+export function keyOf(row: Pick<FunctionRow, 'file' | 'line' | 'name'>): string {
   return `${row.file}\0${row.line}\0${row.name}`
 }
 
@@ -33,4 +33,9 @@ export function walk(trail: Trail | null, step: Step): Trail | null {
   if (!trail) return { back: [], now: step.to, forward: [] }
   if (trail.now === step.to) return trail
   return { back: [...trail.back, trail.now], now: step.to, forward: [] }
+}
+
+export function settled(trail: Trail | null, rows: FunctionRow[], scope: string): Trail | null {
+  if (!trail || scope !== '' || trail.back.length > 0 || trail.forward.length > 0) return trail
+  return resolve(rows, trail.now) < 0 ? null : trail
 }

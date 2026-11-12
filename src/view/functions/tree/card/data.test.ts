@@ -36,7 +36,7 @@ describe('cardOf', () => {
   const outline = outlineOf(list)
 
   it('labels the project, a group, the unreached card, a bucket and a function from their counts', () => {
-    expect(cardOf(outline, PROJECT, list, 'demo')).toMatchObject({ title: 'demo', notes: ['14 functions'], row: null })
+    expect(cardOf(outline, PROJECT, list, 'demo')).toMatchObject({ title: 'demo', notes: ['14 functions'], row: null, pill: '14 functions' })
     expect(cardOf(outline, 'g:bin:cli.ts', list, 'demo')).toMatchObject({
       title: 'package.json bin',
       notes: ['cli.ts', '1 function · 1 starting point'],
@@ -45,14 +45,18 @@ describe('cardOf', () => {
     expect(cardOf(outline, UNREACHED, list, 'demo')).toMatchObject({
       title: 'Not reached from a starting point',
       notes: ['13 functions'],
+      pill: '13 functions',
     })
     const [odd = ''] = outline.kids.get(UNREACHED) ?? []
     expect(cardOf(outline, odd, list, 'demo')).toMatchObject({
       title: 'src/1.ts',
       tag: 'file',
       notes: ['7 functions · 0 starting points', '0 calls in · 1 out'],
+      pill: '7 functions',
     })
-    expect(cardOf(outline, 'f2', list, 'demo')).toMatchObject({ title: 'fn2', notes: [], at: 2, also: 1, elsewhere: 0 })
+    expect(cardOf(outline, 'f2', list, 'demo')).toMatchObject({ title: 'fn2', notes: [], at: 2, also: 1, elsewhere: 0, pill: '0 callers' })
+    expect(cardOf(outline, 'f2', { ...list, rows: rows.map((one, at) => (at === 2 ? { ...one, fanIn: 1 } : one)) }, 'demo').pill).toBe('1 caller')
+    expect(cardOf(outline, 'f2', { ...list, rows: rows.map((one, at) => (at === 2 ? { ...one, outsideCallers: 5 } : one)) }, 'demo').pill).toBe('0 callers +5 outside')
     expect(cardOf(outline, 'f1', list, 'demo')).toMatchObject({ elsewhere: 1 })
   })
 
