@@ -53,11 +53,19 @@ export function ownLines(rows: FunctionRow[]): number[] {
   return own
 }
 
-function branch(parent: MapNode, id: string, label: string, kind: Kind, path: string): MapNode {
-  let found = parent.children.find((child) => child.id === id)
+function branch(
+  made: Map<string, MapNode>,
+  parent: MapNode,
+  id: string,
+  label: string,
+  kind: Kind,
+  path: string,
+): MapNode {
+  let found = made.get(id)
   if (!found) {
     found = { id, label, kind, path, weight: 0, children: [] }
     parent.children.push(found)
+    made.set(id, found)
   }
   return found
 }
@@ -81,15 +89,16 @@ export function nest(
   const root: MapNode = { id: '', label: project, kind: 'root', path: '', weight: 0, children: [] }
   const own = ownLines(rows)
   const index = new Map<string, MapNode>()
+  const nodes = new Map<string, MapNode>()
 
   const fileOf = (path: string) => {
     const found = index.get(path)
     if (found) return found
     const group = grouping.of(path)
     const folder = folderOf(path)
-    const top = branch(root, `g\0${group}`, group, grouping.kind, group)
-    const dir = branch(top, `d\0${group}\0${folder}`, folder, 'folder', folder)
-    const made = branch(dir, `f\0${group}\0${path}`, path.slice(path.lastIndexOf('/') + 1), 'file', path)
+    const top = branch(nodes, root, `g\0${group}`, group, grouping.kind, group)
+    const dir = branch(nodes, top, `d\0${group}\0${folder}`, folder, 'folder', folder)
+    const made = branch(nodes, dir, `f\0${group}\0${path}`, path.slice(path.lastIndexOf('/') + 1), 'file', path)
     index.set(path, made)
     return made
   }

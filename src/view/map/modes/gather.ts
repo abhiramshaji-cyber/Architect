@@ -39,6 +39,6 @@ export function gather(list: FunctionList, churn: Churn | null, history: History
     unreached: unreachedOf(list.tree),
     churn,
     sessions: sessionsOf(history),
-    recorded: history.length,
+    recorded: history.filter((entry) => entry.source === 'code').length,
   }
 }

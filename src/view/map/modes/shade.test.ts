@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { FunctionRow, FunctionTree, HistoryEntry } from '../../../../shared/types'
 import { nest } from '../layout/nest'
 import { gather, sessionsOf, unreachedOf } from './gather'
-import { type Facts, leafValues, shade } from './shade'
+import { churnTop, type Facts, leafValues, shade } from './shade'
 import { fillOf, rgbOf } from './palette'
 
 const row = (over: Partial<FunctionRow>): FunctionRow => ({
@@ -71,24 +71,25 @@ describe('sessionsOf', () => {
 
 describe('leafValues', () => {
   it('scales importance, unreached, touched and churn into 0 to 1', () => {
-    expect(leafValues('importance', facts())).toEqual([1, 0, 0.5])
-    expect(leafValues('unreached', facts())).toEqual([0, 0, 1])
-    expect(leafValues('touched', facts())).toEqual([0, 0, 1])
-    const churn = leafValues('churn', facts())
+    expect(leafValues('importance', facts(), 0)).toEqual([1, 0, 0.5])
+    expect(leafValues('unreached', facts(), 0)).toEqual([0, 0, 1])
+    expect(leafValues('touched', facts(), 0)).toEqual([0, 0, 1])
+    const churn = leafValues('churn', facts(), 7)
     expect(churn[0]).toBe(1)
     expect(churn[1]).toBe(0)
     expect(churn[2]).toBeCloseTo(Math.log1p(1) / Math.log1p(7))
   })
 
   it('has no churn colour before churn arrives and all zero when nothing changed', () => {
-    expect(leafValues('churn', facts({ churn: null }))).toEqual([null, null, null])
-    expect(leafValues('churn', facts({ churn: { days: 90, files: {}, functions: {} } }))).toEqual([0, 0, 0])
+    expect(leafValues('churn', facts({ churn: null }), 7)).toEqual([null, null, null])
+    expect(leafValues('churn', facts({ churn: { days: 90, files: {}, functions: {} } }), 0)).toEqual([0, 0, 0])
   })
 
   it('scales churn for a very large project without overflowing the call stack', () => {
     const many = Array.from({ length: 200_000 }, (_, at) => row({ file: `f${at}.ts`, line: 1, name: 'x' }))
     const functions = Object.fromEntries(many.map((r, at) => [`${r.file}:1:x`, at % 50]))
-    const values = leafValues('churn', facts({ rows: many, churn: { days: 90, files: {}, functions } }))
+    const big = facts({ rows: many, churn: { days: 90, files: {}, functions } })
+    const values = leafValues('churn', big, churnTop(nest(many, [], null, 'demo'), big))
     expect(values[49]).toBe(1)
     expect(values[0]).toBe(0)
   })
@@ -146,6 +147,23 @@ describe('shade outside functions', () => {
   it('leaves it uncoloured for importance and unreached', () => {
     expect(shade(tree, 'importance', facts()).get(restOf('a/types.ts'))).toBeNull()
     expect(shade(tree, 'unreached', facts()).get(restOf('a/types.ts'))).toBeNull()
+  })
+})
+
+describe('churnTop', () => {
+  it('sets the scale from tiles on the map only, ignoring busier files without a tile', () => {
+    const tree = nest(rows, [{ path: 'a/one.ts', lines: 60 }], null, 'demo')
+    const churn = {
+      days: 90,
+      files: {
+        'package-lock.json': { commits: 500, added: 1, removed: 1 },
+        'a/one.ts': { commits: 9, added: 1, removed: 0 },
+      },
+      functions: { 'a/one.ts:1:top': 7 },
+    }
+    expect(churnTop(tree, facts({ churn }))).toBe(9)
+    expect(churnTop(nest(rows, [], null, 'demo'), facts({ churn }))).toBe(7)
+    expect(churnTop(tree, facts({ churn: null }))).toBe(0)
   })
 })
 

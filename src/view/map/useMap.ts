@@ -50,7 +50,7 @@ export function useMap(): MapData {
   const asked = useAsked(currentRoot, codeMap !== undefined, askList, codeMap, architecture)
   const list = asked.value
   const churn = useAsked(currentRoot, codeMap !== undefined, askChurn, codeMap)
-  const scanned = useAsked(currentRoot, list !== null, askMap, list)
+  const scanned = useAsked(currentRoot, list !== null && codeMap === null, askMap, list)
   const project = currentRoot?.split(/[\\/]/).filter(Boolean).pop() ?? ''
   const map = codeMap ?? scanned.value
   const files = useMemo(() => map?.folders.flatMap((folder) => folder.files) ?? [], [map])

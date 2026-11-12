@@ -18,37 +18,45 @@ export function busiestOf(counts: number[]): number {
   return counts.reduce((top, count) => Math.max(top, count), 0)
 }
 
-export function churnTop(facts: Facts): number {
+export function churnTop(root: MapNode, facts: Facts): number {
   const churn = facts.churn
   if (!churn) return 0
-  const files = Object.values(churn.files).map((file) => file.commits)
-  return busiestOf([...facts.rows.map((row) => churnOf(row, churn)), ...files].filter(Number.isFinite))
+  const counts: number[] = []
+  const visit = (node: MapNode) => {
+    const row = node.fn === undefined ? undefined : facts.rows[node.fn]
+    if (row) counts.push(churnOf(row, churn))
+    if (node.kind === 'rest') counts.push(churn.files[node.path]?.commits ?? 0)
+    node.children.forEach(visit)
+  }
+  visit(root)
+  return busiestOf(counts.filter(Number.isFinite))
 }
 
 export function churnOf(row: FunctionRow, churn: Churn): number {
   return churn.functions[changeKey(row.file, row.line, row.name)] ?? 0
 }
 
-export function leafValues(mode: ModeId, facts: Facts): (number | null)[] {
+export function leafValues(mode: ModeId, facts: Facts, busiest: number): (number | null)[] {
   const { rows, churn } = facts
   if (mode === 'importance') return rows.map((row) => (row.importance - 1) / 4)
   if (mode === 'unreached') return rows.map((_, at) => (facts.unreached.has(at) ? 1 : 0))
   if (mode === 'touched') return rows.map((row) => (facts.sessions.has(row.file) ? 1 : 0))
   if (!churn) return rows.map(() => null)
-  const top = Math.log1p(churnTop(facts))
+  const top = Math.log1p(busiest)
   return rows.map((row) => (top > 0 ? Math.log1p(churnOf(row, churn)) / top : 0))
 }
 
 export function shade(root: MapNode, mode: ModeId, facts: Facts): Map<string, number | null> {
-  const leaves = leafValues(mode, facts)
+  const busiest = mode === 'churn' ? churnTop(root, facts) : 0
+  const leaves = leafValues(mode, facts, busiest)
   const values = new Map<string, number | null>()
   const churn = facts.churn
-  const top = Math.log1p(churnTop(facts))
+  const top = Math.log1p(busiest)
 
   const rest = (file: string): number | null => {
     if (mode === 'touched') return facts.sessions.has(file) ? 1 : 0
     if (mode !== 'churn' || !churn) return null
-    return top > 0 ? Math.log1p(churn.files[file]?.commits ?? 0) / top : 0
+    return top > 0 ? Math.min(1, Math.log1p(churn.files[file]?.commits ?? 0) / top) : 0
   }
 
   const visit = (node: MapNode): number | null => {

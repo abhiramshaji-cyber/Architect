@@ -40,7 +40,7 @@ export default function MapView({ theme, show }: ViewProps) {
     (node: MapNode) => (facts ? factsFor(node, facts) : { kind: '', title: '', lines: [] }),
     [facts],
   )
-  const busiest = useMemo(() => (facts?.churn ? churnTop(facts) : null), [facts])
+  const busiest = useMemo(() => (tree && facts?.churn ? churnTop(tree, facts) : null), [tree, facts])
 
   const pick = useCallback(
     (node: MapNode) => {
