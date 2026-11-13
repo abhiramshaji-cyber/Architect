@@ -80,6 +80,15 @@
 .map-canvas {
   display: block;
   cursor: pointer;
+  touch-action: none;
+}
+
+.map-canvas--panning {
+  cursor: grabbing;
+}
+
+.map-box:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .map-hover {
