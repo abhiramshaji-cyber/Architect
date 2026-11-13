@@ -89,7 +89,7 @@ describe('cutFor', () => {
     const { root, map } = await project(files)
     const cut = await cutFor(contractOf(['q -> x', 'x -> y', 'x -> z', 'y -> p', 'z -> p']), async () => map, root, 'p', 'q')
     expect(cut?.cheapest).toMatchObject({ from: 'q', to: 'x', calls: 2, tie: null })
-    expect(cut?.notes[0]).toBe('cutting q -> x alone breaks every path for 2 calls, no more than cutting one edge on each path; ties between single edges go to the first by name')
+    expect(cut?.notes[0]).toBe('cutting q -> x alone breaks every path for 2 calls, no more than cutting one edge on each path')
     expect(cut?.also).toEqual([])
   })
 
@@ -105,5 +105,24 @@ describe('cutFor', () => {
     const { root, map } = await project(files)
     const cut = await cutFor(contractOf(['t -> a', 't -> b', 'a -> f', 'a -> g', 'b -> g', 'g -> f']), async () => map, root, 'f', 't')
     expect([cut?.cheapest, ...(cut?.also ?? [])].map((edge) => `${edge?.from} -> ${edge?.to} ${edge?.calls}`)).toEqual(['t -> a 2', 't -> b 2'])
+  })
+
+  it('compares a single edge with the pruned set, and keeps the reported edge on the cycle', async () => {
+    const parts = ['f', 't', 's', 'u', 'w', 'x']
+    const contractOf = (edges: string[]) => parse(['# Demo', '', 'A demo.', '', '## Components', '', ...parts.flatMap((id) => [`### ${id}`, 'Part.', `owns: \`${id}/**\``, '']), '## Dependencies', '', ...edges.map((edge) => `- ${edge}`), ''].join('\n'))
+    const fn = (dir: string, name: string, calls: [string, string][]) => [`${dir}/${name}.ts`, `${calls.map(([d, n]) => `import { ${n} } from '../${d}/${n}'`).join('\n')}\n\nexport function ${name}() {\n${calls.map(([, n]) => `  ${n}()\n`).join('')}  return 1\n}\n`] as const
+    const files = Object.fromEntries([
+      fn('f', 'f1', []), fn('f', 'f2', []),
+      fn('u', 'u1', [['f', 'f1'], ['f', 'f2']]), fn('w', 'w1', [['f', 'f1'], ['f', 'f2']]), fn('x', 'x1', [['u', 'u1']]),
+      fn('s', 's1', [['u', 'u1'], ['w', 'w1'], ['x', 'x1']]), fn('s', 's2', [['w', 'w1']]),
+      fn('t', 't1', [['s', 's1'], ['s', 's2']]), fn('t', 't2', [['s', 's1']]), fn('t', 't3', [['s', 's2']]), fn('t', 't4', [['s', 's1']]), fn('t', 't5', [['s', 's2']]),
+    ])
+    const { root, map } = await project(files)
+    const cut = await cutFor(contractOf(['t -> s', 's -> u', 's -> w', 's -> x', 'x -> u', 'u -> f', 'w -> f']), async () => map, root, 'f', 't')
+    expect(cut?.path).toEqual(['f', 't', 's', 'u', 'f'])
+    const cuts = [cut?.cheapest, ...(cut?.also ?? [])].map((edge) => `${edge?.from} -> ${edge?.to}`)
+    expect(cut?.path.join(' -> ')).toContain(cuts[0])
+    expect(cuts).toEqual(['s -> u', 's -> w', 's -> x'])
+    expect([cut?.cheapest, ...(cut?.also ?? [])].reduce((sum, edge) => sum + (edge?.calls ?? 0), 0)).toBe(4)
   })
 })

@@ -10,6 +10,8 @@ const LISTED = 20
 
 const ALSO_LISTED = 5
 
+const order = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
 const named = (file: string, line: number, name: string) => `${file}:${line} ${name}`
 
 function siteOf(map: CodeMap, call: LayerCall): string | null {
@@ -39,7 +41,7 @@ function greedyFrom(architecture: Architecture, cost: (edge: Pair) => number, pi
 
 function listOf(map: CodeMap, calls: LayerCall[], limit: number): CutCall[] {
   return [...calls]
-    .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.target.localeCompare(b.target) || a.targetLine - b.targetLine)
+    .sort((a, b) => order(a.file, b.file) || a.line - b.line || order(a.target, b.target) || a.targetLine - b.targetLine)
     .slice(0, limit)
     .map((call) => ({ caller: named(call.file, call.line, call.fn), site: siteOf(map, call), callee: named(call.target, call.targetLine, call.targetFn) }))
 }
@@ -61,21 +63,24 @@ export function cutOf(architecture: Architecture, map: CodeMap, root: string, pa
   let also = greedyFrom(architecture, cost, pick, from, to)
   let tie = tied.length > 1 ? `${tied.map((edge) => `${edge.from} -> ${edge.to}`).join(', ')} each have ${least} calls; ${pick.from} -> ${pick.to} is picked because it comes first on the cycle after the proposed edge` : null
   const total = (cuts: Pair[]) => cuts.reduce((sum, edge) => sum + cost(edge), 0)
-  const single = also.length === 0 ? [] : architecture.edges.filter((edge) => !findCycle(drawnWithout(architecture, [edge]), from, to)).sort((a, b) => cost(a) - cost(b) || `${a.from} -> ${a.to}`.localeCompare(`${b.from} -> ${b.to}`))
-  let alone: string | null = null
-  if (single[0] && cost(single[0]) <= total([pick, ...also])) {
-    pick = single[0]
-    also = []
-    tie = null
-    alone = `cutting ${pick.from} -> ${pick.to} alone breaks every path for ${cost(pick)} calls, no more than cutting one edge on each path; ties between single edges go to the first by name`
-  }
   const kept = [pick, ...also]
   for (const edge of [...kept].sort((a, b) => cost(b) - cost(a))) {
     const rest = kept.filter((other) => other !== edge)
     if (rest.length > 0 && !findCycle(drawnWithout(architecture, rest), from, to)) kept.splice(kept.indexOf(edge), 1)
   }
-  if (!kept.includes(pick)) tie = null
-  ;[pick, ...also] = [kept[0] as Pair, ...kept.slice(1)]
+  const key = (edge: Pair) => `${edge.from} -> ${edge.to}`
+  const single = kept.length === 1 ? [] : architecture.edges.filter((edge) => !findCycle(drawnWithout(architecture, [edge]), from, to)).sort((a, b) => cost(a) - cost(b) || order(key(a), key(b)))
+  let alone: string | null = null
+  if (single[0] && cost(single[0]) <= total(kept)) {
+    const ties = single.filter((edge) => cost(edge) === cost(single[0] as Pair)).length
+    kept.splice(0, kept.length, single[0])
+    alone = `cutting ${key(single[0])} alone breaks every path for ${cost(single[0])} calls, no more than cutting one edge on each path${ties > 1 ? `; ${ties} single edges tie and the first by name is picked` : ''}`
+  }
+  const onPath = drawn.filter((edge) => kept.some((cut) => same(cut, edge)))
+  const first = (onPath[0] ?? kept[0]) as Pair
+  if (!same(first, pick)) tie = null
+  pick = first
+  also = kept.filter((edge) => !same(edge, pick))
 
   const calls = callsOf(pick)
   const callees = [...new Map(calls.map((call) => [`${call.target}:${call.targetLine}`, { file: call.target, line: call.targetLine, name: call.targetFn }])).values()]
