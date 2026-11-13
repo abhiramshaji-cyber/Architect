@@ -549,18 +549,10 @@ export function installMock() {
     async ptySpawn() {
       throw new Error('no terminal in the demo')
     },
-    async ptyWrite() {
-      return false
-    },
-    async ptyResize() {
-      return false
-    },
-    async ptyKill() {
-      return false
-    },
-    onPtyEvent() {
-      return () => {}
-    },
+    ptyWrite: async () => false,
+    ptyResize: async () => false,
+    ptyKill: async () => false,
+    onPtyEvent: () => () => {},
     async gitStatus(root) {
       return demoGit(root)
     },
