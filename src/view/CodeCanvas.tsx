@@ -6,10 +6,8 @@ import {
   Handle,
   MarkerType,
   Position,
-  useReactFlow,
   type Edge,
   type Node,
-  type NodeChange,
   type NodeProps
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -23,10 +21,8 @@ import {
   folderIndex,
   functionEdges,
   functionNodes,
-  widthOf,
   worldNodes,
   FUNCTIONS_SHOWN,
-  type CodeNode,
   type CodeNodeData
 } from '../model/codemap'
 import { gotoSymbol, type Located, type SymbolRef } from '../model/goto'
@@ -38,6 +34,9 @@ import { CodeInspector } from './Inspector'
 import GotoPanel from './GotoPanel'
 import Follow from './live/Follow'
 import Outline from './Outline'
+import { toFlow } from './code/flow'
+import { useMeasured } from './code/measure'
+import Refit from './code/Refit'
 
 type CodeCanvasProps = {
   map: CodeMap
@@ -177,40 +176,11 @@ const nodeTypes = {
   codefn: FunctionNode
 }
 
-function toFlow(logical: CodeNode[], at: Map<string, { x: number; y: number }>): Node<CodeNodeData>[] {
-  return logical.map((n) => ({
-    id: n.id,
-    type: n.data.kind,
-    draggable: false,
-    deletable: false,
-    position: at.get(n.id) ?? { x: 0, y: 0 },
-    style: { width: widthOf(n.data) },
-    data: n.data
-  }))
-}
-
-function sized(logical: CodeNode[], measured: Map<string, number>): CodeNode[] {
-  return logical.map((n) => ({ ...n, height: measured.get(n.id) ?? n.height }))
-}
-
-function Refit({ ready }: { ready: boolean }) {
-  const { fitView } = useReactFlow()
-  const done = useRef(false)
-
-  useEffect(() => {
-    if (!ready || done.current) return
-    done.current = true
-    void fitView({ padding: 0.14 })
-  }, [ready, fitView])
-
-  return null
-}
-
 export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [source, setSource] = useState<SourceWindow | null>(null)
   const [gotoRef, setGotoRef] = useState<SymbolRef | null>(null)
-  const [measured, setMeasured] = useState<Map<string, number>>(() => new Map())
+  const { measured, sized, onNodesChange } = useMeasured()
   const stage = useRef<HTMLDivElement | null>(null)
   const pendingSelect = useRef<string | null>(null)
   const { recent } = useProject()
@@ -224,24 +194,15 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
 
   const world = useMemo(() => {
     if (file) {
-      const logical = sized(functionNodes(file, index), measured)
+      const logical = sized(functionNodes(file, index))
       const links = functionEdges(file, index)
       return { nodes: toFlow(logical, callPositions(logical, links)), links }
     }
-    const logical = sized(worldNodes(folderIndex(map), path), measured)
+    const logical = sized(worldNodes(folderIndex(map), path))
     return { nodes: toFlow(logical, codePositions(logical)), links: [] }
-  }, [map, path, file, index, measured])
+  }, [map, path, file, index, sized])
 
   const ready = world.nodes.every((n) => measured.has(n.id))
-
-  const onNodesChange = useCallback((changes: NodeChange<Node<CodeNodeData>>[]) => {
-    const sizes = changes.flatMap((c) => (c.type === 'dimensions' && c.dimensions ? [[c.id, c.dimensions.height] as const] : []))
-    if (sizes.length === 0) return
-    setMeasured((prev) => {
-      if (sizes.every(([id, height]) => prev.get(id) === height)) return prev
-      return new Map([...prev, ...sizes])
-    })
-  }, [])
 
   const nodes = useMemo(() => world.nodes.map((n) => ({ ...n, className: liveClass(recent, n.id) })), [world, recent])
 
