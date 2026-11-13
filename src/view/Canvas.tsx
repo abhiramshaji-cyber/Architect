@@ -63,15 +63,15 @@ const FIT = { padding: FIT_PADDING }
 
 function Reveal({ count, stage }: { count: number; stage: number }) {
   const flow = useReactFlow()
-  const width = useStore((s) => s.width)
-  const seen = useRef({ count, width, stage })
+  const size = useStore((s) => `${s.width}x${s.height}`)
+  const seen = useRef({ count, size, stage })
 
   useEffect(() => {
     const grew = count > seen.current.count
-    const relaid = width !== seen.current.width || stage !== seen.current.stage
-    seen.current = { count, width, stage }
-    if (grew || relaid) void flow.fitView({ ...FIT, duration: grew ? motionMs(220) : 0 })
-  }, [count, width, stage, flow])
+    const relaid = count !== seen.current.count || size !== seen.current.size || stage !== seen.current.stage
+    seen.current = { count, size, stage }
+    if (relaid) void flow.fitView({ ...FIT, duration: grew ? motionMs(220) : 0 })
+  }, [count, size, stage, flow])
 
   return null
 }
