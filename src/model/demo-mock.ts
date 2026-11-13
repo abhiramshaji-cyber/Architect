@@ -601,15 +601,9 @@ export function installMock() {
     async gitPull(root) {
       return demoGit(root)
     },
-    async draftCommitMessage() {
-      return { ok: false, error: { kind: 'not-connected' } }
-    },
-    async draftPullRequest() {
-      return { ok: false, error: { kind: 'not-connected' } }
-    },
-    async askContract(_root, question) {
-      return { ok: true, value: { text: `A canned demo answer to "${question}": ui calls api, and api reads db.`, view: { layout: 'left-right', path: { from: 'ui', to: 'db' } } } }
-    },
+    draftCommitMessage: async () => ({ ok: false, error: { kind: 'not-connected' } }),
+    draftPullRequest: async () => ({ ok: false, error: { kind: 'not-connected' } }),
+    askContract: async (_root, question) => ({ ok: true, value: { text: `A canned demo answer to "${question}": ui calls api, and api reads db.`, view: { layout: 'left-right', path: { from: 'ui', to: 'db' } } } }),
     async githubAuth() {
       return { ok: true, value: { kind: 'not-installed' } }
     },
