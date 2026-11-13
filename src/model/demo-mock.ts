@@ -83,6 +83,7 @@ export function installMock() {
   }
 
   function indexed(draft: DraftMap): CodeMap {
+    const byPath = new Map(draft.folders.flatMap((folder) => folder.files.map((file) => [file.path, file.functions] as const)))
     return {
       ...draft,
       folders: draft.folders.map((folder) => ({
@@ -92,8 +93,10 @@ export function installMock() {
           functions: file.functions.map((entry) => ({
             ...entry,
             calls: entry.calls.flatMap((call) => {
-              const at = typeof call === 'number' ? call : file.functions.findIndex((other) => other.name === call)
-              return at < 0 || !file.functions[at] ? [] : [{ file: file.path, fn: at }]
+              const [path, name] = typeof call === 'string' && call.includes(':') ? call.split(':') : [file.path, call]
+              const targets = byPath.get(path) ?? []
+              const at = typeof name === 'number' ? name : targets.findIndex((other) => other.name === name)
+              return at < 0 || !targets[at] ? [] : [{ file: path, fn: at }]
             })
           }))
         }))
@@ -102,6 +105,7 @@ export function installMock() {
   }
 
   function mockCodeMap(root: string): CodeMap {
+    const knowledge = ['makeSearchFsaKnowledgeTool', 'loadInstructions', 'createSourceTracker'].map((name) => `src/workflows/searchFsaKnowledge.ts:${name}`)
     return indexed({
       root,
       scannedAt: Date.now(),
@@ -180,7 +184,7 @@ export function installMock() {
             {
               path: 'src/workflows/runner.ts',
               functions: [
-                fn('run', 8, 34, 'Executes one workflow step and persists the result.', ['validate', 'load', 'execute', 'persist']),
+                fn('run', 8, 34, 'Executes one workflow step and persists the result.', ['validate', 'load', 'execute', 'persist', ...knowledge]),
                 fn('validate', 38, 46, 'Rejects a run whose input does not match the step schema.'),
                 fn('load', 50, 62, 'Reads the stored run record, falling back to a fresh one.', ['cacheKey']),
                 fn('execute', 66, 92, 'Drives the step body and decides whether to retry it.', ['step', 'retry']),
@@ -191,6 +195,10 @@ export function installMock() {
                 fn('report', 164, 352, 'Renders the full run report, one section per attempt, for the operator console.'),
                 fn('noop', 356, 358, '')
               ]
+            },
+            {
+              path: 'src/workflows/searchFsaKnowledge.ts',
+              functions: [fn('makeSearchFsaKnowledgeTool', 6, 40, 'Builds the knowledge search tool.'), fn('loadInstructions', 42, 58, 'Reads the bot rules.'), fn('createSourceTracker', 60, 81, '')]
             },
             {
               path: 'src/workflows/queue.ts',
@@ -541,18 +549,10 @@ export function installMock() {
     async ptySpawn() {
       throw new Error('no terminal in the demo')
     },
-    async ptyWrite() {
-      return false
-    },
-    async ptyResize() {
-      return false
-    },
-    async ptyKill() {
-      return false
-    },
-    onPtyEvent() {
-      return () => {}
-    },
+    ptyWrite: async () => false,
+    ptyResize: async () => false,
+    ptyKill: async () => false,
+    onPtyEvent: () => () => {},
     async gitStatus(root) {
       return demoGit(root)
     },
@@ -641,6 +641,14 @@ export function installMock() {
       throw new Error('nothing is waiting for review in the demo')
     },
     async decide() {},
+    jevState: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
+    setJevKey: async () => Promise.reject(new Error('the demo has no keychain')),
+    removeJevKey: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
+    setJev: async () => Promise.reject(new Error('Jev needs the app')),
+    indexJev: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
+    cancelJev: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
+    sameBehavior: async () => ({ status: 'disabled', reason: 'Jev needs the app' }),
+    onJev: () => () => {},
     onReview() {
       return () => {}
     }

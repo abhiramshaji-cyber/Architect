@@ -36,6 +36,7 @@ import Follow from './live/Follow'
 import Outline from './Outline'
 import { toFlow } from './code/flow'
 import { useMeasured } from './code/measure'
+import Name from './code/Name'
 import Refit from './code/Refit'
 
 type CodeCanvasProps = {
@@ -87,7 +88,7 @@ function FolderNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
   return (
     <div className={className}>
       <div className="node-head">
-        <span className="node-id">{data.name}</span>
+        <span className="node-id"><Name text={data.name} /></span>
         <span className="node-role">folder</span>
         <Open path={data.path} name={data.name} />
       </div>
@@ -107,7 +108,7 @@ function FileNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
   return (
     <div className={className}>
       <div className="node-head">
-        <span className="node-id">{data.name}</span>
+        <span className="node-id"><Name text={data.name} /></span>
         <span className="node-role">file</span>
         <Open path={data.path} name={data.name} />
       </div>
@@ -117,7 +118,7 @@ function FileNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
         <div className="code-fns">
           {shown.map((fn, i) => (
             <div key={`${i}:${fn.name}`} className="code-fn">
-              <span className="code-fn-name">{fn.name}</span>
+              <span className="code-fn-name"><Name text={fn.name} /></span>
               <AiText className="code-fn-desc" text={fn.description} />
             </div>
           ))}
@@ -158,8 +159,8 @@ function FunctionNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
       <Handle type="target" position={Position.Top} />
       <Handle type="source" position={Position.Bottom} />
       <div className="node-head">
-        <span className="node-id code-fn-name">{data.name}</span>
-        <span className="node-role">
+        <span className="node-id code-fn-name"><Name text={data.name} /></span>
+        <span className="node-role" title={data.external ? data.path : undefined}>
           {data.external ? baseName(data.path) : `${data.line}–${data.endLine}`}
         </span>
         <GotoButton path={data.path} index={data.index} name={data.name} />

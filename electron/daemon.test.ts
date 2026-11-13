@@ -2774,3 +2774,28 @@ describe("where", () => {
     if (!lost.ok) expect(lost.error).toMatch(/is not inside a project/);
   });
 });
+
+describe("similar_behavior", () => {
+  it("hands the project root and the project relative file to the behavior search, and says when there is none", async () => {
+    const drawn = fs.mkdtempSync(path.join(tmpRoot, "drawn-"));
+    writeArchitect(drawn, fixture(component("store")));
+    fs.mkdirSync(path.join(drawn, "store"));
+    fs.writeFileSync(path.join(drawn, "store", "db.ts"), "export function load() {\n  return 1\n}\n");
+    const behavior = vi.fn(async (root: string, file: string, symbol: string) => `${path.basename(root)} ${file} ${symbol}`);
+    daemon = createDaemon({ socketPath, behavior });
+    await daemon.listen();
+
+    const c = await client(socketPath);
+    const asked = await c.request({ op: "similar_behavior", cwd: path.join(drawn, "store"), file: "db.ts", symbol: "load" });
+    c.close();
+    expect(asked).toMatchObject({ ok: true, result: `${path.basename(drawn)} store/db.ts load` });
+
+    await daemon.close();
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    const bare = await client(socketPath);
+    const none = await bare.request({ op: "similar_behavior", cwd: drawn, file: "store/db.ts", symbol: "load" });
+    bare.close();
+    expect(none).toMatchObject({ ok: true, result: "Jev is not available in this Architect process." });
+  });
+});
