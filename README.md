@@ -22,18 +22,18 @@ Open a project and Architect starts on **Functions**. Every page reads the same 
 Every function in the repo, as a **List**, a **Tree** or a **Focus** view. Each card shows only facts: the signature, `file:line`, the line count, callers and callees, whether it is exported, and the author's own doc comment when there is one. Nothing on this page or in the Tree is written by a model or guessed from a name.
 
 - **Importance** is a score from 1 to 5: PageRank over the call graph, plus fan in, whether the function is exported, and whether it is a starting point.
-- **List.** Sort by importance, lines, name or most recent change, and filter by name, file or doc comment. When a file breaks the `lines` or `jobs` rule, the list shows how to split it, read from the parse.
-- **Tree.** An indented outline that grows down the page. It starts from **named starting points**: functions with a stated reason, such as an MCP tool, an IPC handler, a CLI command, an Electron entry, or a `bin`, `main`, `exports`, `module` or `script` entry in any `package.json`. A level with more than 12 cards folds into counted buckets by component, folder, file or name range. Below half zoom each card becomes a pill with its name and one count.
+- **List.** Sort by importance, lines, name or most recent change, and filter by name, file or doc comment. It also shows the split suggestions read from the parse: how to split a file over the `lines` or `jobs` rule, and where to cut a long function with many callers.
+- **Tree.** An indented outline that grows down the page. It starts from **named starting points**: functions with a stated reason, such as an MCP tool, an IPC handler, a CLI command, an Electron entry, or a `bin`, `main`, `exports`, `module` or `script` entry in any `package.json`. In a folder view, a function with no callers or called from outside the folder also sits at the top. A level with more than 12 cards folds into counted buckets by component, folder, file or name range. Below half zoom each card becomes a pill with its name and one count.
 - **Focus.** One function in the middle, its callers on the left and its callees on the right. Click any of them to move the focus, and step back and forward through the trail.
 
 The Tree ends with two buckets:
 
-- **Not reached from a starting point.** Functions no starting point reaches through calls. This is the dead code list.
 - **Reach unknown.** Functions the parse cannot trace, each with the fact why: used as a value, in a test file, exported by a package entry not mapped to source, and so on. They are kept out of the dead code list.
+- **Not reached from a starting point.** Functions no starting point reaches through calls. This is the dead code list.
 
 ### Map
 
-A treemap of the repo by component, folder, file and function, each tile sized by its lines. The same layout can be coloured five ways:
+A treemap of the repo by component (top level folder when there is no `architect.md`), folder, file and function, each tile sized by its lines. The same layout can be coloured five ways:
 
 - **Importance**, from the Functions score.
 - **Churn**, commits in the last 90 days.
@@ -67,8 +67,8 @@ A timeline of commits and recorded changes over 30, 90 or 365 days, played acros
 
 Off by default. Nothing is counted and no model is called until you turn it on. Then it shows:
 
-- **Measured** conventions, counted from the parse: a component whose files all sit below a limit gets a tighter rule line that would hold them there.
-- **AI suggestions**, only when you click **Suggest with AI**. Claude Code is asked, and any suggestion that names files the scan did not find is dropped.
+- **Measured** conventions, counted from the parse: a component (or top level folder without `architect.md`) whose files all sit below a limit gets a tighter rule line that would hold them there.
+- **AI suggestions**, only when you click **Suggest with AI**. Claude Code is asked, files the scan did not find are removed from each suggestion, and a suggestion left with none is dropped.
 
 Every card is labelled Measured or AI suggestion, and nothing is added to `architect.md` until you click **Add to Rules**.
 
@@ -174,6 +174,7 @@ An optional `## Rules` section sets code standards that `architect check` and `c
 - files: 5
 - names: Manager, Helper, Service, Factory, Base
 - jobs: 1
+- split: 50 lines, 3 callers
 - lines: 600 `src/legacy/big.ts`
 - names: off `vendor/**`
 ```
@@ -182,6 +183,7 @@ An optional `## Rules` section sets code standards that `architect check` and `c
 - `files` is the most code files one folder may hold. Its globs match folder paths, with `.` for the repo root.
 - `names` lists words no file, class or function name may contain as a whole word, so `UserService` and `baseUrl` break it but `Database` does not.
 - `jobs` is how many unrelated groups of exported top level functions one file may hold. Two exported functions are related when one reaches the other through calls inside that file, through a function they both call, or by nesting.
+- `split` sets when a function gets a suggestion of where to cut it: more lines than the first number and at least as many callers as the second. It only suggests and never fails a check.
 - `skip` lists files no rule looks at, and they do not count toward a folder. Declaring it replaces the default.
 
 Any rule can be `off`. Backticked globs after the value limit a line to those paths, and the last line that matches a path wins, so a file that already breaks a rule can get its own limit while new code is held to the default. `check_change` given a `file` and its full proposed `content` rejects a change only when it adds a violation or makes one worse, naming the rule, the file and the line. Every check records a pass or fail per rule, which `architect check --history` lists.
@@ -190,7 +192,7 @@ Any rule can be `off`. Backticked globs after the value limit a line to those pa
 
 `architect where` (or the `where` MCP tool) answers where a new function belongs before it is written. Pass the functions it will call and the ones that will call it, plus an optional name and file. It returns the component that owns most of those neighbours and that `architect.md` allows, the folder most of them live in, whether a new file there fits the `files` rule, the leading word most names in that folder start with, and the most similar function to copy. Every answer comes from the scan and `architect.md` with counts and `file:line` evidence, and no model is called.
 
-`architect check --suggest` adds split suggestions to the check: for a file over the `lines` or `jobs` rule, a folder of files behind the same entry file, one per group of related exported functions.
+`architect check --suggest` adds split suggestions to the check: for a file over the `lines` or `jobs` rule, a folder of files behind the same entry file, one per group of related exported functions; for a function over the `split` threshold, the points in its body where it can be cut.
 
 Architect ships with its own [`architect.md`](architect.md) describing Architect. It is the demo, the test fixture, and the proof the tool survives contact with itself.
 
