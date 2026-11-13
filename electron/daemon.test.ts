@@ -634,7 +634,7 @@ describe("applying proposals", () => {
     expect(contract()).toMatch(/api -> db/);
     const c = await client(socketPath);
     const res = await c.request({ op: "check_change", cwd: tmpRoot, from: "api", to: "db" });
-    expect(res.ok && res.result).toEqual({ status: "allowed" });
+    expect(res.ok && res.result).toEqual({ status: "allowed", impact: expect.any(Object) });
     c.close();
   });
 
@@ -2578,7 +2578,7 @@ describe("check_change rules", () => {
     fs.writeFileSync(path.join(tmpRoot, "api", "long.ts"), body(240));
     const res = await ask({ file: path.join(tmpRoot, "api", "long.ts"), content: body(230) });
 
-    expect(res.ok && res.result).toEqual({ status: "allowed" });
+    expect(res.ok && res.result).toEqual({ status: "allowed", impact: expect.any(Object) });
   });
 
   it("rejects a new file in a folder already at its limit", async () => {
@@ -2589,7 +2589,7 @@ describe("check_change rules", () => {
     expect(added.ok && added.result).toMatchObject({ status: "rule-violation", violations: [{ rule: "files", path: "api" }] });
 
     const replaced = await ask({ file: "api/a.ts", content: "export const y = 2\n" });
-    expect(replaced.ok && replaced.result).toEqual({ status: "allowed" });
+    expect(replaced.ok && replaced.result).toEqual({ status: "allowed", impact: expect.any(Object) });
   });
 
   it("follows the Rules section of architect.md", async () => {
@@ -2597,12 +2597,12 @@ describe("check_change rules", () => {
     writeArchitect(tmpRoot, tuned);
 
     const res = await ask({ file: "api/UserService.ts", content: body(250) });
-    expect(res.ok && res.result).toEqual({ status: "allowed" });
+    expect(res.ok && res.result).toEqual({ status: "allowed", impact: expect.any(Object) });
   });
 
   it("answers the edge first when both an edge and a file are given", async () => {
     const res = await ask({ from: "api", to: "db", file: "api/long.ts", content: body(220) });
-    expect(res.ok && res.result).toEqual({ status: "undrawn-edge" });
+    expect(res.ok && res.result).toEqual({ status: "undrawn-edge", impact: expect.any(Object) });
   });
 
   it("refuses a half edge, a file with no content and a file outside the project", async () => {
@@ -2624,6 +2624,37 @@ describe("check_change rules", () => {
     expect(both.ok && both.result).toMatchObject({ status: "rule-violation", violations: [{ rule: "lines" }] });
     const edgeOnly = await ask({ from: "api", to: "db", file: "api/a.ts", content: "export const a = 1\n" });
     expect(edgeOnly.ok && edgeOnly.result).toMatchObject({ status: "unknown" });
+  });
+
+  it("returns the impact of a proposed file and keeps it with the verdict across a restart", async () => {
+    fs.writeFileSync(path.join(tmpRoot, "api", "a.ts"), "export function go() {\n  return 1\n}\n");
+    fs.writeFileSync(path.join(tmpRoot, "api", "b.ts"), "import { go } from './a'\n\nexport function run() {\n  return go()\n}\n");
+
+    const res = await ask({ file: "api/a.ts", content: "export function go() {\n  return 2\n}\n" });
+    expect(res.ok && res.result).toMatchObject({
+      status: "allowed",
+      impact: {
+        touched: { total: 1, listed: [{ name: "go", change: "changed", at: "api/a.ts:1" }] },
+        callers: { total: 1, depths: [{ depth: 1, count: 1, first: "api/b.ts:3 run" }], listed: [{ name: "run", at: "api/b.ts:3", depth: 1, calls: "api/a.ts:1 go" }] },
+        components: [{ id: "api", functions: 2, first: "api/a.ts:1" }],
+      },
+    });
+
+    await daemon.close();
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ file: "api/a.ts", impact: { touched: { total: 1 } } });
+
+    await daemon.close();
+    const key = createHash("sha256").update(fs.realpathSync.native(tmpRoot)).digest("hex");
+    const journal = path.join(path.dirname(socketPath), "verdicts", `${key}.json`);
+    const rows = JSON.parse(fs.readFileSync(journal, "utf8"));
+    fs.writeFileSync(journal, JSON.stringify([{ ...rows[0], impact: { shape: "from an older version" } }]));
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+    expect(daemon.verdicts(tmpRoot)).toHaveLength(1);
+    expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ file: "api/a.ts", verdict: { status: "allowed" } });
+    expect(JSON.parse(JSON.stringify(daemon.verdicts(tmpRoot)[0]))).not.toHaveProperty("impact");
   });
 
   it("records a pass or fail run per rule", async () => {
@@ -2649,7 +2680,7 @@ describe("check_change rules outside the scan", () => {
 
     for (const file of ["node_modules/pkg/index.ts", ".github/scripts/a.ts", "dist/bundle.js"]) {
       const res = await c.request({ op: "check_change", cwd: tmpRoot, file, content: long });
-      expect(res.ok && res.result).toEqual({ status: "allowed" });
+      expect(res.ok && res.result).toEqual({ status: "allowed", impact: expect.any(Object) });
     }
     c.close();
   });

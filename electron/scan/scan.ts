@@ -592,6 +592,7 @@ async function walk(root: string, relative: string, { into, parsed, counter, dig
 }
 
 export async function scan(root: string, digests = new Map<string, string>()): Promise<CodeMap> {
+  const scannedAt = Date.now()
   const folders: FolderEntry[] = []
   const parsed = new Map<string, Parsed>()
 
@@ -611,5 +612,5 @@ export async function scan(root: string, digests = new Map<string, string>()): P
     }
   }
 
-  return { root, scannedAt: Date.now(), folders }
+  return { root, scannedAt, folders }
 }

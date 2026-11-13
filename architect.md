@@ -53,7 +53,7 @@ Learned conventions, optional and off unless the engineer turns them on, persist
 owns: `electron/conventions/**`
 
 ### daemon
-Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files, and answering where a new function belongs.
+Socket server, project resolution by cwd, file watching, applying proposals to architect.md (straight away, or once the engineer approves them when change review is on), answering check_change for a dependency or a proposed file along with its impact, writing AGENTS.md on request and rewriting them on a contract change when the old or new contract has a generated one in place, the per project change history (a code change a Claude Code hook reported carries that hook's session id, and one nobody reported carries none), the per project record of every check_change verdict, and the guarded read, write and directory listing of project files, and answering where a new function belongs.
 owns: `electron/daemon.ts`
 owns: `electron/watch/**`
 
@@ -72,6 +72,14 @@ owns: `electron/agents/**`
 ### where
 Answers where a new function belongs, from the functions it will call and the functions or files that will call it, each named by function, file or file:name. The component is the one owning the most of those neighbours among the components whose calls to and from the new function the drawing allows, the folder is where most of its neighbours live along with whether a new file there still fits the files rule, the naming word is the leading word most function names in that folder start with, and the closest function is the one sharing the most callees, then callers. A proposed file is checked against the Rules with a stub of the function. Every part carries its counts and file:line evidence, a tie or a reference that matches nothing or several files is reported rather than picked, and a project with no `architect.md` is answered by folder only. Fully deterministic, no model calls.
 owns: `electron/where/**`
+
+### verdict
+Answers check_change for a dependency or a proposed file: the drawn verdict for the edge, softened to unknown when architect.md no longer parses, and the Rules check of the proposed file, the edge answering first when both are given.
+owns: `electron/verdict/**`
+
+### impact
+Works out what a change given to check_change could break before it is made. For a file and its proposed content it compares each function the scan lists, on the TypeScript syntax tree with comments, formatting and quote style ignored and with the declaration around an arrow function included, to find the functions added, changed or removed; code outside every function is compared by the top level names it declares or imports, and the files that import a changed name, directly or through a re-export, count as callers. For an edge it starts from every function the calling component owns. From there it walks the call graph backwards to every transitive caller, counted per depth, listing the nearest ones up to a fixed depth and count and saying how many it left out, adds the code outside any function that calls in as entries, then names the components those functions belong to and the test files that call them or import one of them by name. Every count carries file:line evidence, the notes are capped, and it keeps its own scan of each project, reused while no code file has changed and bounded by a timeout. Deterministic apart from that timeout, no model calls.
+owns: `electron/impact/**`
 
 ### review
 Opt in change review. Persists the on or off switch, holds contract proposals and Claude Code edits waiting on the engineer, keeps proposals across a restart, wakes the waiting caller with approve, deny or the engineer's feedback, and drops an edit whose hook went away. Rebuilds the file an edit would produce and works out its impact: the components that own it, the functions added, removed or changed in it, and the before and after diff, or for a proposal the architecture it would leave behind. A switch that is off answers every edit at once.
@@ -112,6 +120,15 @@ owns: `lsp/**`
 - cli -> agents
 - daemon -> agents
 - daemon -> where
+- daemon -> impact
+- daemon -> verdict
+- verdict -> types
+- verdict -> graph
+- verdict -> rules
+- impact -> types
+- impact -> graph
+- impact -> functions
+- impact -> where
 - cli -> where
 - where -> types
 - where -> graph
