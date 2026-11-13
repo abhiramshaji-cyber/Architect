@@ -582,7 +582,7 @@ async function walk(root: string, relative: string, { into, parsed, counter, dig
     const file = parseFile(source, child)
     parsed.set(child, file)
     digests.set(child, createHash('sha256').update(source).digest('hex'))
-    files.push({ path: child, lines: lineCount(source), ...(isCode(child) ? { code: true as const } : {}), ...(file.computed ? { computed: true as const } : {}), functions: file.functions })
+    files.push({ path: child, lines: lineCount(source), ...(isCode(child) ? { code: true as const } : {}), functions: file.functions })
   }
 
   folders.sort((a, b) => a.localeCompare(b))
@@ -605,6 +605,7 @@ export async function scan(root: string, digests = new Map<string, string>()): P
       if (imports.length > 0) file.imports = imports
       if (typeImports.length > 0) file.typeImports = typeImports
       if (reexports.length > 0) file.reexports = reexports
+      if (parsed.get(file.path)?.computed) file.computed = true
       const starts = parsed.get(file.path)?.starts
       if (starts !== undefined && starts.length > 0) file.starts = starts
     }

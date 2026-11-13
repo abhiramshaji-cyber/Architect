@@ -97,6 +97,17 @@ describe('value references', () => {
     expect(valuesOf(map, 'a.ts')).toEqual(['a.ts:Lit.paint', 'a.ts:connected'])
   })
 
+  it('reads brackets in an import path as folder names and survives a path no pattern can hold', async () => {
+    const map = await mapOf({
+      'src/[id]/page.ts': 'export function run() {}\n',
+      'src/[post-id]/x.ts': 'export function post() {}\n',
+      'src/main.ts': "export async function go(x: string) { await import(`./[id]/${x}`); await import(`./[post-id]/${x}`); return require('./[id]/page') }\n",
+    })
+    expect(valuesOf(map, 'src/main.ts')).toEqual(['src/[id]/page.ts:run', 'src/[post-id]/x.ts:post'])
+    const broken = await mapOf({ 'src/main.ts': "export function go() { return import.meta.glob('./x/[z-a]/*.ts') }\n" })
+    expect(broken.folders.flatMap((folder) => folder.files).find((file) => file.path === 'src/main.ts')?.computed).toBe(true)
+  })
+
   it('records nothing for a test file', async () => {
     const map = await mapOf({ 'a.test.ts': 'function cb() {}\n[1].map(cb)\n' })
     expect(valuesOf(map, 'a.test.ts')).toEqual([])

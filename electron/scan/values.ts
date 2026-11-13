@@ -42,14 +42,16 @@ function isNamedObject(node: ts.ObjectLiteralExpression): boolean {
   return ts.isPropertyAssignment(parent) && ts.isObjectLiteralExpression(parent.parent) && isNamedObject(parent.parent)
 }
 
-function patternOf(node: ts.Expression | undefined): string | undefined {
+function patternOf(node: ts.Expression | undefined, plain = (text: string) => text): string | undefined {
   if (node === undefined) return undefined
-  if (ts.isStringLiteralLike(node)) return node.text
-  if (ts.isTemplateExpression(node)) return node.head.text + node.templateSpans.map((span) => `*${span.literal.text}`).join('')
+  if (ts.isStringLiteralLike(node)) return plain(node.text)
+  if (ts.isTemplateExpression(node)) return plain(node.head.text) + node.templateSpans.map((span) => `*${plain(span.literal.text)}`).join('')
   if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.PlusToken) return undefined
-  const head = patternOf(node.left)
+  const head = patternOf(node.left, plain)
   return head === undefined ? undefined : `${head}*`
 }
+
+const escaped = (text: string) => text.replace(/[[\]{}?*\\]/g, '\\$&')
 
 function loaded(node: ts.Node): string[] {
   if (!ts.isCallExpression(node)) return []
@@ -61,7 +63,7 @@ function loaded(node: ts.Node): string[] {
   const dynamic = node.expression.kind === ts.SyntaxKind.ImportKeyword
   const required = ts.isIdentifier(node.expression) && node.expression.text === 'require'
   if (!dynamic && !required) return []
-  return [patternOf(first) ?? '']
+  return [patternOf(first, escaped) ?? '']
 }
 
 function chainOf(root: ts.Node, self: string): { names: string[]; top: ts.Node } {
