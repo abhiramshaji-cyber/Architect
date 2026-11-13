@@ -11,29 +11,29 @@ Coding agents generate structure faster than anyone reviews it. Architect puts t
 
 </div>
 
-![Architect showing its own repo on the Map page](docs/screenshots/map.png)
+![An agent's change is rejected for breaking a layer, then an allowed change appears live on the canvas](docs/screenshots/hero.gif)
+
+Stops an agent from breaking your layers, and says why.
 
 ---
 
-## Screenshots
+## In action
 
-Architect open on its own repo. The picture at the top is the Map: the whole repo as tiles sized by lines and coloured by importance.
+Every clip runs Architect on [Hono](https://github.com/honojs/hono), the open source web framework, with an `architect.md` written for its real layers. Any rule breaking change you see is a demo change made only in a local scratch copy, never in Hono itself.
 
-![Functions page](docs/screenshots/functions.png)
+The clip at the top: an agent asks `check_change` whether `utils` may call `middleware`. Architect rejects it with the reason written in `architect.md`. The agent then proposes a new `ratelimit` component through `propose_change`, and it shows up on the canvas straight away.
 
-Functions: every function ranked by importance, with its signature, callers, callees and file.
+![Layers grid on Hono with one red cell opened to the exact call behind it](docs/screenshots/layers.gif)
 
-![Layers page](docs/screenshots/layers.png)
+Layers: shows which part of the code calls which, and points at the exact function and line that broke a rule. Here a demo change makes the core call the logger middleware.
 
-Layers: which component calls which, with one cell opened to list the calls behind it.
+![Flow drawing the call path of the Hono jwt middleware](docs/screenshots/flow.gif)
 
-![Flow page](docs/screenshots/flow.png)
+Flow: understand unfamiliar code without opening files. Pick a starting point, here the `jwt` middleware, and its call path draws step by step across the components, one level deeper on demand.
 
-Flow: the calls made from one starting point, drawn across the components that own them.
+![Hotspots on a year of Hono history, from files to functions](docs/screenshots/hotspots.gif)
 
-![Hotspots page](docs/screenshots/hotspots.png)
-
-Hotspots: files plotted by size against recent commits, the ones worth a look first in yellow.
+Hotspots: find the riskiest code first, the biggest functions that change most often, from the real git history.
 
 ## What you get
 
