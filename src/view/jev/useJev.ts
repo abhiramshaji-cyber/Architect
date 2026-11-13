@@ -36,7 +36,8 @@ export function useJev(root: string | null): JevHook {
       (err: unknown) => live && setError(err instanceof Error ? err.message : String(err)),
     )
     const off = window.architect.onJev((progress) => {
-      if (progress.root === root) setState((now) => (now ? { ...now, run: progress.run, usage: progress.usage } : now))
+      const own = progress.root === root ? { run: progress.run, usage: progress.usage } : {}
+      setState((now) => (now ? { ...now, paused: progress.paused, budget: progress.budget, ...own } : now))
     })
     return () => {
       live = false

@@ -129,6 +129,7 @@ const architect: ArchitectApi = {
   setJev: (enabled, root) => invoke('architect:jev-set', enabled, root),
   indexJev: (root) => invoke('architect:jev-index', root),
   cancelJev: (root) => invoke('architect:jev-cancel', root),
+  setJevBudget: (tokens) => invoke('architect:jev-budget', tokens),
   sameBehavior: (root, file, symbol) => invoke('architect:jev-same', root, file, symbol),
   onJev: (fn: (progress: JevProgress) => void) => {
     const listener = (_event: unknown, progress: JevProgress) => fn(progress)

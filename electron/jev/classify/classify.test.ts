@@ -1,13 +1,11 @@
-import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Architecture } from '../../../shared/types'
 import { scan } from '../../scan/scan'
-import { JEV_MODEL, JevError, questionProblem, type Question, type Reply } from '../client'
+import { JevError, questionProblem, type Reply } from '../client'
 import { storeOf } from './cache'
-import { BEHAVIOR_QUESTIONS, BEHAVIORS, questionsOf } from './questions'
+import { BEHAVIOR_QUESTIONS, BEHAVIORS, QUESTIONS } from './questions'
 import { CONCURRENCY, newestModel, runIndex, type Ask } from './run'
 import { LONGEST_SOURCE, targetsOf } from './targets'
 
@@ -34,18 +32,6 @@ const FILES = {
   'api/http.test.ts': "import { handleUser } from './http'\n\nexport function check() {\n  return handleUser('1')\n}\n",
 }
 
-const architecture = (purpose: string): Architecture => ({
-  title: 't',
-  summary: 's',
-  components: [
-    { id: 'api', purpose, owns: ['api/**'] },
-    { id: 'store', purpose: 'The database.', owns: ['store/**'] },
-  ],
-  edges: [],
-  forbidden: [],
-  packages: [],
-})
-
 const reply = (model = 'jev-1'): Reply => ({ model, inputTokens: 10, answers: { behavior: { type: 'choice', choice: 'query', probabilities: { ...Object.fromEntries(Object.keys(BEHAVIORS).map((label) => [label, 0])), query: 1 } } } })
 
 const tempStore = () => {
@@ -54,25 +40,18 @@ const tempStore = () => {
   return storeOf(dir, '/some/repo')
 }
 
-describe('questionsOf', () => {
-  it('asks the behavior facets alone without at least two components, each within the Jev limits', () => {
-    expect(Object.keys(questionsOf(null).questions)).toEqual([...BEHAVIOR_QUESTIONS])
-    expect(Object.keys(questionsOf({ ...architecture('x'), components: [architecture('x').components[0]!] }).questions)).toEqual([...BEHAVIOR_QUESTIONS])
-    expect(questionProblem(questionsOf(architecture('The http surface.')).questions)).toBeNull()
+describe('QUESTIONS', () => {
+  it('asks only the four behavior facets, within the Jev limits, with no component question', () => {
+    expect(Object.keys(QUESTIONS.questions)).toEqual([...BEHAVIOR_QUESTIONS])
+    expect(questionProblem(QUESTIONS.questions)).toBeNull()
   })
 
-  it('changes the version from the behavior only set, so every cached answer is asked again', () => {
-    const behaviorOnly = createHash('sha256').update(JSON.stringify([JEV_MODEL, { behavior: questionsOf(null).questions.behavior }])).digest('hex').slice(0, 16)
-    expect(questionsOf(null).version).not.toBe(behaviorOnly)
+  it('has a new version, so every answer cached under the old sets is asked again', () => {
+    expect(['54ec472de348eb0f', '4e47e5d5b5256397']).not.toContain(QUESTIONS.version)
   })
 
-  it('labels responsibility with the component ids and their own purpose, clipped to the Jev limit', () => {
-    const { questions, version } = questionsOf(architecture(`The http surface. ${'word '.repeat(200)}`))
-    const criteria = questions.responsibility?.criteria ?? {}
-    expect(Object.keys(criteria)).toEqual(['api', 'store'])
-    expect(criteria.api?.length).toBe(500)
-    expect(criteria.api?.endsWith('…')).toBe(true)
-    expect(questionsOf(architecture('Something else')).version).not.toBe(version)
+  it('keeps every request at a small fixed question cost, whatever the architecture', () => {
+    expect(JSON.stringify(QUESTIONS.questions).length).toBeLessThan(2500)
   })
 })
 
@@ -99,7 +78,7 @@ describe('runIndex', () => {
   it('sends only functions missing from the cache and only the one whose source changed', async () => {
     const root = project(FILES)
     const store = tempStore()
-    const set = questionsOf(null)
+    const set = QUESTIONS
     const ask = vi.fn<Ask>(async () => reply())
     const run = async () => runIndex({ targets: targetsOf(root, await scan(root), set.version).filter((target) => !target.test), set, store, ask, signal: new AbortController().signal, onProgress: () => {} })
 
@@ -112,33 +91,43 @@ describe('runIndex', () => {
     expect(store.entries().size).toBe(4)
   })
 
-  it('sends everything again when the question set changes', async () => {
+  it('sends everything again when the question set version changes', async () => {
     const root = project(FILES)
     const store = tempStore()
     const map = await scan(root)
-    const ask = vi.fn<Ask>(async (_state, questions: Record<string, Question>) => ({ ...reply(), answers: { ...reply().answers, ...(questions.responsibility ? { responsibility: { type: 'choice' as const, choice: 'api', probabilities: { api: 1, store: 0 } } } : {}) } }))
-    const bare = questionsOf(null)
-    const drawn = questionsOf(architecture('The http surface.'))
+    const ask = vi.fn<Ask>(async () => reply())
     const of = (version: string) => targetsOf(root, map, version).filter((target) => !target.test)
-    await runIndex({ targets: of(bare.version), set: bare, store, ask, signal: new AbortController().signal, onProgress: () => {} })
-    const again = await runIndex({ targets: of(drawn.version), set: drawn, store, ask, signal: new AbortController().signal, onProgress: () => {} })
+    await runIndex({ targets: of('54ec472de348eb0f'), set: QUESTIONS, store, ask, signal: new AbortController().signal, onProgress: () => {} })
+    const again = await runIndex({ targets: of(QUESTIONS.version), set: QUESTIONS, store, ask, signal: new AbortController().signal, onProgress: () => {} })
     expect(again.sent).toBe(4)
-    expect(of(bare.version)[0]?.key).not.toBe(of(drawn.version)[0]?.key)
+    expect(of('54ec472de348eb0f')[0]?.key).not.toBe(of(QUESTIONS.version)[0]?.key)
   })
 
-  it('stops the whole run on a refused key, counts other failures and stops when cancelled', async () => {
+  it('retries only the functions that failed or were never sent, never a cached success', async () => {
     const root = project(FILES)
-    const set = questionsOf(null)
+    const store = tempStore()
+    const targets = targetsOf(root, await scan(root), QUESTIONS.version).filter((target) => !target.test)
+    const failing = new Set([targets[1]?.key, targets[3]?.key])
+    const first = vi.fn<Ask>(async (state) => (failing.has(targets.find((target) => target.state === state)?.key) ? Promise.reject(new JevError(400, 'too long')) : reply()))
+    expect(await runIndex({ targets, set: QUESTIONS, store, ask: first, signal: new AbortController().signal, onProgress: () => {} })).toMatchObject({ status: 'partial', done: 2, sent: 2, failed: 2, error: 'too long' })
+    const second = vi.fn<Ask>(async () => reply())
+    expect(await runIndex({ targets, set: QUESTIONS, store, ask: second, signal: new AbortController().signal, onProgress: () => {} })).toMatchObject({ status: 'done', done: 4, sent: 2, failed: 0 })
+    expect(second.mock.calls.map(([state]) => state).sort()).toEqual([targets[1]?.state, targets[3]?.state].sort())
+  })
+
+  it('pauses the whole run on an account error, counts other failures and stops when cancelled', async () => {
+    const root = project(FILES)
+    const set = QUESTIONS
     const targets = targetsOf(root, await scan(root), set.version).filter((target) => !target.test)
 
-    const refused = vi.fn<Ask>(async () => Promise.reject(new JevError(401, 'TypeSafe refused the API key')))
+    const refused = vi.fn<Ask>(async () => Promise.reject(new JevError(402, 'TypeSafe returned 402: the account is out of credit')))
     const failed = await runIndex({ targets, set, store: tempStore(), ask: refused, signal: new AbortController().signal, onProgress: () => {} })
-    expect(failed).toMatchObject({ status: 'failed', sent: 0, error: 'TypeSafe refused the API key' })
+    expect(failed).toMatchObject({ status: 'paused', sent: 0, error: 'TypeSafe returned 402: the account is out of credit' })
     expect(refused.mock.calls.length).toBeLessThanOrEqual(CONCURRENCY)
 
     let calls = 0
     const flaky = vi.fn<Ask>(async () => (++calls === 2 ? Promise.reject(new JevError(400, 'too long')) : reply()))
-    expect(await runIndex({ targets, set, store: tempStore(), ask: flaky, signal: new AbortController().signal, onProgress: () => {} })).toMatchObject({ status: 'done', sent: 3, failed: 1 })
+    expect(await runIndex({ targets, set, store: tempStore(), ask: flaky, signal: new AbortController().signal, onProgress: () => {} })).toMatchObject({ status: 'partial', sent: 3, failed: 1 })
 
     const stop = new AbortController()
     const slow = vi.fn<Ask>(async (_state, _questions, signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))))

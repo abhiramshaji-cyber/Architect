@@ -107,6 +107,7 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     setJev: vi.fn(),
     indexJev: vi.fn(),
     cancelJev: vi.fn(),
+    setJevBudget: vi.fn(),
     sameBehavior: vi.fn(),
     onJev: vi.fn().mockReturnValue(() => {}),
     reviewDetail: vi.fn(),

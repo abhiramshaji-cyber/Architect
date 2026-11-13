@@ -1,22 +1,21 @@
-import type { JevProgress, JevRun, JevState, JevStatus, JevUsage, SameBehavior } from '../../shared/jev/types'
-import { readSettings, saveSettings } from '../../shared/settings'
-import { errorText } from '../../shared/text/error'
+import type { JevBudget, JevProgress, JevRun, JevState, JevStatus, JevUsage, SameBehavior } from '../../shared/jev/types'
+import { jevBudgetOf, readSettings, saveSettings } from '../../shared/settings'
 import type { Architecture, CodeMap } from '../../shared/types'
 import { storeOf, type Store } from './classify/cache'
-import { questionsOf } from './classify/questions'
-import { runIndex, type Ask } from './classify/run'
-import { targetsOf } from './classify/targets'
-import { askJev, JevError, PRICE_PER_MILLION_INPUT_TOKENS } from './client'
-import { hasKey, readKey, removeKey, storeKey, type Crypt } from './key'
+import { PRICE_PER_MILLION_INPUT_TOKENS } from './client'
+import { hasKey, removeKey, storeKey, type Crypt } from './key'
 import { findSame } from './match/find'
 import { behaviorMarkdown } from './match/render'
+import { scheduleOf } from './schedule'
+import { monthTokens } from './spend/month'
+import { gateOf } from './spend/gate'
 
 export type JevOptions = {
   dir: string
   settings: string
   crypt: Crypt
   load: (root: string) => Promise<{ map: CodeMap; architecture: Architecture | null }>
-  projects: () => string[]
+  windows: () => string[]
   onProgress: (progress: JevProgress) => void
   fetch?: typeof fetch
 }
@@ -34,106 +33,112 @@ function usageOf(store: Store): JevUsage {
 
 export function createJev(options: JevOptions) {
   const { dir, crypt } = options
-  const runs = new Map<string, { run: JevRun; stop: AbortController }>()
   const asking = new Set<AbortController>()
+  let paused: string | null = null
 
   const enabled = () => readSettings(options.settings).jev
+  const limit = () => readSettings(options.settings).jevBudget
   const ready = () => enabled() && hasKey(dir)
+  const held = (): SameBehavior | null => (paused === null ? null : { status: 'paused', reason: paused })
+  const budget = (): JevBudget => {
+    const tokens = monthTokens(dir)
+    return { limit: limit(), tokens, cost: costOf(tokens) }
+  }
+  const emit = (root: string, run: JevRun) => options.onProgress({ root, run, usage: usageOf(storeOf(dir, root)), paused, budget: budget() })
+
+  function pause(reason: string): void {
+    if (paused !== null) return
+    paused = reason
+    for (const stop of asking) stop.abort(reason)
+    schedule.halt(reason)
+  }
+
+  const ask = gateOf({ dir, crypt, fetch: options.fetch ?? fetch, limit, paused: () => paused, pause })
+  const schedule = scheduleOf({ dir, windows: options.windows, ready, paused: () => paused, load: options.load, ask, emit })
+
   const state = (root?: string): JevState => ({
     enabled: enabled(),
     key: { set: hasKey(dir) },
     encryption: crypt.isEncryptionAvailable(),
-    run: root === undefined ? null : (runs.get(root)?.run ?? null),
+    paused,
+    budget: budget(),
+    run: root === undefined ? null : schedule.run(root),
     usage: root === undefined ? null : usageOf(storeOf(dir, root)),
   })
 
-  const askIn = (store: Store): Ask => async (text, questions, signal) => {
-    const key = readKey(dir, crypt)
-    if (key === null) throw new JevError(401, 'no TypeSafe API key is stored')
-    const reply = await askJev(key, text, questions, { fetch: options.fetch ?? fetch, signal })
-    store.addTokens(reply.inputTokens)
-    return reply
-  }
-
   function stopAll(): void {
-    for (const { stop } of runs.values()) stop.abort()
     for (const stop of asking) stop.abort()
+    schedule.halt()
   }
 
-  function index(root: string): JevState {
-    if (!ready()) return state(root)
-    runs.get(root)?.stop.abort()
-    const store = storeOf(dir, root)
-    const entry = { run: { status: 'running', total: 0, done: 0, sent: 0, failed: 0 } as JevRun, stop: new AbortController() }
-    runs.set(root, entry)
-    const report = (run: JevRun) => {
-      if (runs.get(root) !== entry) return
-      entry.run = run
-      if (run.total > 0) store.setProgress(run.done, run.total)
-      options.onProgress({ root, run, usage: usageOf(store) })
-    }
-
-    void (async () => {
-      try {
-        const { map, architecture } = await options.load(root)
-        if (entry.stop.signal.aborted) return report({ ...entry.run, status: 'stopped' })
-        const set = questionsOf(architecture)
-        const targets = targetsOf(root, map, set.version).filter((target) => !target.test)
-        await runIndex({ targets, set, store, ask: askIn(store), signal: entry.stop.signal, onProgress: report })
-      } catch (err) {
-        report({ ...entry.run, status: 'failed', error: errorText(err) })
-      }
-    })()
+  function retry(root?: string): JevState {
+    paused = null
+    if (root) schedule.index(root)
+    schedule.indexOpen(true)
     return state(root)
-  }
-
-  function indexOpen(again = false, extra?: string): void {
-    if (!ready()) return
-    for (const root of new Set([...options.projects(), ...(extra ? [extra] : [])])) if (again || !runs.has(root)) index(root)
   }
 
   async function same(root: string, file: string, symbol: string): Promise<SameBehavior> {
     if (!ready()) return { status: 'disabled', reason: DISABLED }
-    if (!runs.has(root)) index(root)
+    const before = held()
+    if (before) return before
+    schedule.want(root)
     const stop = new AbortController()
     asking.add(stop)
     try {
       const { map, architecture } = await options.load(root)
       const store = storeOf(dir, root)
-      return await findSame({ root, map, architecture, file, symbol, store, ask: askIn(store), signal: stop.signal, run: runs.get(root)?.run ?? null })
+      const found = await findSame({ root, map, architecture, file, symbol, store, ask: ask(store), signal: stop.signal, run: schedule.run(root) })
+      return held() ?? found
+    } catch (err) {
+      const during = held()
+      if (during) return during
+      throw err
     } finally {
       asking.delete(stop)
     }
   }
 
   function status(root: string): JevStatus {
-    const run = runs.get(root)?.run
+    const run = schedule.run(root)
     const { indexed, total, tokens, requests, cost } = usageOf(storeOf(dir, root))
     return {
       enabled: enabled(),
       key: { set: hasKey(dir) },
       root,
+      paused,
       index: run ? { status: run.status, indexed: run.done, total: run.total, failed: run.failed, ...(run.error ? { error: run.error } : {}) } : { status: 'idle', indexed, total, failed: 0 },
       usage: { tokens, requests, cost, pricePerMillionInputTokens: PRICE_PER_MILLION_INPUT_TOKENS },
+      budget: budget(),
     }
   }
 
   return {
     state,
-    index,
-    indexOpen,
     same,
     status,
     ready,
+    retry,
+    index: (root: string) => {
+      schedule.index(root)
+      return state(root)
+    },
+    indexOpen: () => schedule.indexOpen(),
+    windowsChanged: () => schedule.windowsChanged(),
     similarBehavior: async (root: string, file: string, symbol: string) => behaviorMarkdown(await same(root, file, symbol)),
     cancel(root: string): JevState {
-      runs.get(root)?.stop.abort()
+      schedule.cancel(root)
       return state(root)
+    },
+    setBudget(tokens: unknown): JevState {
+      const jevBudget = tokens === null ? null : jevBudgetOf(tokens)
+      if (tokens !== null && jevBudget === null) throw new Error('the monthly budget must be a whole number of input tokens above zero, or empty to turn it off')
+      saveSettings(options.settings, { jevBudget })
+      return retry()
     },
     setKey(key: unknown): JevState {
       storeKey(dir, crypt, key)
-      indexOpen(true)
-      return state()
+      return retry()
     },
     removeKey(): JevState {
       stopAll()
@@ -143,8 +148,8 @@ export function createJev(options: JevOptions) {
     setEnabled(on: boolean, root?: string): JevState {
       if (on && !hasKey(dir)) throw new Error('add a TypeSafe API key before turning Jev on')
       saveSettings(options.settings, { jev: on })
-      if (on) indexOpen(true, root)
-      else stopAll()
+      if (on) return retry(root)
+      stopAll()
       return state(root)
     },
   }

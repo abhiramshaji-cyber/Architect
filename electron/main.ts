@@ -6,7 +6,7 @@ import type { Architecture, CodeMap, HistoryEntry, ProjectSummary, ReviewState }
 import { wireIpc } from './app/ipc'
 import { launchArgs } from './app/launch'
 import { opensAtLogin } from './app/login'
-import { broadcast, createWindow, killEveryPty, openFolders, openRoot, tabs } from './app/windows'
+import { broadcast, createWindow, killEveryPty, openFolders, openRoot, tabs, watchClaims } from './app/windows'
 import { createDaemon } from './daemon'
 import { loginPath } from './env'
 import { createJev } from './jev'
@@ -18,6 +18,7 @@ const TRAY_ICON = nativeImage.createFromPath(
 TRAY_ICON.setTemplateImage(true)
 
 const socketPath = process.env.ARCHITECT_SOCKET ?? (app.isPackaged ? SOCKET_PATH : `${SOCKET_PATH}-dev`)
+let shown: string[] = []
 const daemon = createDaemon({ socketPath, behavior: (root, file, symbol) => jev.similarBehavior(root, file, symbol), jevStatus: (root) => jev.status(root) })
 const jev = createJev({
   dir: path.join(app.getPath('userData'), 'jev'),
@@ -27,7 +28,7 @@ const jev = createJev({
     if (!daemon.projects().some((project) => project.root === root)) throw new Error(`${root} is not open in Architect`)
     return { map: daemon.codeMap(root) ?? (await daemon.rescan(root)), architecture: (await daemon.open(root)).architecture }
   },
-  projects: () => daemon.projects().map((project) => project.root),
+  windows: () => shown.filter((root) => daemon.projects().some((project) => project.root === root)),
   onProgress: (progress) => broadcast('architect:jev', progress),
 })
 let tray: Tray | null = null
@@ -65,6 +66,10 @@ app.whenReady().then(async () => {
   if (process.platform !== 'win32') process.env.PATH = await loginPath(process.env)
   wireIpc(daemon, path.dirname(socketPath))
   wireJevIpc(jev)
+  watchClaims((roots) => {
+    shown = roots
+    jev.windowsChanged()
+  })
   createTray()
 
   daemon.onChange((root: string, architecture: Architecture) => {
