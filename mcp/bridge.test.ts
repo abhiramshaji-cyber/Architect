@@ -15,7 +15,6 @@ import {
   where,
   evidence,
   similarBehavior,
-  jevStatus,
 } from './bridge.js'
 
 function socketPath() {
@@ -276,30 +275,13 @@ describe('bridge', () => {
     const { server, path } = startServer((socket) => {
       readRequests(socket, (req, s) => {
         seenReq = req
-        s.write(JSON.stringify({ id: req.id, ok: true, result: 'Jev is off.' }) + '\n')
+        s.write(JSON.stringify({ id: req.id, ok: true, result: 'No other function has the same shape.' }) + '\n')
       })
     })
 
     const result = await similarBehavior({ file: 'a.ts', symbol: 'load' }, path)
     expect(seenReq).toMatchObject({ op: 'similar_behavior', file: 'a.ts', symbol: 'load' })
-    expect(result).toEqual({ content: [{ type: 'text', text: 'Jev is off.' }] })
-
-    stopServer(server, path)
-  })
-
-  it('maps jev_status to its op and returns the status as indented JSON', async () => {
-    let seenReq: Request | undefined
-    const status = { enabled: false, key: { set: false }, root: '/r', index: { status: 'idle', indexed: 0, total: 0, failed: 0 }, usage: { tokens: 0, requests: 0, cost: 0, pricePerMillionInputTokens: 0.042 } }
-    const { server, path } = startServer((socket) => {
-      readRequests(socket, (req, s) => {
-        seenReq = req
-        s.write(JSON.stringify({ id: req.id, ok: true, result: status }) + '\n')
-      })
-    })
-
-    const result = await jevStatus(path)
-    expect(seenReq).toMatchObject({ op: 'jev_status' })
-    expect(result).toEqual({ content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] })
+    expect(result).toEqual({ content: [{ type: 'text', text: 'No other function has the same shape.' }] })
 
     stopServer(server, path)
   })

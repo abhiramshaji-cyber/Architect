@@ -1,7 +1,5 @@
 import type { Architecture, ArchitectApi, CodeMap, Edit, FunctionEntry, GitFailure, Importance, HistoryEntry, Ownership } from '../../shared/types'
 
-const OFF_JEV = { enabled: false, key: { set: false }, encryption: false, paused: null, budget: { limit: null, tokens: 0, cost: 0 }, run: null, usage: null }
-
 declare global {
   interface Window {
     architect: ArchitectApi
@@ -640,15 +638,7 @@ export function installMock() {
       throw new Error('nothing is waiting for review in the demo')
     },
     async decide() {},
-    jevState: async () => OFF_JEV,
-    setJevKey: async () => Promise.reject(new Error('the demo has no keychain')),
-    removeJevKey: async () => OFF_JEV,
-    setJev: async () => Promise.reject(new Error('Jev needs the app')),
-    indexJev: async () => OFF_JEV,
-    cancelJev: async () => OFF_JEV,
-    setJevBudget: async () => Promise.reject(new Error('Jev needs the app')),
-    sameBehavior: async () => ({ status: 'disabled', reason: 'Jev needs the app' }),
-    onJev: () => () => {},
+    sameBehavior: async () => ({ status: 'unknown', reason: 'Same behavior search needs the app' }),
     onReview() {
       return () => {}
     }

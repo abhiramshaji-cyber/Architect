@@ -598,6 +598,13 @@
   box-shadow: 0 12px 32px var(--shadow);
 }
 
+.fn-related.fn-same {
+  position: static;
+  width: min(420px, 40vw);
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+}
+
 .fn-related-head {
   display: flex;
   align-items: center;

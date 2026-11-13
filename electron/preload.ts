@@ -11,7 +11,6 @@ import type {
   ReviewState,
   SessionTouch,
 } from '../shared/types'
-import type { JevProgress } from '../shared/jev/types'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, ...args)) as IpcResult<T>
@@ -123,19 +122,7 @@ const architect: ArchitectApi = {
   setReview: (enabled) => invoke('architect:set-review', enabled),
   aiState: () => invoke('architect:ai-state'),
   chooseAi: (choice) => invoke('architect:choose-ai', choice),
-  jevState: (root) => invoke('architect:jev-state', root),
-  setJevKey: (key) => invoke('architect:jev-set-key', key),
-  removeJevKey: () => invoke('architect:jev-remove-key'),
-  setJev: (enabled, root) => invoke('architect:jev-set', enabled, root),
-  indexJev: (root) => invoke('architect:jev-index', root),
-  cancelJev: (root) => invoke('architect:jev-cancel', root),
-  setJevBudget: (tokens) => invoke('architect:jev-budget', tokens),
-  sameBehavior: (root, file, symbol) => invoke('architect:jev-same', root, file, symbol),
-  onJev: (fn: (progress: JevProgress) => void) => {
-    const listener = (_event: unknown, progress: JevProgress) => fn(progress)
-    ipcRenderer.on('architect:jev', listener)
-    return () => ipcRenderer.off('architect:jev', listener)
-  },
+  sameBehavior: (root, file, symbol) => invoke('architect:same-behavior', root, file, symbol),
   reviewDetail: (id) => invoke('architect:review-detail', id),
   decide: (id, approved, feedback) => invoke('architect:decide', id, approved, feedback),
   onReview: (fn: (state: ReviewState) => void) => {

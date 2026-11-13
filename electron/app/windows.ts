@@ -12,19 +12,6 @@ export const tabs: BrowserWindow[] = []
 export const claims = new Map<number, string>()
 export const compares = new Map<number, AbortController>()
 const hosts = new Map<number, ReturnType<typeof createPtyHost>>()
-const focusedAt = new Map<number, number>()
-let focuses = 0
-let listener: (roots: string[]) => void = () => {}
-
-function windowsChange(): void {
-  const live = [...claims].filter(([id]) => tabs.some((tab) => tab.id === id && !tab.isDestroyed()))
-  listener(live.sort(([a], [b]) => (focusedAt.get(b) ?? 0) - (focusedAt.get(a) ?? 0)).map(([, root]) => root))
-}
-
-export function watchClaims(fn: (roots: string[]) => void): void {
-  listener = fn
-  windowsChange()
-}
 
 export function broadcast(channel: string, ...args: unknown[]): void {
   for (const tab of tabs) if (!tab.isDestroyed()) tab.webContents.send(channel, ...args)
@@ -46,14 +33,7 @@ export function killEveryPty(): void {
 }
 
 export function claimFor(window: number, root: string): boolean {
-  const won = claim(claims, (id) => tabs.some((tab) => tab.id === id), window, root)
-  windowsChange()
-  return won
-}
-
-export function releaseRoot(window: number): void {
-  claims.delete(window)
-  windowsChange()
+  return claim(claims, (id) => tabs.some((tab) => tab.id === id), window, root)
 }
 
 export function holderOf(root: string): BrowserWindow | undefined {
@@ -65,12 +45,10 @@ function forget(window: BrowserWindow): void {
   hosts.get(window.id)?.killAll()
   hosts.delete(window.id)
   claims.delete(window.id)
-  focusedAt.delete(window.id)
   stopCompare(window)
 
   const index = tabs.indexOf(window)
   if (index >= 0) tabs.splice(index, 1)
-  windowsChange()
 }
 
 function onChord(window: BrowserWindow, event: Electron.Event, input: Electron.Input): void {
@@ -122,10 +100,6 @@ export function createWindow(sibling: BrowserWindow | null, bound?: { root: stri
   }
 
   window.on('closed', () => forget(window))
-  window.on('focus', () => {
-    focusedAt.set(window.id, ++focuses)
-    windowsChange()
-  })
   window.webContents.on('render-process-gone', () => hosts.get(window.id)?.killAll())
   window.webContents.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) hosts.get(window.id)?.killAll()
