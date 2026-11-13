@@ -11,11 +11,11 @@ const RETRIED: JevRun['status'][] = ['partial', 'paused', 'stopped', 'failed']
 
 const dollars = (cost: number) => cost.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: cost < 1 ? 4 : 2 })
 
-function runText(run: JevRun | null): string {
+function runText(run: JevRun | null, paused: string | null): string {
   if (!run) return 'Not indexed yet'
   const counted = `${run.done.toLocaleString()} of ${run.total.toLocaleString()} functions classified`
   const failed = run.failed > 0 ? `, ${run.failed} failed and will be retried` : ''
-  return `${LABELS[run.status]}: ${counted}${failed}${run.error ? ` (${run.error})` : ''}`
+  return `${LABELS[run.status]}: ${counted}${failed}${run.error && run.error !== paused ? ` (${run.error})` : ''}`
 }
 
 function usageText(usage: JevUsage): string {
@@ -86,7 +86,7 @@ export default function JevSettings() {
       )}
       {!state.enabled && state.key.set && <p className="cv-detail">{NOTICE}</p>}
       <div className="ai-card-actions">
-        {state.enabled && currentRoot && <span className="cv-detail">{runText(state.run)}</span>}
+        {state.enabled && currentRoot && <span className="cv-detail">{runText(state.run, state.paused)}</span>}
         {state.enabled && currentRoot && (state.run?.status === 'running' || state.run?.status === 'queued') && (
           <button className="ghost" disabled={busy} onClick={() => act(() => window.architect.cancelJev(currentRoot))}>
             Stop
