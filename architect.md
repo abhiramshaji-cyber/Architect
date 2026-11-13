@@ -77,6 +77,10 @@ owns: `electron/where/**`
 Answers check_change for a dependency or a proposed file: the drawn verdict for the edge, softened to unknown when architect.md no longer parses, and the Rules check of the proposed file, the edge answering first when both are given.
 owns: `electron/verdict/**`
 
+### cut
+When a dependency is rejected because it would close a cycle, works out the cheapest drawn edge on that cycle to cut: each edge on the path `findCycle` returns is costed by the calls that cross it, counted from the same crossings `architect check` reads, and the edge with the fewest calls wins, ties going to the edge that comes first on the path after the proposed one, with the tie stated. When another path would still close the cycle once that edge is gone, the cheapest edge on each remaining path is listed too, until none is left. Its calls are listed with the caller, the call site and the callee by file:line, and for each called function `where` answers where it could go once that edge is gone and the proposed one is drawn. The scan comes from impact, so both read the same one. Deterministic apart from a timeout on reading the scan, no model calls.
+owns: `electron/cut/**`
+
 ### impact
 Works out what a change given to check_change could break before it is made. For a file and its proposed content it compares each function the scan lists, on the TypeScript syntax tree with comments, formatting and quote style ignored and with the declaration around an arrow function included, to find the functions added, changed or removed; code outside every function is compared by the top level names it declares or imports, and the files that import a changed name, directly or through a re-export, count as callers. For an edge it starts from every function the calling component owns. From there it walks the call graph backwards to every transitive caller, counted per depth, listing the nearest ones up to a fixed depth and count and saying how many it left out, adds the code outside any function that calls in as entries, then names the components those functions belong to and the test files that call them or import one of them by name. Every count carries file:line evidence, the notes are capped, and it keeps its own scan of each project, reused while no code file has changed and bounded by a timeout. Deterministic apart from that timeout, no model calls.
 owns: `electron/impact/**`
@@ -121,6 +125,11 @@ owns: `lsp/**`
 - daemon -> agents
 - daemon -> where
 - daemon -> impact
+- daemon -> cut
+- cut -> types
+- cut -> layers
+- cut -> where
+- cut -> graph
 - daemon -> verdict
 - verdict -> types
 - verdict -> graph
