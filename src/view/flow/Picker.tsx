@@ -29,7 +29,7 @@ export default function Picker({ list, picked, onPick }: PickerProps) {
   return (
     <label className="flow-picker">
       <span>Starting point</span>
-      <select value={at === -1 ? '' : at} onChange={(e) => choose(e.target.value)}>
+      <select className="cyber-select" value={at === -1 ? '' : at} onChange={(e) => choose(e.target.value)}>
         <option value="">{groups.length === 0 ? 'No starting points found by the scan' : 'Pick a starting point'}</option>
         {groups.map((group) => (
           <optgroup key={`${group.reason}\0${group.file}`} label={`${REASON[group.reason]} · ${group.file}`}>

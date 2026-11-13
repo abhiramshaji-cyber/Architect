@@ -118,10 +118,10 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
 
   const steps = (
     <div className="fn-sort focus-steps" role="group" aria-label="Focus history">
-      <button className="mode" disabled={shown.back.length === 0} onClick={() => move('back')} aria-label="Back">
+      <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={shown.back.length === 0} onClick={() => move('back')} aria-label="Back">
         ←
       </button>
-      <button className="mode" disabled={shown.forward.length === 0} onClick={() => move('forward')} aria-label="Forward">
+      <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={shown.forward.length === 0} onClick={() => move('forward')} aria-label="Forward">
         →
       </button>
     </div>
@@ -136,7 +136,7 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
           <code>{name}</code> in {file} is not {list.scope === '' ? 'in this project' : `in ${list.scope}`}.
         </p>
         {list.scope !== '' && (
-          <button className="mode" onClick={onWiden}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={onWiden}>
             Show the whole project
           </button>
         )}

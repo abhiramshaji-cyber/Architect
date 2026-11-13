@@ -74,7 +74,7 @@ export function CommitBox({
     <section className="commit-box">
       <div className="commit-row">
         <input
-          className="commit-title"
+          className="cyber-input commit-title"
           value={title}
           placeholder="Message"
           aria-label="Commit message"
@@ -96,7 +96,7 @@ export function CommitBox({
 
       {details && (
         <textarea
-          className="commit-description"
+          className="cyber-textarea commit-description"
           value={description}
           placeholder="Description"
           rows={4}
@@ -104,7 +104,7 @@ export function CommitBox({
         />
       )}
 
-      <button className="primary" onClick={() => void primary()} disabled={busy !== null || state.conflicted > 0}>
+      <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={() => void primary()} disabled={busy !== null || state.conflicted > 0}>
         {label}
       </button>
 

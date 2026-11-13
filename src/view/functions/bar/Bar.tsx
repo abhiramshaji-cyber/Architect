@@ -29,9 +29,9 @@ type BarProps = {
 
 export function Choice<K extends string>({ label, keys, value, onPick }: { label: string; keys: { key: K; label: string }[]; value: K; onPick: (key: K) => void }) {
   return (
-    <div className="fn-sort" role="group" aria-label={label}>
+    <div className="cyber-tabs" role="group" aria-label={label}>
       {keys.map(({ key, label: text }) => (
-        <button key={key} className={key === value ? 'mode active' : 'mode'} aria-pressed={key === value} onClick={() => onPick(key)}>
+        <button key={key} className={key === value ? 'cyber-tab cyber-tab--active' : 'cyber-tab'} aria-pressed={key === value} onClick={() => onPick(key)}>
           {text}
         </button>
       ))}
@@ -56,7 +56,7 @@ export default function Bar(props: BarProps) {
       {mode === 'list' && props.legend && <Legend />}
       {mode !== 'focus' && (
         <input
-          className="search-input fn-search"
+          className="cyber-input search-input fn-search"
           type="search"
           placeholder="Filter by name, file or doc"
           aria-label="Filter functions"

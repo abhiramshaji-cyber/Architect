@@ -1,14 +1,6 @@
 .ai-tag {
-  display: inline-block;
   margin-right: 2px;
-  padding: 0 4px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 15px;
   text-decoration: none;
-  color: var(--age);
-  border: 1px solid var(--age);
-  border-radius: 4px;
   vertical-align: 1px;
 }
 
@@ -18,7 +10,7 @@
   align-items: center;
   padding: var(--sp-2) var(--sp-6);
   font-size: var(--fs-xs);
-  color: var(--text-2);
+  color: var(--color-text-secondary);
   border-bottom: 1px solid var(--line);
 }
 
@@ -34,14 +26,14 @@
 .ai-card {
   padding: var(--sp-3) var(--sp-4);
   margin-bottom: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
 }
 
 .ai-card.in-use {
   border-color: var(--active-border);
-  background: var(--raise);
+  background: var(--color-bg-tertiary);
 }
 
 .ai-card-head {
@@ -53,7 +45,7 @@
 .ai-card-head h3 {
   margin: 0;
   font-size: var(--fs-md);
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .ai-login {
@@ -76,15 +68,9 @@
   display: flex;
   gap: var(--sp-2);
   align-items: center;
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
 .ai-model select {
-  height: var(--control);
-  padding: 0 var(--sp-2);
-  font: inherit;
-  color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  width: auto;
 }

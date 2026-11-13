@@ -48,9 +48,9 @@ export default function CommandPalette({ scope, onClose }: { scope: string; onCl
   }
 
   return (
-    <div className="palette-backdrop" onMouseDown={onClose}>
+    <div className="cyber-modal cyber-modal--open palette-backdrop" onMouseDown={onClose}>
       <div
-        className="palette"
+        className="cyber-modal__dialog palette"
         role="dialog"
         aria-label="Command palette"
         onMouseDown={(e) => e.stopPropagation()}
@@ -58,7 +58,7 @@ export default function CommandPalette({ scope, onClose }: { scope: string; onCl
       >
         <input
           ref={input}
-          className="palette-input"
+          className="cyber-input"
           placeholder="Run a command"
           aria-label="Run a command"
           value={query}

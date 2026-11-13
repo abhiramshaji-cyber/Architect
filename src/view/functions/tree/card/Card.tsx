@@ -52,7 +52,7 @@ function Body({ data }: { data: CardData }) {
           <span className="fn-card-title" title={data.title}>
             {data.title}
           </span>
-          {data.tag && <span className="fn-badge">{data.tag}</span>}
+          {data.tag && <span className="cyber-badge cyber-badge--sm cyber-badge--chrome">{data.tag}</span>}
         </span>
         {data.notes.map((note) => (
           <span key={note} className="fn-card-note">
@@ -73,7 +73,7 @@ function Body({ data }: { data: CardData }) {
           <span className="fn-card-name" title={row.name + signature}>
             {row.name}
           </span>
-          {row.exported && <span className="fn-badge">exported</span>}
+          {row.exported && <span className="cyber-badge cyber-badge--sm cyber-badge--chrome">exported</span>}
         </span>
         {signature !== '' && (
           <span className="fn-card-sig" title={signature}>

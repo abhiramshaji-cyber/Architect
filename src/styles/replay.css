@@ -1,5 +1,5 @@
 .replay {
-  --replay-commit: var(--text-dim);
+  --replay-commit: var(--color-text-muted);
   --replay-code: var(--live);
   --replay-contract: var(--age);
   --replay-rejected: var(--danger);
@@ -20,7 +20,7 @@
   margin: var(--sp-2) var(--sp-6) var(--sp-4) 0;
   overflow-y: auto;
   font-size: var(--fs-sm);
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
 .replay-readout p {
@@ -36,7 +36,7 @@
 }
 
 .replay-kind {
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .replay-kind.code {
@@ -50,12 +50,12 @@
 .replay-index,
 .replay-meta,
 .replay-at {
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-size: var(--fs-xs);
 }
 
 .replay-title {
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .replay-files,
@@ -71,16 +71,16 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--text-2);
-  font: var(--fs-xs) var(--mono);
+  color: var(--color-text-secondary);
+  font: var(--fs-xs) var(--font-mono);
   text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
 
 .replay-files button:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
 }
 
 .replay-verdicts li {
@@ -124,14 +124,14 @@
 }
 
 .replay-mark.on {
-  box-shadow: 0 0 0 2px var(--text);
+  box-shadow: 0 0 0 2px var(--color-text-primary);
 }
 
 .replay-track {
   position: relative;
   height: 22px;
   border-radius: var(--radius-sm);
-  background: var(--raise);
+  background: var(--color-bg-tertiary);
   cursor: pointer;
   touch-action: none;
 }
@@ -143,7 +143,7 @@
 .replay-unrecorded {
   position: absolute;
   inset: 0 auto 0 0;
-  background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--text-dim) 45%, transparent) 4px 5px);
+  background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--color-text-muted) 45%, transparent) 4px 5px);
   pointer-events: none;
 }
 
@@ -181,7 +181,7 @@
   bottom: -2px;
   width: 3px;
   border-radius: 2px;
-  background: var(--text);
+  background: var(--color-text-primary);
   transform: translateX(-50%);
   pointer-events: none;
 }

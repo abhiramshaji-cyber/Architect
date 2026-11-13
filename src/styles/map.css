@@ -19,18 +19,18 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font: inherit;
   cursor: pointer;
 }
 
 .map-crumb:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
 }
 
 .map-crumb:disabled {
-  color: var(--text);
+  color: var(--color-text-primary);
   cursor: default;
 }
 
@@ -50,7 +50,7 @@
   align-items: center;
   gap: var(--sp-2);
   font-size: var(--fs-xs);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .map-ramp {
@@ -93,9 +93,9 @@
   z-index: 2;
   width: 300px;
   padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
   box-shadow: 0 6px 20px var(--shadow);
   pointer-events: none;
   font-size: var(--fs-xs);
@@ -112,8 +112,8 @@
 }
 
 .map-tip-title {
-  color: var(--text);
-  font-family: var(--mono);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 
@@ -128,11 +128,11 @@
 
 .map-tip dt {
   flex: 0 0 104px;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .map-tip dd {
   margin: 0;
-  color: var(--text-2);
+  color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }

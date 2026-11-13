@@ -34,7 +34,7 @@ export default function CodeView({ theme, show }: ViewProps) {
 
       {codeMap && (
         <div className="code-bar">
-          <button className="ghost" onClick={goUp} disabled={codeWorld === ''}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={goUp} disabled={codeWorld === ''}>
             Back
           </button>
           <nav className="crumbs">
@@ -48,7 +48,7 @@ export default function CodeView({ theme, show }: ViewProps) {
             ))}
           </nav>
           <div className="code-bar-actions">
-            <button className="primary" onClick={rescan} disabled={codeBusy}>
+            <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={rescan} disabled={codeBusy}>
               {codeBusy ? 'Scanning…' : 'Rescan'}
             </button>
           </div>
@@ -66,7 +66,7 @@ export default function CodeView({ theme, show }: ViewProps) {
           ) : codeMap === null ? (
             <>
               <p>Not scanned</p>
-              <button className="primary" onClick={rescan}>
+              <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={rescan}>
                 Scan
               </button>
             </>

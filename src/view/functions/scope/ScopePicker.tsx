@@ -48,7 +48,7 @@ export default function ScopePicker({ project, scope, folders, onScope }: Picker
         ))}
       </nav>
       <button
-        className="mode fn-scope-open"
+        className="cyber-btn cyber-btn--sm cyber-btn--ghost fn-scope-open"
         aria-expanded={open}
         aria-haspopup="dialog"
         disabled={folders.length === 0}
@@ -60,7 +60,7 @@ export default function ScopePicker({ project, scope, folders, onScope }: Picker
       {open && (
         <div className="fn-scope-pop" role="dialog" aria-label="Pick a folder">
           <input
-            className="search-input fn-scope-search"
+            className="cyber-input search-input"
             type="search"
             autoFocus
             placeholder="Find a folder"

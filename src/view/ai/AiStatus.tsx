@@ -19,7 +19,7 @@ export default function AiStatus({ stamp, onOpen }: { stamp: unknown; onOpen: ()
   return (
     <div className={off || error || failure ? 'ai-status off' : 'ai-status'} role="status">
       <span>{failure ? `${said}. Last run failed: ${failure}` : said}</span>
-      <button className="ghost" onClick={onOpen}>
+      <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={onOpen}>
         AI settings
       </button>
     </div>

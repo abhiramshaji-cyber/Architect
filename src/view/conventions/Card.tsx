@@ -32,7 +32,7 @@ export default memo(function Card({ convention, onOpen, onPromote }: CardProps) 
   return (
     <li className="cv-card">
       <p className="cv-title">
-        <span className={ai ? 'cv-badge ai' : 'cv-badge'}>{ai ? 'AI suggestion' : 'Measured'}</span>
+        <span className={ai ? 'cyber-badge cyber-badge--sm cyber-badge--yellow' : 'cyber-badge cyber-badge--sm cyber-badge--chrome'}>{ai ? 'AI suggestion' : 'Measured'}</span>
         {convention.title}
       </p>
       {convention.detail && <p className="cv-detail">{convention.detail}</p>}
@@ -52,7 +52,7 @@ export default memo(function Card({ convention, onOpen, onPromote }: CardProps) 
             {impact.clears.length > 0 && `, and would lift ${plural(impact.clears.length, 'violation')} in force now`}
             {impact.loosens.length > 0 && `, and loosens ${plural(impact.loosens.length, 'rule')} in force`}
           </span>
-          <button className="ghost" disabled={added} onClick={add}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={added} onClick={add}>
             {added ? 'Added to Rules' : impact.loosens.length > 0 ? 'Add and loosen' : 'Add to Rules'}
           </button>
         </div>

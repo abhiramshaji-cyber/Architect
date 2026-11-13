@@ -80,11 +80,11 @@ export default function CanvasArea({ theme, panes }: { theme: string; panes: Pan
         <>
           <div className="pane-bar">
             {rooted && (
-              <nav className="mode-toggle">
+              <nav className="cyber-tabs cyber-tabs--scrollable">
                 {PROJECT_VIEWS.map((id) => (
                   <button
                     key={id}
-                    className={id === view ? 'mode active' : 'mode'}
+                    className={id === view ? 'cyber-tab cyber-tab--active' : 'cyber-tab'}
                     aria-current={id === view ? 'page' : undefined}
                     onClick={() => showView(path, id)}
                   >

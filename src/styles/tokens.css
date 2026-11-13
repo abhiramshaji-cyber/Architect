@@ -1,44 +1,56 @@
 :root {
-  color-scheme: dark;
-  --bg: #0b0b0c;
-  --panel: #0f0f10;
-  --raise: #161617;
-  --sunken: #0b0b0c;
-  --hover: #1b1b1d;
-  --border: #232325;
-  --line: rgb(255 255 255 / 0.06);
-  --text: #ededed;
-  --text-2: #b4b4b4;
-  --text-dim: #8a8a8a;
-  --text-faint: #5a5a5c;
-  --accent: #f2f2f2;
-  --on-accent: #0b0b0c;
-  --active-bg: #1f1f21;
-  --active-border: #3a3a3d;
-  --danger: #d98a84;
-  --ok: #9fbfa6;
-  --live: #7aa7ff;
-  --live-glow: rgb(122 167 255 / 0.32);
-  --age: #e2a457;
-  --node-bg: #141415;
-  --shadow: rgb(0 0 0 / 0.4);
-  --ink: #6e6e72;
-  --dots: #222224;
-  --folder: var(--text);
-  --fn: var(--text);
-  --code-bg: #0d0d0e;
-  --diff-add-bg: #132019;
-  --diff-add-num: #182a1f;
-  --diff-add-fg: #7fb08c;
-  --diff-del-bg: #251617;
-  --diff-del-num: #321c1d;
-  --diff-del-fg: #d98a84;
-  --ring: rgb(255 255 255 / 0.18);
+  --font-display: Rajdhani, system-ui, sans-serif;
+  --font-body: "Exo 2 Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
 
-  --font:
-    'Geist Variable', -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
-    sans-serif;
-  --mono: 'Geist Mono Variable', 'SF Mono', ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-lg: 15px;
+  --space-3xs: 3px;
+  --space-2xs: 6px;
+  --space-xs: 8px;
+  --space-sm: 10px;
+  --space-md: 14px;
+  --space-lg: 18px;
+  --space-xl: 24px;
+
+  --text-faint: var(--cyber-chrome-600);
+  --line: color-mix(in srgb, var(--color-text-primary) 7%, transparent);
+  --accent: var(--cyber-cyan-500);
+  --on-accent: var(--cyber-void-500);
+  --active-bg: color-mix(in srgb, var(--cyber-cyan-500) 12%, transparent);
+  --active-border: color-mix(in srgb, var(--cyber-cyan-500) 55%, transparent);
+  --danger: var(--cyber-magenta-500);
+  --ok: var(--cyber-green-500);
+  --live: var(--cyber-cyan-500);
+  --live-glow: color-mix(in srgb, var(--cyber-cyan-500) 32%, transparent);
+  --age: var(--cyber-yellow-500);
+  --node-bg: var(--color-bg-secondary);
+  --sunken: var(--cyber-void-700);
+  --code-bg: var(--cyber-void-700);
+  --ink: var(--cyber-chrome-600);
+  --dots: var(--cyber-void-100);
+  --ring: color-mix(in srgb, var(--cyber-cyan-500) 40%, transparent);
+  --diff-add-fg: var(--cyber-green-500);
+  --diff-add-bg: color-mix(in srgb, var(--cyber-green-500) 9%, var(--code-bg));
+  --diff-add-num: color-mix(
+    in srgb,
+    var(--cyber-green-500) 16%,
+    var(--code-bg)
+  );
+  --diff-del-fg: var(--cyber-magenta-500);
+  --diff-del-bg: color-mix(
+    in srgb,
+    var(--cyber-magenta-500) 9%,
+    var(--code-bg)
+  );
+  --diff-del-num: color-mix(
+    in srgb,
+    var(--cyber-magenta-500) 16%,
+    var(--code-bg)
+  );
+  --shadow: rgb(0 0 0 / 0.45);
 
   --fs-xs: 12px;
   --fs-sm: 13px;
@@ -53,71 +65,69 @@
   --sp-4: 16px;
   --sp-5: 24px;
   --sp-6: 32px;
-  --sp-7: 48px;
 
-  --radius-sm: 6px;
-  --radius: 8px;
-  --radius-lg: 12px;
   --control: 34px;
-
   --ease: cubic-bezier(0.23, 1, 0.32, 1);
   --fast: 140ms;
   --live-duration: 2500ms; /* LIVE_MS in model/live/recent.ts */
+
+  --syn-keyword: #ff6b9a;
+  --syn-string: #7ee0a8;
+  --syn-regexp: #ff9a6b;
+  --syn-comment: #5c647a;
+  --syn-number: #f5d76e;
+  --syn-type: #54d1db;
+  --syn-fn: #87eaf2;
+  --syn-prop: #9ab8ff;
+  --syn-tag: #ff6b9a;
+  --syn-punct: #939ab0;
+  --syn-match: rgb(0 240 255 / 0.1);
+  --syn-find: rgb(252 238 10 / 0.18);
+  --syn-find-now: rgb(252 238 10 / 0.4);
 }
 
-:root[data-theme='light'] {
+:root[data-theme="light"] {
   color-scheme: light;
-  --bg: #fafafa;
-  --panel: #ffffff;
-  --raise: #f4f4f4;
-  --sunken: #f6f6f6;
-  --hover: #f0f0f0;
-  --border: #e6e6e6;
-  --line: rgb(0 0 0 / 0.06);
-  --text: #111111;
-  --text-2: #3d3d3d;
-  --text-dim: #6f6f6f;
-  --text-faint: #a3a3a3;
-  --accent: #111111;
-  --on-accent: #ffffff;
-  --active-bg: #ededed;
-  --active-border: #cfcfcf;
-  --danger: #a3443d;
-  --ok: #3f6b4a;
-  --live: #2f6bd8;
-  --live-glow: rgb(47 107 216 / 0.22);
-  --age: #b8650f;
-  --node-bg: #ffffff;
-  --shadow: rgb(0 0 0 / 0.06);
-  --ink: #9a9a9a;
-  --dots: #e2e2e2;
-  --code-bg: #fcfcfc;
-  --diff-add-bg: #ebf5ed;
-  --diff-add-num: #dcede0;
-  --diff-add-fg: #3a7349;
-  --diff-del-bg: #fbeceb;
-  --diff-del-num: #f5dcda;
-  --diff-del-fg: #a3443d;
-  --ring: rgb(0 0 0 / 0.14);
-}
 
-:root {
-  --syn-keyword: #c49bd8;
-  --syn-string: #a9c48f;
-  --syn-regexp: #dd8f95;
-  --syn-comment: #6b6f76;
-  --syn-number: #d9a77c;
-  --syn-type: #7cc4b4;
-  --syn-fn: #e0cf96;
-  --syn-prop: #93bfdf;
-  --syn-tag: #dd8f95;
-  --syn-punct: #8a8a90;
-  --syn-match: rgb(255 255 255 / 0.08);
-  --syn-find: rgb(224 207 150 / 0.2);
-  --syn-find-now: rgb(224 207 150 / 0.42);
-}
+  --cyber-cyan-300: #0a8a99;
+  --cyber-cyan-400: #00808f;
+  --cyber-cyan-500: #007a8a;
+  --cyber-cyan-600: #006672;
+  --cyber-cyan-900: #c6eef2;
+  --cyber-magenta-500: #c4134f;
+  --cyber-yellow-500: #8a6a00;
+  --cyber-green-400: #0f8f5a;
+  --cyber-green-500: #007a50;
+  --cyber-green-700: #005c3c;
+  --cyber-green-900: #cdeedd;
 
-:root[data-theme='light'] {
+  --cyber-void-100: #c9cfdc;
+  --cyber-void-200: #e3e7ef;
+  --cyber-void-300: #edf0f5;
+  --cyber-void-400: #ffffff;
+  --cyber-void-500: #f4f6fa;
+  --cyber-void-700: #fafbfd;
+  --cyber-void-900: #ffffff;
+
+  --cyber-chrome-100: #0f1220;
+  --cyber-chrome-200: #23283a;
+  --cyber-chrome-300: #353b50;
+  --cyber-chrome-400: #4a5168;
+  --cyber-chrome-500: #5d6580;
+  --cyber-chrome-600: #7c839a;
+
+  --glow-cyan: 0 0 0 3px
+    color-mix(in srgb, var(--cyber-cyan-500) 18%, transparent);
+  --glow-magenta: 0 0 0 3px
+    color-mix(in srgb, var(--cyber-magenta-500) 18%, transparent);
+  --glow-yellow: 0 0 0 3px
+    color-mix(in srgb, var(--cyber-yellow-500) 18%, transparent);
+  --glow-green: 0 0 0 3px
+    color-mix(in srgb, var(--cyber-green-500) 18%, transparent);
+  --glow-text-cyan: none;
+
+  --shadow: rgb(15 18 32 / 0.08);
+
   --syn-keyword: #c4262f;
   --syn-string: #0a3069;
   --syn-regexp: #116329;

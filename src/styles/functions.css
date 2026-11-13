@@ -16,7 +16,7 @@
   gap: var(--sp-2) var(--sp-4);
   padding: var(--sp-2) var(--sp-6);
   border-bottom: 1px solid var(--line);
-  background: var(--bg);
+  background: var(--color-bg-primary);
 }
 
 .fn-count {
@@ -24,7 +24,7 @@
   margin: 0;
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .fn-sort {
@@ -32,15 +32,10 @@
   gap: 2px;
 }
 
-.fn-sort .mode {
-  height: 28px;
-}
-
 .fn-search {
   flex: 0 1 280px;
   min-width: 160px;
   margin: 0;
-  font-family: var(--font);
 }
 
 .fn-notice {
@@ -77,9 +72,9 @@
   text-align: left;
   background: transparent;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   box-shadow: inset 3px 0 0 var(--aged, transparent);
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .fn-row {
@@ -87,7 +82,7 @@
 }
 
 .fn-row:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .fn-row:focus-visible {
@@ -105,11 +100,11 @@
   width: 4px;
   height: 12px;
   border-radius: 1px;
-  background: var(--border);
+  background: var(--color-border-default);
 }
 
 .fn-step.on {
-  background: var(--text-2);
+  background: var(--color-text-secondary);
 }
 
 .fn-main {
@@ -137,7 +132,7 @@
 
 .fn-name {
   flex: 0 1 auto;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
@@ -160,7 +155,7 @@
 
 .fn-folder:hover,
 .fn-folder:focus-visible {
-  color: var(--text);
+  color: var(--color-text-primary);
   text-decoration: underline;
   outline: none;
 }
@@ -172,7 +167,7 @@
 .fn-doc {
   font-size: var(--fs-sm);
   line-height: 1.45;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .fn-tree {
@@ -190,10 +185,10 @@
   display: flex;
   flex-direction: column;
   background: var(--node-bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-lg);
   box-shadow: 0 1px 2px var(--shadow);
-  color: var(--text);
+  color: var(--color-text-primary);
   transition: opacity var(--fast) ease, border-color var(--fast) ease;
 }
 
@@ -227,7 +222,7 @@
 }
 
 .fn-pill:not(:disabled):hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .fn-pill:focus-visible {
@@ -252,7 +247,7 @@
 
 .fn-pill-count {
   font-size: 22px;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .fn-card.focused {
@@ -308,7 +303,7 @@
 }
 
 .fn-card-open:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .fn-card-open:focus-visible {
@@ -335,7 +330,7 @@
 }
 
 .fn-card-name {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   flex: 0 1 auto;
 }
@@ -346,7 +341,7 @@
 }
 
 .fn-card-sig {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-faint);
 }
@@ -359,7 +354,7 @@
   overflow: hidden;
   font-size: var(--fs-xs);
   line-height: 1.45;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .fn-card-also {
@@ -381,7 +376,7 @@
 
 .fn-card-jump:hover,
 .fn-card-jump:focus-visible {
-  color: var(--text);
+  color: var(--color-text-primary);
   text-decoration: underline;
 }
 
@@ -411,16 +406,16 @@
   padding: 0 var(--sp-2);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  color: var(--text-2);
-  background: var(--raise);
-  border: 1px solid var(--border);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .fn-card-toggle:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
 }
 
 .fn-card-toggle[aria-expanded='true'] {
@@ -434,12 +429,12 @@
 }
 
 .fn-tree .react-flow__edge.fn-tree-edge .react-flow__edge-path {
-  stroke: var(--border);
+  stroke: var(--color-border-default);
   stroke-width: 1.25;
 }
 
 .fn-tree .react-flow__edge.fn-tree-edge.lit .react-flow__edge-path {
-  stroke: var(--text);
+  stroke: var(--color-text-primary);
   stroke-width: 1.75;
 }
 
@@ -469,14 +464,10 @@
   display: flex;
   flex-direction: column;
   max-height: min(420px, 60vh);
-  background: var(--raise);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
   box-shadow: 0 12px 32px var(--shadow);
-}
-
-.fn-scope-search {
-  font-family: var(--font);
 }
 
 .fn-scope-list {
@@ -500,14 +491,14 @@
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text);
+  color: var(--color-text-primary);
   font-size: var(--fs-sm);
   text-align: left;
 }
 
 .fn-scope-row:hover,
 .fn-scope-row:focus-visible {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
   outline: none;
 }
 
@@ -518,7 +509,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   direction: rtl;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
 
@@ -550,14 +541,14 @@
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-2);
+  color: var(--color-text-secondary);
   font: inherit;
   cursor: pointer;
 }
 
 .fn-count-link:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
   text-decoration: underline;
 }
 
@@ -570,16 +561,6 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-}
-
-.fn-badge {
-  flex: none;
-  font-size: var(--fs-xs);
-  padding: 0 var(--sp-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-dim);
-  line-height: 18px;
 }
 
 .fn-lines {
@@ -611,9 +592,9 @@
   max-height: min(360px, 50vh);
   display: flex;
   flex-direction: column;
-  background: var(--raise);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
   box-shadow: 0 12px 32px var(--shadow);
 }
 
@@ -640,12 +621,12 @@
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
 .fn-related-close:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
 }
 
 .fn-related-list {
@@ -664,17 +645,17 @@
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text);
+  color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
 }
 
 .fn-related-item:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .fn-related-name {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   white-space: nowrap;
 }
@@ -700,12 +681,12 @@
 .fn-splits {
   margin: var(--sp-3) var(--sp-6) 0;
   font-size: var(--fs-sm);
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
 .fn-splits summary {
   cursor: pointer;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .fn-splits ul {
@@ -721,12 +702,12 @@
 }
 
 .fn-split-file {
-  font-family: var(--mono);
-  color: var(--text);
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
 }
 
 .fn-split-facts {
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   overflow-wrap: anywhere;
 }
 

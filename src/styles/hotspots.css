@@ -10,13 +10,13 @@
 .hs-readout {
   margin: var(--sp-3) var(--sp-6) 0;
   font-size: var(--fs-sm);
-  color: var(--text-2);
+  color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
 
 .hs-formula code {
-  font-family: var(--mono);
-  color: var(--text);
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
 }
 
 .hs-readout {
@@ -75,7 +75,7 @@
   padding: var(--sp-1) var(--sp-2);
   font: inherit;
   text-align: left;
-  color: var(--text);
+  color: var(--color-text-primary);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
@@ -84,11 +84,11 @@
 
 .hs-list li.hovered button,
 .hs-list button:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .hs-name {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 

@@ -29,7 +29,7 @@ function Loops({ row, mutual, full }: { row: FunctionRow; mutual: boolean; full:
     mutual && { mark: '⇄', word: 'calls back', title: `${row.name} also calls the focused function` },
   ].filter((loop) => loop !== false && loop !== undefined)
   return loops.map(({ mark, word, title }) => (
-    <span key={mark} className="fn-badge focus-loop" title={title} aria-label={title}>
+    <span key={mark} className="cyber-badge cyber-badge--sm" title={title} aria-label={title}>
       {full ? `${mark} ${word}` : mark}
     </span>
   ))
@@ -44,7 +44,7 @@ function Head({ row, mutual, full }: { row: FunctionRow; mutual: boolean; full: 
         <span className="fn-card-name" title={row.name + signature}>
           {row.name}
         </span>
-        {row.exported && full && <span className="fn-badge">exported</span>}
+        {row.exported && full && <span className="cyber-badge cyber-badge--sm cyber-badge--chrome">exported</span>}
         <Loops row={row} mutual={mutual} full={full} />
       </span>
       {signature !== '' && (
