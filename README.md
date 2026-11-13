@@ -13,47 +13,70 @@ Coding agents generate structure faster than anyone reviews it. Architect puts t
 
 ---
 
-## What's new: the Functions tab
+## What you get
 
-Open a project and Architect now starts on **Functions**: every function in the repo, with its line count, an importance score from 1 to 5, and a one line description.
+Open a project and Architect starts on **Functions**. Every page reads the same parse of the repo, its git history and `architect.md`.
 
-- **Ranked without AI.** Importance comes from PageRank over the call graph plus plain facts such as whether a function is exported or is a starting point. Descriptions come from the author's comments, or from the function name when there are none. No API key, no model call, about 3 ms for 1,300 functions.
-- **List view.** Sort by importance, lines or name, and filter by name, file or description.
-- **Tree view.** An org chart of who calls whom, from the starting points down. Open and close branches, search, and zoom.
+### Functions
 
-Architect no longer drafts an `architect.md` on its own. The Draft button on the Contract tab still does it when you ask.
+Every function in the repo, as a **List**, a **Tree** or a **Focus** view. Each card shows only facts: the signature, `file:line`, the line count, callers and callees, whether it is exported, and the author's own doc comment when there is one. Nothing on this page or in the Tree is written by a model or guessed from a name.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/functions-list-dark.png">
-  <img alt="The Functions list" src="docs/screenshots/functions-list.png">
-</picture>
+- **Importance** is a score from 1 to 5: PageRank over the call graph, plus fan in, whether the function is exported, and whether it is a starting point.
+- **List.** Sort by importance, lines, name or most recent change, and filter by name, file or doc comment. When a file breaks the `lines` or `jobs` rule, the list shows how to split it, read from the parse.
+- **Tree.** An indented outline that grows down the page. It starts from **named starting points**: functions with a stated reason, such as an MCP tool, an IPC handler, a CLI command, an Electron entry, or a `bin`, `main`, `exports`, `module` or `script` entry in any `package.json`. A level with more than 12 cards folds into counted buckets by component, folder, file or name range. Below half zoom each card becomes a pill with its name and one count.
+- **Focus.** One function in the middle, its callers on the left and its callees on the right. Click any of them to move the focus, and step back and forward through the trail.
 
-*Every function, ranked by importance, with its description and line count.*
+The Tree ends with two buckets:
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/functions-tree-dark.png">
-  <img alt="The Functions tree" src="docs/screenshots/functions-tree.png">
-</picture>
+- **Not reached from a starting point.** Functions no starting point reaches through calls. This is the dead code list.
+- **Reach unknown.** Functions the parse cannot trace, each with the fact why: used as a value, in a test file, exported by a package entry not mapped to source, and so on. They are kept out of the dead code list.
 
-*The Tree view, from the project down through the functions each one calls.*
+### Map
 
-## What it looks like
+A treemap of the repo by component, folder, file and function, each tile sized by its lines. The same layout can be coloured five ways:
 
-![The contract canvas](docs/screenshots/contract-canvas.png)
+- **Importance**, from the Functions score.
+- **Churn**, commits in the last 90 days.
+- **AI touched**, files a Claude Code session added or changed.
+- **Unreached**, code no starting point reaches.
+- **Style**, the share of files failing a rule in `architect.md`. A side panel scores each component and lists every failing `file:line`. A limit that only a path specific line relaxes still counts as a failure.
 
-*The architecture as you drew it, reading top to bottom.*
+Click a tile to zoom in, hover it for its facts.
 
-![Code mode, folders](docs/screenshots/code-folders.png)
+### Layers
 
-*Code mode drops the contract and reads the repo as it actually is, folder by folder.*
+A matrix of the real calls between components, levelled so leaves sit at the top. Each cell is checked against the contract: allowed, forbidden, undrawn, or a stale edge with no calls or imports behind it. Components that call each other are outlined as a cycle. Click a cell to list every call with its `file:line`. Without `architect.md`, the rows are the top level folders.
 
-![The call graph](docs/screenshots/code-call-graph.png)
+### Flow
 
-*Descend into a file and its functions become the graph, with the calls between them as edges.*
+Pick a starting point and Flow draws its call chain as a sequence diagram, three levels deep by default. Open any cut branch with `+`, and click an arrow to open the call site.
 
-![Function source](docs/screenshots/function-source.png)
+### Hotspots
 
-*Pick a function to get its callers, its calls and its source without leaving the canvas.*
+Lines against commits for every file or function, on log scales, over 30, 90 or 365 days. The score is `(lines ÷ most lines) × (commits ÷ most commits)`, printed above the chart, and the top 20 are listed.
+
+### Coupling
+
+Pairs of files that keep changing together but never import each other, directly or through a re export. Each pair shows its shared commits and Claude Code sessions, with the evidence one click away. The thresholds are fields on the page.
+
+### Replay
+
+A timeline of commits and recorded changes over 30, 90 or 365 days, played across the Map. Each step lights the files it changed, and `check_change` verdicts that rejected something are marked in red.
+
+### Conventions
+
+Off by default. Nothing is counted and no model is called until you turn it on. Then it shows:
+
+- **Measured** conventions, counted from the parse: a component whose files all sit below a limit gets a tighter rule line that would hold them there.
+- **AI suggestions**, only when you click **Suggest with AI**. Claude Code is asked, and any suggestion that names files the scan did not find is dropped.
+
+Every card is labelled Measured or AI suggestion, and nothing is added to `architect.md` until you click **Add to Rules**.
+
+### The rest
+
+**Contract** is the architecture you drew, as boxes and arrows. **Code** reads the repo folder by folder down to the calls inside a file. **Review**, **Diff**, **Files**, **Terminal** and **Shell** sit beside them.
+
+Architect never drafts an `architect.md` on its own. **Draft with Claude** on the Contract page does it when you ask.
 
 ## The problem
 
@@ -162,6 +185,10 @@ Any rule can be `off`. Backticked globs after the value limit a line to those pa
 
 `architect agents` (or the `write_agents` MCP tool) writes an `AGENTS.md` into the folder each component's globs share, so an agent editing that folder reads its contract without calling a tool: what the component owns, what it may call, what it must never call and why, and the rule lines that reach that folder. Everything in it is copied from `architect.md`. A component gets a file only when one of its globs takes in that whole folder (`src/api/**`); one that owns only some files in a folder, or shares its folder with another component, is listed instead of guessed. Each file starts with a marker comment: only files carrying it are ever rewritten or deleted, a hand written `AGENTS.md` is left alone, and a run with an unchanged contract writes nothing. Once a project has generated files, Architect rewrites them whenever `architect.md` changes and deletes the ones for removed components.
 
+`architect where` (or the `where` MCP tool) answers where a new function belongs before it is written. Pass the functions it will call and the ones that will call it, plus an optional name and file. It returns the component that owns most of those neighbours and that `architect.md` allows, the folder most of them live in, whether a new file there fits the `files` rule, the leading word most names in that folder start with, and the most similar function to copy. Every answer comes from the scan and `architect.md` with counts and `file:line` evidence, and no model is called.
+
+`architect check --suggest` adds split suggestions to the check: for a file over the `lines` or `jobs` rule, a folder of files behind the same entry file, one per group of related exported functions.
+
 Architect ships with its own [`architect.md`](architect.md) describing Architect. It is the demo, the test fixture, and the proof the tool survives contact with itself.
 
 ## Install
@@ -226,11 +253,7 @@ In Neovim that is `vim.lsp.start({ cmd = { 'node', '/path/to/architect/out/lsp/s
 
 ## Status
 
-V1 is in active development. It is deliberately small:
-
-**In:** the canvas, the four structural operations, live change highlighting with a history, cycle detection, multi project, and the MCP tools the agent reads and writes the contract through.
-
-**Out, on purpose:** no import verification yet, no drift report, no decision log, no cloud, no accounts. Those are V2, and they are tracked as issues.
+V1 is in active development. No cloud, no accounts: everything runs on your machine, from your repo, its git history and `architect.md`.
 
 ## Feedback
 
