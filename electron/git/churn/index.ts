@@ -1,7 +1,7 @@
 import { git } from '../git'
 import { sinceArgs } from '../log'
 import { type FileStat, parseNumstat } from './numstat'
-import { createPatchReader, type Hunk, type PatchCommit } from './patch'
+import { createPatchReader, type Hunk, type PatchCommit, type Section } from './patch'
 import { streamLines } from './stream'
 
 export type { Hunk } from './patch'
@@ -16,9 +16,19 @@ type Read = { sets: ChangeSet[]; complete: boolean }
 
 const SAME = ['-M', '--no-color', '--no-ext-diff', '--no-textconv', '--relative']
 
-const PATCH = ['-p', '-U0', '--inter-hunk-context=0']
+const PATCH = ['-p', '-U0', '--inter-hunk-context=0', '--src-prefix=a/', '--dst-prefix=b/']
 
 const cached = new Map<string, { key: string; commits: Promise<Read | null> }>()
+
+function byPath(sections: Section[]): Map<string, Section> {
+  const paired = new Map<string, Section>()
+  for (const section of sections) {
+    if (section.path === null) continue
+    const known = paired.get(section.path)
+    paired.set(section.path, known ? { path: section.path, created: known.created || section.created, deleted: known.deleted && section.deleted, hunks: [...known.hunks, ...section.hunks] } : section)
+  }
+  return paired
+}
 
 async function changesOf(root: string, command: string[]): Promise<Read | null> {
   const stats = await git(root, [...command, '--numstat', '-z', '--', '.'])
@@ -30,14 +40,13 @@ async function changesOf(root: string, command: string[]): Promise<Read | null> 
 
   let complete = streamed
   const sets = parseNumstat(stats.value).map(({ sha, at, files }) => {
-    const sections = patches.get(sha)?.sections
-    const aligned = sections?.length === files.length ? sections : undefined
-    if (!aligned && files.length > 0) complete = false
+    const sections = byPath(patches.get(sha)?.sections ?? [])
     return {
       sha,
       at,
-      files: files.map((file, i) => {
-        const section = aligned?.[i]
+      files: files.map((file) => {
+        const section = sections.get(file.path)
+        if (!section) complete = false
         return { ...file, created: section?.created ?? false, deleted: section?.deleted ?? false, hunks: section?.hunks ?? null }
       }),
     }

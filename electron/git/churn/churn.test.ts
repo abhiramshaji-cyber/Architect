@@ -107,6 +107,7 @@ describe('createPatchReader', () => {
         sha: 'aaa',
         sections: [
           {
+            path: 'a.ts',
             created: false,
             deleted: false,
             hunks: [
@@ -114,16 +115,32 @@ describe('createPatchReader', () => {
               { oldStart: 9, oldCount: 1, newStart: 10, newCount: 0 },
             ],
           },
-          { created: true, deleted: false, hunks: [] },
+          { path: 'b.png', created: true, deleted: false, hunks: [] },
         ],
       },
-      { sha: 'bbb', sections: [{ created: false, deleted: true, hunks: [{ oldStart: 1, oldCount: 1, newStart: 0, newCount: 0 }] }] },
+      { sha: 'bbb', sections: [{ path: 'c.ts', created: false, deleted: true, hunks: [{ oldStart: 1, oldCount: 1, newStart: 0, newCount: 0 }] }] },
     ])
   })
 
   it('does not count a no newline marker inside a hunk as a body line', () => {
     const [commit] = read(['diff --git a/a b/a', '@@ -1 +1 @@', '-a', '\\ No newline at end of file', '+b', '@@ -5 +5 @@', '-c', '+d'])
     expect(commit?.sections[0]?.hunks).toHaveLength(2)
+  })
+
+  it.each([
+    [['diff --git a/a b/c.ts b/a b/c.ts'], 'a b/c.ts'],
+    [['diff --git "a/q\\"t\\\\.ts" "b/q\\"t\\\\.ts"'], 'q"t\\.ts'],
+    [['diff --git "a/\\303\\251 \\t.ts" "b/\\303\\251 \\t.ts"'], 'é \t.ts'],
+    [['diff --git a/é.ts b/é.ts'], 'é.ts'],
+    [['diff --git "a/😀 \\"x" "b/😀 \\"x"'], '😀 "x'],
+    [['diff --git a/old b/new x', 'similarity index 90%', 'rename from old', 'rename to new x'], 'new x'],
+    [['diff --git a/old "b/n\\303\\251w"', 'rename from old', 'rename to "n\\303\\251w"'], 'néw'],
+    [['diff --git a/a b/b', 'copy from a', 'copy to b'], 'b'],
+    [['diff --git a/a b/b'], null],
+    [['diff --git "a/bad\\q" "b/bad\\q"'], null],
+    [['diff --git a/a b/a', 'rename to "open'], null],
+  ])('reads the path of %j', (lines, path) => {
+    expect(read(lines)[0]?.sections[0]?.path).toBe(path)
   })
 })
 
@@ -200,5 +217,38 @@ describe('readHistory', () => {
 
     const history = await readHistory(path.join(dir, 'app'), 0)
     expect(history.commits.flatMap((c) => c.files.map((f) => f.path))).toEqual(['x.ts'])
+  })
+
+  it('pairs files with their hunks by path through type changes, mode changes, binaries, renames, deletions and odd names', async () => {
+    const dir = repo()
+    run(dir, 'config', 'diff.noprefix', 'true')
+    run(dir, 'config', 'diff.mnemonicPrefix', 'true')
+    const odd = ['sp ace.ts', 'q"uote.ts', 'é.ts', 'tab\tname.ts', 'new\nline.ts', 'back\\slash.ts']
+    for (const file of [...odd, 'x.ts', 'link.txt', 'run.sh']) write(dir, file, 'a\n')
+    write(dir, 'logo.png', Buffer.from([0, 1, 2]))
+    write(dir, 'old.ts', 'one\ntwo\nthree\nfour\n')
+    write(dir, 'gone.ts', 'g\n')
+    commit(dir, 'first')
+    for (const file of [...odd, 'x.ts']) write(dir, file, 'a\nb\n')
+    fs.rmSync(path.join(dir, 'link.txt'))
+    fs.symlinkSync('x.ts', path.join(dir, 'link.txt'))
+    fs.chmodSync(path.join(dir, 'run.sh'), 0o755)
+    write(dir, 'logo.png', Buffer.from([0, 1, 2, 3]))
+    run(dir, 'mv', 'old.ts', 'renamed é x.ts')
+    fs.rmSync(path.join(dir, 'gone.ts'))
+    commit(dir, 'second')
+
+    const history = await readHistory(dir, 0)
+    const files = new Map(history.commits[0]?.files.map((f) => [f.path, f]))
+    const added = [{ oldStart: 1, oldCount: 0, newStart: 2, newCount: 1 }]
+
+    expect(history.complete).toBe(true)
+    expect([...files.keys()].sort()).toEqual([...odd, 'x.ts', 'link.txt', 'run.sh', 'logo.png', 'renamed é x.ts', 'gone.ts'].sort())
+    for (const file of [...odd, 'x.ts']) expect(files.get(file)).toMatchObject({ created: false, deleted: false, hunks: added })
+    expect(files.get('link.txt')).toMatchObject({ created: true, deleted: false, hunks: [{ oldStart: 1, oldCount: 1, newStart: 0, newCount: 0 }, { oldStart: 0, oldCount: 0, newStart: 1, newCount: 1 }] })
+    expect(files.get('run.sh')).toMatchObject({ created: false, deleted: false, hunks: [] })
+    expect(files.get('logo.png')).toMatchObject({ binary: true, created: false, hunks: [] })
+    expect(files.get('renamed é x.ts')).toMatchObject({ from: 'old.ts', created: false, hunks: [] })
+    expect(files.get('gone.ts')).toMatchObject({ deleted: true, hunks: [{ oldStart: 1, oldCount: 1, newStart: 0, newCount: 0 }] })
   })
 })

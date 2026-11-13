@@ -219,6 +219,20 @@ describe('churnOf', () => {
     expect((await churnOf(dir, code)).functions).toEqual({ 'f.ts:2:y': 1 })
   })
 
+  it('keeps counting functions through a commit that turns a file into a symlink', async () => {
+    const dir = repo()
+    const src = ['export function a() {', '  return 1', '}', '', 'export function b() {', '  return 2', '}']
+    save(dir, 'link.txt', ['plain'])
+    save(dir, 'x.ts', src, 'one')
+    fs.rmSync(path.join(dir, 'link.txt'))
+    fs.symlinkSync('x.ts', path.join(dir, 'link.txt'))
+    save(dir, 'x.ts', src.map((line) => line.replace('return 2', 'return 3')), 'two')
+
+    const churn = await churnOf(dir, await scan(dir), 30)
+    expect(churn.functions).toEqual({ 'x.ts:1:a': 1, 'x.ts:5:b': 2 })
+    expect(churn.incomplete).toBeUndefined()
+  })
+
   it.each([[0], [-5], [Number.NaN], ['30'], [undefined]])('falls back to 90 days for %j', async (days) => {
     expect((await churnOf(repo(), map({}), days)).days).toBe(90)
   })
