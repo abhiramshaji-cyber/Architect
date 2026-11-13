@@ -20,8 +20,6 @@ type Spot = { file: string; line: number; name: string }
 
 type Seeded = { seeds: number[]; touched: Touch[]; added: Spot[]; edited?: Spot; wholes?: Whole[]; users?: number[]; file: string | null; notes: string[] }
 
-const SETTLE_MS = 2000
-
 const NOTES = 20
 
 const TIMEOUT_MS = 5000
@@ -126,13 +124,13 @@ export function impactOf(input: ImpactInput, root: string, architecture: Archite
     entries,
     components: componentsOf(architecture, fns, reach, seeded.added, reached),
     tests: { total: tests.total, listed: tests.listed },
-    notes: capped([...(budget.hit ? ['the time limit was reached while reading importers and tests, so the counts are partial'] : []), ...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes]),
+    notes: capped([...(seeded.touched.some((touch) => touch.name.includes('.')) ? ['a changed method is reached through an instance (new K().m()) in calls the scan does not record, so its callers may be more than listed'] : []), ...(budget.hit ? ['the time limit was reached while reading importers and tests, so the counts are partial'] : []), ...both, ...seeded.notes, ...(seeded.touched.length > LISTED ? [`${seeded.touched.length - LISTED} touched functions are counted but not listed`] : []), ...notes, ...tests.notes]),
   }
 }
 
 function current(root: string, map: CodeMap): boolean {
   const paths = [...map.folders.map((folder) => folder.path), ...map.folders.flatMap((folder) => folder.files.map((file) => file.path)).filter((file) => CODE.test(file))]
-  const settled = (stat: fs.Stats | undefined) => stat !== undefined && stat.ctimeMs < map.scannedAt - SETTLE_MS
+  const settled = (stat: fs.Stats | undefined) => stat !== undefined && stat.ctimeMs < map.scannedAt
   const manifests = ['package.json', 'tsconfig.json'].map((name) => fs.statSync(path.join(root, name), { throwIfNoEntry: false }))
   return manifests.every((stat) => stat === undefined || settled(stat)) && paths.every((entry) => settled(fs.statSync(path.join(root, entry), { throwIfNoEntry: false })))
 }
