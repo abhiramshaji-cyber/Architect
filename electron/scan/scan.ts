@@ -101,7 +101,13 @@ function ownerFor(node: ts.Node, owner: string): string {
   return ''
 }
 
-type Found = { entry: FunctionEntry; node: ts.Node; owner: string }
+type Found = { entry: FunctionEntry; node: ts.Node; owner: string; self: string }
+
+function valueOf(node: ts.Node): ts.Node | undefined {
+  if (ts.isExportAssignment(node)) return node.expression
+  if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node) || ts.isPropertyAssignment(node)) return node.initializer
+  return node
+}
 
 function scopeOf(node: ts.Node): ts.Node | undefined {
   let at: ts.Node | undefined = node.parent
@@ -339,7 +345,8 @@ type Resolver = { resolve: (name: string, at: ts.Node) => Call | undefined; free
 function callsIn(node: ts.Node, self: string, nested: Set<ts.Node>, { resolve, free }: Resolver): Site[] {
   const sites: Site[] = []
 
-  const visit = (child: ts.Node): void => {
+  const own = valueOf(node)
+  const visit = (child: ts.Node, self: string): void => {
     if (child !== node && nested.has(child)) return
 
     const callee = ts.isCallExpression(child) ? child.expression : renderedTag(child)
@@ -350,10 +357,11 @@ function callsIn(node: ts.Node, self: string, nested: Set<ts.Node>, { resolve, f
       sites.push({ bridge: name.slice('window.'.length), line: lineOf(child) })
     }
 
-    ts.forEachChild(child, visit)
+    const rebinds = child !== node && child !== own && ts.isFunctionLike(child) && !ts.isArrowFunction(child)
+    ts.forEachChild(child, (next) => visit(next, rebinds ? '' : self))
   }
 
-  visit(node)
+  visit(node, self)
   return sites
 }
 
@@ -397,10 +405,11 @@ function parseFile(source: string, file: string): Parsed {
   try {
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind)
     const found: Found[] = []
+    const thisIn = new Map<ts.Node, string>()
     const specs = new Set<string>()
     const typed = new Set<string>()
 
-    const visit = (node: ts.Node, owner: string): void => {
+    const visit = (node: ts.Node, owner: string, self: string): void => {
       const spec = loadedSpec(node)
       if (spec !== undefined) (isTypeOnly(node) ? typed : specs).add(spec)
 
@@ -408,14 +417,18 @@ function parseFile(source: string, file: string): Parsed {
       if (name !== undefined) {
         const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
         const endLine = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1
-        found.push({ entry: { name, line, endLine, description: '', calls: [] }, node, owner })
+        const value = valueOf(node)
+        const bound = value !== undefined && ts.isArrowFunction(value) ? self : owner
+        if (value !== undefined) thisIn.set(value, bound)
+        found.push({ entry: { name, line, endLine, description: '', calls: [] }, node, owner, self: bound })
       }
 
       const next = ownerFor(node, owner)
-      ts.forEachChild(node, (child) => visit(child, next))
+      const inner = ts.isClassLike(node) ? next : ts.isFunctionLike(node) && !ts.isArrowFunction(node) ? (thisIn.get(node) ?? '') : self
+      ts.forEachChild(node, (child) => visit(child, next, inner))
     }
 
-    ts.forEachChild(sourceFile, (child) => visit(child, ''))
+    ts.forEachChild(sourceFile, (child) => visit(child, '', ''))
 
     const nested = new Set(found.map((f) => f.node))
     for (const f of found) {
@@ -429,7 +442,7 @@ function parseFile(source: string, file: string): Parsed {
     const imported = importBindings(sourceFile)
     const resolve = (name: string, at: ts.Node) => resolveCall(name, at, byScope, shadows, imported)
     const resolver: Resolver = { resolve, free: (root, at) => isFree(root, at, byScope, shadows, imported) }
-    const sites = found.map((f) => callsIn(f.node, f.owner, nested, resolver))
+    const sites = found.map((f) => callsIn(f.node, f.self, nested, resolver))
     const sitesIn = (node: ts.Node) => callsIn(node, '', nested, resolver)
     const opened = startsIn(sourceFile, found.map((f) => f.node), nested, resolve, imported, sitesIn)
     const index = new Map(found.map((f, i) => [f.node, i]))
@@ -440,7 +453,7 @@ function parseFile(source: string, file: string): Parsed {
     }
     const { used, linked, computed } = isTestFile(file)
       ? { used: [], linked: [], computed: false }
-      : usedIn([...found.map((f) => ({ node: f.node, self: f.owner })), { node: sourceFile, self: '' }], nested, lookup, imported)
+      : usedIn([...found.map((f) => ({ node: f.node, self: f.self })), { node: sourceFile, self: '' }], nested, lookup, imported)
     if (used.length + linked.length > 0) opened.push({ kind: 'value', calls: used })
 
     const order = found
