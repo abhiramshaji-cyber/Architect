@@ -16,6 +16,7 @@ import { aiRun, aiState, chooseAi } from '../ai'
 import { conventionsOf, promoteConvention, suggestedConventions, switchConventions } from '../conventions'
 import { couplingOf } from '../coupling'
 import type { createDaemon } from '../daemon'
+import { askContract } from '../draft/ask'
 import * as message from '../draft/message'
 import * as diff from '../git/diff'
 import * as git from '../git/git'
@@ -93,6 +94,9 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
   )
   handle('architect:read-tree', (root: string, dir: string) => daemon.readTree(root, dir))
   handle('architect:ai-state', () => aiState(settingsDir))
+  handle('architect:ask-contract', async (root: string, question: unknown, turns: unknown, view: unknown) =>
+    askContract(root, (await daemon.open(root)).architecture, daemon.ownership(root), question, turns, view, ai),
+  )
   handle('architect:choose-ai', async (choice: unknown) => {
     const state = await chooseAi(settingsDir, choice)
     for (const { root } of daemon.projects()) void daemon.rescan(root).catch(() => {})

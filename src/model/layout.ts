@@ -14,11 +14,11 @@ export type NodeData = {
 export const NODE_W = 220
 export const NODE_H = 37
 
-const RANK_SEP = 44
+export const RANK_SEP = 44
 export const NODE_SEP = 30
 const NODE_TITLE_PX = 13.5
-const LABEL_CHAR_PX = 6.5
-const LABEL_H = 18
+export const LABEL_CHAR_PX = 6.5
+export const LABEL_H = 18
 const LEGIBLE_PX = 9
 export const MIN_ZOOM = LEGIBLE_PX / NODE_TITLE_PX
 export const FIT_PADDING = 0.14

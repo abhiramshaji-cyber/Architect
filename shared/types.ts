@@ -621,6 +621,7 @@ export type ArchitectApi = import('./rules/conventions').ConventionsApi & import
   gitPull(root: string): Promise<GitResult<Pulled>>
   draftCommitMessage(root: string): Promise<DraftResult<CommitDraft>>
   draftPullRequest(root: string): Promise<DraftResult<PullDraft>>
+  askContract(root: string, question: string, turns: { asker: boolean; text: string }[], view: unknown): Promise<DraftResult<{ text: string; view: unknown }>>
   listFunctions(root: string, scope?: string): Promise<FunctionList>
   githubAuth(): Promise<GithubResult<GithubAuth>>
   githubRepos(limit?: number): Promise<GithubResult<GithubRepo[]>>

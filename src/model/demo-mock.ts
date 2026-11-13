@@ -601,12 +601,9 @@ export function installMock() {
     async gitPull(root) {
       return demoGit(root)
     },
-    async draftCommitMessage() {
-      return { ok: false, error: { kind: 'not-connected' } }
-    },
-    async draftPullRequest() {
-      return { ok: false, error: { kind: 'not-connected' } }
-    },
+    draftCommitMessage: async () => ({ ok: false, error: { kind: 'not-connected' } }),
+    draftPullRequest: async () => ({ ok: false, error: { kind: 'not-connected' } }),
+    askContract: async (_root, question) => ({ ok: true, value: { text: `A canned demo answer to "${question}": ui calls api, and api reads db.`, view: { layout: 'left-right', path: { from: 'ui', to: 'db' } } } }),
     async githubAuth() {
       return { ok: true, value: { kind: 'not-installed' } }
     },
@@ -616,7 +613,7 @@ export function installMock() {
     githubPulls: async () => demoGithub,
     githubPullFor: async () => demoGithub,
     githubCreatePull: async () => demoGithub,
-    aiState: async () => ({ choice: { connected: false, provider: 'claude', models: { claude: 'haiku', codex: 'gpt-6-luna' } }, clis: [], failure: null }),
+    aiState: async () => ({ choice: { connected: localStorage.getItem('demo-ai') === 'on', provider: 'claude', models: { claude: 'haiku', codex: 'gpt-6-luna' } }, clis: [], failure: null }),
     async chooseAi() {
       throw new Error('the demo cannot connect an AI')
     },

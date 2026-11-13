@@ -101,6 +101,7 @@ const architect: ArchitectApi = {
   gitPull: (root) => invoke('architect:git-pull', root),
   draftCommitMessage: (root) => invoke('architect:draft-commit-message', root),
   draftPullRequest: (root) => invoke('architect:draft-pull-request', root),
+  askContract: (root, question, turns, view) => invoke('architect:ask-contract', root, question, turns, view),
   githubAuth: () => invoke('architect:github-auth'),
   githubRepos: (limit) => invoke('architect:github-repos', limit),
   githubBranches: (owner, repo) => invoke('architect:github-branches', owner, repo),

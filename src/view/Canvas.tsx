@@ -22,6 +22,7 @@ import { addEdge, removeComponent, removeEdge, type OpResult } from '../model/ed
 import { liveClass, type Recent } from '../model/live/recent'
 import { describeChange, ranker } from '../model/recency'
 import type { Mark } from '../model/review'
+import type { Tone } from './chat/shape'
 import Inspector from './Inspector'
 import { edgeTypes } from './live/DrawnEdge'
 import Follow, { motionMs } from './live/Follow'
@@ -49,29 +50,35 @@ type CanvasProps = {
   onSelect: (id: string | null) => void
   onEdit?: (op: (a: Architecture) => OpResult) => boolean
   marks?: Record<string, Mark>
+  tone?: Record<string, Tone>
+  sideways?: boolean
+  fit?: string[]
+  view?: string
 }
 
-type Shown = NodeData & { hint?: string }
+type Shown = NodeData & { hint?: string; sideways?: boolean }
 
-function classOf(recent: Recent, marks: Record<string, Mark> | undefined, id: string, step?: number): string | undefined {
+function classOf(recent: Recent, marks: Record<string, Mark> | undefined, id: string, step?: number, tone?: Tone): string | undefined {
   const mark = marks?.[id]
   const live = liveClass(recent, id)
-  return [live, mark && `mark-${mark}`, step !== undefined && `age-${step}`].filter(Boolean).join(' ') || undefined
+  return [live, mark && `mark-${mark}`, step !== undefined && `age-${step}`, tone && `tone-${tone}`].filter(Boolean).join(' ') || undefined
 }
 
 const FIT = { padding: FIT_PADDING }
 
-function Reveal({ count, stage }: { count: number; stage: number }) {
+function Reveal({ count, stage, fit, view }: { count: number; stage: number; fit: string; view: string }) {
   const flow = useReactFlow()
   const size = useStore((s) => `${s.width}x${s.height}`)
-  const seen = useRef({ count, size, stage })
+  const seen = useRef({ count, size, stage, fit: '', view })
 
   useEffect(() => {
-    const grew = count > seen.current.count
-    const relaid = count !== seen.current.count || size !== seen.current.size || stage !== seen.current.stage
-    seen.current = { count, size, stage }
-    if (relaid) void flow.fitView({ ...FIT, duration: grew ? motionMs(220) : 0 })
-  }, [count, size, stage, flow])
+    const was = seen.current
+    seen.current = { count, size, stage, fit, view }
+    const asked = fit !== was.fit || view !== was.view
+    if (!asked && count === was.count && size === was.size && stage === was.stage) return
+    const nodes = fit === '' ? undefined : fit.split('\n').map((id) => ({ id }))
+    void flow.fitView({ ...FIT, nodes, duration: motionMs(asked ? 400 : count > was.count ? 220 : 0) })
+  }, [count, size, stage, fit, view, flow])
 
   return null
 }
@@ -92,8 +99,8 @@ function marker(color: string) {
 function ComponentNode({ data }: NodeProps<Node<Shown>>) {
   return (
     <div className={`node node-${data.role}`} title={data.hint}>
-      <Handle type="target" position={Position.Top} id={HANDLE_IN} />
-      <Handle type="source" position={Position.Bottom} id={HANDLE_OUT} />
+      <Handle type="target" position={data.sideways ? Position.Left : Position.Top} id={HANDLE_IN} />
+      <Handle type="source" position={data.sideways ? Position.Right : Position.Bottom} id={HANDLE_OUT} />
       <div className="node-head">
         <span className="node-id">{data.label}</span>
         <span className="node-role">{data.owns.length === 0 ? 'external' : data.role}</span>
@@ -172,7 +179,7 @@ const nodeTypes = { component: ComponentNode }
 
 const DELETE_KEYS = ['Delete', 'Backspace']
 
-export default function Canvas({ architecture, ownership, changes, recent, theme, selectedId, onSelect, onEdit, marks }: CanvasProps) {
+export default function Canvas({ architecture, ownership, changes, recent, theme, selectedId, onSelect, onEdit, marks, tone, sideways, fit, view = '' }: CanvasProps) {
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
@@ -198,7 +205,7 @@ export default function Canvas({ architecture, ownership, changes, recent, theme
       deletable: editing ? true : undefined,
       position: at.get(n.id) ?? { x: 0, y: 0 },
       style: { width: NODE_W, height: NODE_H },
-      data: n.data
+      data: { ...n.data, sideways }
     }))
 
     const rfEdges: RFEdge[] = links.map((l) => ({
@@ -213,7 +220,7 @@ export default function Canvas({ architecture, ownership, changes, recent, theme
     }))
 
     return { nodes: rfNodes, edges: rfEdges }
-  }, [architecture, colors, editing, stage])
+  }, [architecture, colors, editing, stage, sideways])
 
   const stepOf = useMemo(() => ranker(Object.values(changes ?? {})), [changes])
 
@@ -224,14 +231,14 @@ export default function Canvas({ architecture, ownership, changes, recent, theme
         return {
           ...n,
           selected: n.id === selectedId,
-          className: classOf(recent, marks, n.id, stepOf(change)),
+          className: classOf(recent, marks, n.id, stepOf(change), tone?.[n.id]),
           data: { ...n.data, hint: describeChange(change, Date.now()) }
         }
       }),
-    [nodes, selectedId, recent, marks, changes, stepOf]
+    [nodes, selectedId, recent, marks, changes, stepOf, tone]
   )
 
-  const drawn = useMemo(() => edges.map((e) => ({ ...e, className: classOf(recent, marks, e.id) })), [edges, recent, marks])
+  const drawn = useMemo(() => edges.map((e) => ({ ...e, className: classOf(recent, marks, e.id, undefined, tone?.[e.id]) })), [edges, recent, marks, tone])
 
   const selected = nodes.find((n) => n.id === selectedId)?.data ?? null
 
@@ -319,7 +326,7 @@ export default function Canvas({ architecture, ownership, changes, recent, theme
         onNodeClick={(_event, node) => onSelect(node.id)}
         onPaneClick={close}
       >
-        <Reveal count={nodes.length} stage={stage} />
+        <Reveal count={nodes.length} stage={stage} fit={fit?.join('\n') ?? ''} view={view} />
         <Follow ids={selectedId ? [selectedId] : []} />
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
