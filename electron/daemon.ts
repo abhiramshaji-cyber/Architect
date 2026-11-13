@@ -55,10 +55,11 @@ import { recencyOf } from './recency'
 import { churnOf } from './churn'
 import { createReview } from './review'
 import { createJournal } from './journal'
-import { checkFile } from './rules/proposed'
 import { styleIn } from './rules/style'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
+import { impactFor, impactSchema, type Impact } from './impact'
+import { changeVerdict } from './verdict'
 import { watchContract } from './watch/contract'
 
 
@@ -213,7 +214,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   const projects = new Map<string, ProjectState>()
   const histories = createJournal((root) => path.join(cacheDir, 'history', `${cacheKey(root)}.json`), historyEntrySchema, HISTORY_LIMIT)
-  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema, HISTORY_LIMIT)
+  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema.extend({ impact: impactSchema.optional().catch(undefined) }), HISTORY_LIMIT)
   let changeListener: ((root: string, architecture: Architecture) => void) | null = null
   let historyListener: ((entry: HistoryEntry) => void) | null = null
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null
@@ -750,43 +751,16 @@ export function createDaemon(options: DaemonOptions = {}) {
     return drafted
   }
 
-  function verdictFor(architecture: Architecture, parseError: string | null, from: string, to: string): Verdict {
-    const verdict = check(architecture, from, to)
-    if (parseError === null) return verdict
-
-    const note =
-      `the architecture is stale: ${parseError}. ` +
-      `This ${verdict.status} verdict comes from the last version of architect.md that parsed ` +
-      `and may not match the file on disk. Fix architect.md and check again before relying on it.`
-
-    if (verdict.status === 'forbidden') return { status: 'forbidden', reason: `${verdict.reason} — ${note}` }
-    return { status: 'unknown', reason: note }
-  }
-
-  function changeVerdict(root: string, architecture: Architecture, stale: string | null, req: Extract<Request, { op: 'check_change' }>): Verdict {
-    const { from, to, file, content } = req
-    if ((from === undefined) !== (to === undefined)) throw new Error('check_change needs both from and to')
-
-    const edge = from !== undefined && to !== undefined ? verdictFor(architecture, stale, from, to) : null
-    if (edge && (file === undefined || (edge.status !== 'allowed' && edge.status !== 'unknown'))) return edge
-    if (file === undefined || content === undefined) throw new Error('check_change needs from and to, or a file with its proposed content')
-
-    const violations = checkFile(cacheDir, root, architecture, path.resolve(req.cwd, file), content)
-    if (violations.length > 0) return { status: 'rule-violation', violations }
-    if (edge) return edge
-    if (stale === null) return { status: 'allowed' }
-    return { status: 'unknown', reason: `the architecture is stale: ${stale}. These rules come from the last version of architect.md that parsed. Fix architect.md and check again before relying on it.` }
-  }
-
-  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null) {
+  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null, impact?: Impact, at = Date.now()) {
     verdicts.append(root, {
       id: randomUUID(),
       root,
-      at: Date.now(),
+      at,
       ...(req.from === undefined ? {} : { from: req.from }),
       ...(req.to === undefined ? {} : { to: req.to }),
       ...(req.file === undefined ? {} : { file: req.file }),
       verdict,
+      ...(impact ? { impact } : {}),
       ...(stale === null ? {} : { stale: true as const }),
       ...(req.session ? { session: req.session } : {}),
     })
@@ -820,14 +794,16 @@ export function createDaemon(options: DaemonOptions = {}) {
           }
           let verdict: Verdict
           try {
-            verdict = changeVerdict(root, state.architecture, stale, req)
+            verdict = changeVerdict(cacheDir, root, state.architecture, stale, req)
           } catch (err) {
             const error = err instanceof Error ? err.message : String(err)
             logVerdict(root, req, { status: 'unknown', reason: error }, stale)
             return { id: req.id, ok: false, error }
           }
-          logVerdict(root, req, verdict, stale)
-          return { id: req.id, ok: true, result: verdict }
+          const at = Date.now()
+          const impact = await impactFor(req, root, state.architecture, stale, readStoredMap(cacheDir, root)?.map ?? null)
+          logVerdict(root, req, verdict, stale, impact, at)
+          return { id: req.id, ok: true, result: { ...verdict, impact } }
         }
 
         if (req.op === 'propose_change') {
