@@ -137,7 +137,7 @@ function current(root: string, map: CodeMap): boolean {
 
 const scans = new Map<string, Promise<CodeMap>>()
 
-async function mapOf(root: string, stored: CodeMap | null): Promise<CodeMap> {
+export async function scanOf(root: string, stored: CodeMap | null): Promise<CodeMap> {
   if (stored && current(root, stored)) return stored
   const held = scans.get(root)
   const last = held ? await held.catch(() => null) : null
@@ -157,7 +157,7 @@ export async function impactFor(input: ImpactInput, root: string, architecture: 
   })
   try {
     const until = Date.now() + timeoutMs
-    const map = await Promise.race([mapOf(root, stored), late])
+    const map = await Promise.race([scanOf(root, stored), late])
     if (map === null) return failed('timeout', `impact was not worked out: scanning ${root} took longer than ${timeoutMs} ms; the scan goes on and a later check uses it`)
     const impact = impactOf(input, root, architecture, map, Math.min(until, Date.now() + WORK_MS))
     return stale === null ? impact : { ...impact, notes: capped([`architect.md does not parse (${stale}); components come from the last version that parsed`, ...impact.notes]) }

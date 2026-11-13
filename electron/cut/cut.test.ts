@@ -67,12 +67,28 @@ describe('cutFor', () => {
     const cut = await cutFor(architecture, async () => map, root, 'jobs', 'api')
     expect(cut?.path).toEqual(['jobs', 'api', 'jobs'])
     expect(cut?.cheapest).toMatchObject({ from: 'api', to: 'jobs', calls: 2 })
-    expect(cut?.also).toEqual([{ from: 'store', to: 'jobs', calls: 1 }])
-    expect(cut?.notes[0]).toBe('cutting api -> jobs alone leaves another path from api back to jobs; also listed are the cheapest edges on each path left, cut together')
+    expect(cut?.also).toEqual([{ from: 'store', to: 'jobs', calls: 1, listed: [{ caller: 'store/db.ts:3 load', site: 'store/db.ts:4', callee: 'jobs/clock.ts:1 tick' }] }])
+    expect(cut?.notes[0]).toBe('cutting api -> jobs alone leaves another path from api back to jobs; also lists the cheapest edge on each path left, to cut together')
 
     const broken = await cutFor(architecture, async () => Promise.reject(new Error('disk gone')), root, 'jobs', 'api')
     expect(broken).toMatchObject({ cheapest: null, notes: ['the cheapest edge to cut could not be worked out: disk gone'] })
     const slow = await cutFor(architecture, () => new Promise(() => {}), root, 'jobs', 'api', 0)
     expect(slow?.notes).toEqual(['the cheapest edge to cut was not worked out: reading the scan took longer than 0 ms'])
+  })
+
+  it('prefers one edge that breaks every path when it costs no more than an edge on each path', async () => {
+    const parts = ['p', 'q', 'x', 'y', 'z']
+    const contractOf = (edges: string[]) => parse(['# Demo', '', 'A demo.', '', '## Components', '', ...parts.flatMap((id) => [`### ${id}`, 'Part.', `owns: \`${id}/**\``, '']), '## Dependencies', '', ...edges.map((edge) => `- ${edge}`), ''].join('\n'))
+    const files: Record<string, string> = {
+      'q/a.ts': "import { x1, x2 } from '../x/a'\n\nexport function q1() {\n  x1()\n  return x2()\n}\n",
+      'x/a.ts': "import { y1 } from '../y/a'\nimport { z1 } from '../z/a'\n\nexport function x1() {\n  return y1()\n}\n\nexport function x2() {\n  return z1()\n}\n",
+      'y/a.ts': "import { p1 } from '../p/a'\n\nexport function y1() {\n  return p1()\n}\n",
+      'z/a.ts': "import { p1 } from '../p/a'\n\nexport function z1() {\n  return p1()\n}\n",
+      'p/a.ts': 'export function p1() {\n  return 1\n}\n',
+    }
+    const { root, map } = await project(files)
+    const cut = await cutFor(contractOf(['q -> x', 'x -> y', 'x -> z', 'y -> p', 'z -> p']), async () => map, root, 'p', 'q')
+    expect(cut?.cheapest).toMatchObject({ from: 'q', to: 'x', calls: 2, tie: 'cutting q -> x alone breaks every path for 2 calls, no more than cutting one edge on each path; ties between single edges go to the first by name' })
+    expect(cut?.also).toEqual([])
   })
 })
