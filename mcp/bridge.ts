@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { SOCKET_PATH } from '../shared/socket.js'
+import { isMain } from './entry.js'
 import { runHook } from './hook.js'
 import { send, type RequestInput } from './socket.js'
 import type { Proposal } from '../shared/types.js'
@@ -170,7 +171,7 @@ function main() {
   send({ op: 'session-event', event: 'connect' }).catch(() => {})
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   if (process.argv[2] === 'hook') void runHook().finally(() => process.exit(0))
   else main()
 }
