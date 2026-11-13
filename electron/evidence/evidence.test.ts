@@ -27,6 +27,25 @@ const SOURCE = [
   '',
 ].join('\n')
 
+const NESTED = [
+  'export function outer(xs: number[]) {',
+  '  const visit = (n: number): number => {',
+  '    if (n > 0) return visit(n - 1)',
+  '    return helper(n)',
+  '  }',
+  '  return xs.map((x) => visit(x))',
+  '}',
+  'function helper(n: number) {',
+  '  return n',
+  '}',
+  'export function other() {',
+  '  const visit = () => helper(1)',
+  '  return visit()',
+  '}',
+  'export const limit = 1',
+  '',
+].join('\n')
+
 function project(files: Record<string, string>, remote?: string, pushed = true): string {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'architect-evidence-')))
   dirs.push(dir)
@@ -44,6 +63,8 @@ function project(files: Record<string, string>, remote?: string, pushed = true):
   if (remote !== undefined && pushed) run('update-ref', 'refs/remotes/origin/main', 'HEAD')
   return dir
 }
+
+const git = (dir: string, ...args: string[]) => execFileSync('git', args, { cwd: dir }).toString().trim()
 
 const headOf = (dir: string) => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString().trim()
 
@@ -127,6 +148,15 @@ describe('graphOf', () => {
     expect(graph.mermaid).toContain('  n2["main<br/>src/a.ts:7"]\n  n1 --> n0\n  n2 --> n1\n')
     expect(graph.callers).toBe(1)
   })
+
+  it('draws a self call as a loop and lists its call site', async () => {
+    const dir = project({ 'src/n.ts': NESTED })
+    const graph = graphOf(await scan(dir), 'src/n.ts', 1, 1)
+    expect(graph.mermaid).toContain('  n0 --> n0\n')
+    expect(graph.mermaid?.match(/n0 --> n0/g)).toHaveLength(1)
+    expect(graph.sites).toContainEqual({ caller: 'visit', file: 'src/n.ts', line: 3 })
+    expect(graph.callers).toBe(2)
+  })
 })
 
 describe('evidenceOf', () => {
@@ -154,7 +184,7 @@ describe('evidenceOf', () => {
     const dir = project({ 'src/a.ts': SOURCE }, 'https://github.com/acme/tool')
     const out = await evidenceOf({ cwd: dir, file: 'src/a.ts', lines: { start: 8, end: 8 } }, dir, await scan(dir))
     expect(out).toContain(`/src/a.ts#L8\n`)
-    expect(out).toContain('`main` in `src/a.ts` line 8')
+    expect(out).toContain('`src/a.ts` line 8, inside `main` (lines 7-10)')
     expect(out).toContain('  n0(["main<br/>src/a.ts:7"])')
     expect(out).not.toContain('caller')
   })
@@ -188,5 +218,58 @@ describe('evidenceOf', () => {
     await expect(evidenceOf({ cwd: dir, file: 'src/nope.ts', symbol: 'load' }, dir, map)).rejects.toThrow('src/nope.ts is not a file')
     await expect(evidenceOf({ cwd: dir, file: 'src/a.ts', lines: { start: 5, end: 40 } }, dir, map)).rejects.toThrow('runs past the end of the file, which has 10 lines')
     await expect(evidenceOf({ cwd: dir, file: 'src/a.ts', symbol: 'load', notes: [{ line: 7, text: 'x' }] }, dir, map)).rejects.toThrow('notes on lines 7 fall outside the excerpt 1-3')
+  })
+
+  it('draws the innermost function holding the range and names it', async () => {
+    const dir = project({ 'src/n.ts': NESTED }, 'git@github.com:acme/tool.git')
+    const map = await scan(dir)
+    const run = (lines: { start: number; end: number }) => evidenceOf({ cwd: dir, file: 'src/n.ts', lines }, dir, map)
+    const inner = await run({ start: 3, end: 4 })
+    expect(inner.split('\n')[0]).toBe('`src/n.ts` lines 3-4, inside `outer.visit` (lines 2-5)')
+    expect(inner).toContain('  n0(["visit<br/>src/n.ts:2"])')
+    expect(inner).toContain('- `visit` at [src/n.ts:3]')
+    const over = await run({ start: 2, end: 6 })
+    expect(over.split('\n\n')[0]).toBe(
+      '`src/n.ts` lines 2-6, inside `outer` (lines 1-7)\nThe range also covers `outer.visit` (lines 2-5), so the graph is for `outer`, the innermost function holding all of it.',
+    )
+    expect(over).toContain('  n0(["outer<br/>src/n.ts:1"])')
+    const loose = (await run({ start: 15, end: 15 })).split('\n\n')
+    expect(loose[0]).toBe('`src/n.ts` line 15, not inside any function')
+    expect(loose).toHaveLength(3)
+  })
+
+  it('resolves nested function names', async () => {
+    const dir = project({ 'src/n.ts': NESTED })
+    const map = await scan(dir)
+    const run = (symbol: string) => evidenceOf({ cwd: dir, file: 'src/n.ts', symbol }, dir, map)
+    await expect(run('visit')).rejects.toThrow('visit matches 2 functions in src/n.ts, pass the full name: outer.visit at line 2, other.visit at line 12')
+    expect((await run('outer.visit')).split('\n')[0]).toBe('`outer.visit` in `src/n.ts` lines 2-5')
+    expect((await run('other.visit')).split('\n')[0]).toBe('`other.visit` in `src/n.ts` line 12')
+  })
+
+  it('notes when the linked commit is behind or diverged from its upstream', async () => {
+    const dir = project({ 'src/a.ts': SOURCE }, 'git@github.com:acme/tool.git')
+    const linkOf = async () => (await evidenceOf({ cwd: dir, file: 'src/a.ts', lines: { start: 1, end: 1 } }, dir, await scan(dir))).split('\n\n')[1]
+    git(dir, 'branch', '-q', '--set-upstream-to=origin/main')
+    expect(await linkOf()).toBe(`https://github.com/acme/tool/blob/${headOf(dir)}/src/a.ts#L1`)
+
+    fs.writeFileSync(path.join(dir, 'b.txt'), 'b')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', 'second')
+    git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD')
+    git(dir, 'reset', '-q', '--hard', 'HEAD~1')
+    const first = headOf(dir)
+    expect(await linkOf()).toBe(
+      `https://github.com/acme/tool/blob/${first}/src/a.ts#L1\nNote: the link points at local commit ${first.slice(0, 7)}, which is 1 commit behind origin/main; that commit is on origin, so the link resolves.`,
+    )
+
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'c')
+    git(dir, 'add', '.')
+    git(dir, 'commit', '-q', '-m', 'third')
+    git(dir, 'update-ref', 'refs/remotes/origin/feature', 'HEAD')
+    const third = headOf(dir)
+    expect(await linkOf()).toBe(
+      `https://github.com/acme/tool/blob/${third}/src/a.ts#L1\nNote: the link points at local commit ${third.slice(0, 7)}, which is 1 commit ahead of and 1 commit behind origin/main; that commit is on origin, so the link resolves.`,
+    )
   })
 })

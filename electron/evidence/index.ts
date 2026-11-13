@@ -8,7 +8,18 @@ import { linkerFor, type Linker } from './permalink'
 
 export type EvidenceInput = Omit<Extract<Request, { op: 'evidence' }>, 'id' | 'op'>
 
-type Target = { name: string | null; fn: number | null; range: Range }
+type Fn = { at: number; name: string; range: Range }
+
+type Target = { heading: string; fn: number | null; range: Range }
+
+const span = (range: Range) => range.end - range.start
+
+const holds = (outer: Range, inner: Range) => outer.start <= inner.start && outer.end >= inner.end
+
+const inside = (inner: { at: number; range: Range }, outer: { at: number; range: Range }) =>
+  inner.at !== outer.at && holds(outer.range, inner.range) && (span(outer.range) > span(inner.range) || outer.at < inner.at)
+
+const linesOf = (range: Range) => (range.start === range.end ? `line ${range.start}` : `lines ${range.start}-${range.end}`)
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 
@@ -22,28 +33,41 @@ function located(root: string, cwd: string, file: string): { abs: string; rel: s
   return { abs, rel }
 }
 
-function bySymbol(entry: FileEntry | undefined, rel: string, symbol: string): Target {
-  const fns = (entry?.functions ?? []).map((fn, at) => ({ fn, at })).filter(({ fn }) => fn.twin !== true)
-  if (fns.length === 0) throw new Error(`no functions were found in ${rel}, so ${symbol} cannot be located; pass lines instead`)
-  const exact = fns.filter(({ fn }) => fn.name === symbol)
-  const hits = exact.length > 0 ? exact : fns.filter(({ fn }) => fn.name.endsWith(`.${symbol}`))
-  if (hits.length === 0) throw new Error(`no function named ${symbol} in ${rel}; its functions are ${fns.map(({ fn }) => fn.name).join(', ')}`)
-  if (hits.length > 1) throw new Error(`${symbol} matches ${hits.length} functions in ${rel}, pass the full name: ${hits.map(({ fn }) => `${fn.name} at line ${fn.line}`).join(', ')}`)
-  const [{ fn, at }] = hits as [(typeof hits)[number]]
-  return { name: fn.name, fn: at, range: { start: fn.line, end: fn.endLine } }
+function functionsOf(entry: FileEntry | undefined): Fn[] {
+  const fns = (entry?.functions ?? []).flatMap((fn, at) => (fn.twin === true ? [] : [{ at, own: fn.name, range: { start: fn.line, end: fn.endLine } }]))
+  return fns.map((fn) => {
+    const chain = fns.filter((other) => inside(fn, other)).sort((a, b) => span(b.range) - span(a.range) || a.at - b.at)
+    return { at: fn.at, name: [...chain, fn].map((one) => one.own).join('.'), range: fn.range }
+  })
 }
 
-function byLines(entry: FileEntry | undefined, range: Range): Target {
-  const around = (entry?.functions ?? [])
-    .map((fn, at) => ({ fn, at }))
-    .filter(({ fn }) => fn.twin !== true && fn.line <= range.start && fn.endLine >= range.end)
-    .sort((a, b) => a.fn.endLine - a.fn.line - (b.fn.endLine - b.fn.line))[0]
-  return { name: around?.fn.name ?? null, fn: around?.at ?? null, range }
+function bySymbol(fns: Fn[], rel: string, symbol: string): Target {
+  if (fns.length === 0) throw new Error(`no functions were found in ${rel}, so ${symbol} cannot be located; pass lines instead`)
+  const exact = fns.filter((fn) => fn.name === symbol)
+  const hits = exact.length > 0 ? exact : fns.filter((fn) => fn.name.endsWith(`.${symbol}`))
+  if (hits.length === 0) throw new Error(`no function named ${symbol} in ${rel}; its functions are ${fns.map((fn) => fn.name).join(', ')}`)
+  if (hits.length > 1) throw new Error(`${symbol} matches ${hits.length} functions in ${rel}, pass the full name: ${hits.map((fn) => `${fn.name} at line ${fn.range.start}`).join(', ')}`)
+  const [fn] = hits as [Fn]
+  return { heading: `\`${fn.name}\` in \`${rel}\` ${linesOf(fn.range)}`, fn: fn.at, range: fn.range }
+}
+
+function byLines(fns: Fn[], rel: string, range: Range): Target {
+  const asked = `\`${rel}\` ${linesOf(range)}`
+  const around = fns.filter((fn) => holds(fn.range, range)).sort((a, b) => span(a.range) - span(b.range) || b.at - a.at)[0]
+  if (around === undefined) return { heading: `${asked}, not inside any function`, fn: null, range }
+  const touched = fns.filter((fn) => inside(fn, around) && fn.range.start <= range.end && fn.range.end >= range.start)
+  const nearest = touched.filter((fn) => !touched.some((other) => inside(fn, other)))
+  const heading = `${asked}, inside \`${around.name}\` (${linesOf(around.range)})`
+  if (nearest.length === 0) return { heading, fn: around.at, range }
+  const parts = nearest.map((fn) => `\`${fn.name}\` (${linesOf(fn.range)})`).join(', ')
+  return { heading: `${heading}\nThe range also covers ${parts}, so the graph is for \`${around.name}\`, the innermost function holding all of it.`, fn: around.at, range }
 }
 
 function permalinkPart(linker: Linker, rel: string, range: Range): string {
   if ('note' in linker) return linker.note
-  return linker.link(rel, range.start, range.end) ?? linker.why(rel)
+  const link = linker.link(rel, range.start, range.end)
+  if (link === null) return linker.why(rel)
+  return linker.drift === null ? link : `${link}\n${linker.drift}`
 }
 
 function graphPart(graph: Graph): string | null {
@@ -68,13 +92,12 @@ export async function evidenceOf(input: EvidenceInput, root: string, map: CodeMa
 
   const { abs, rel } = located(root, input.cwd, input.file)
   const entry = map.folders.flatMap((folder) => folder.files).find((file) => file.path === rel)
-  const target = input.symbol === undefined ? byLines(entry, input.lines as Range) : bySymbol(entry, rel, input.symbol)
+  const fns = functionsOf(entry)
+  const target = input.symbol === undefined ? byLines(fns, rel, input.lines as Range) : bySymbol(fns, rel, input.symbol)
   const excerpt = excerptOf(fs.readFileSync(abs, 'utf8'), target.range, input.notes)
 
   const linker = await linkerFor(root)
   const graph = target.fn === null ? null : graphOf(map, rel, target.fn, depth)
-  const { start, end } = target.range
-  const heading = `${target.name === null ? '' : `\`${target.name}\` in `}\`${rel}\` ${start === end ? `line ${start}` : `lines ${start}-${end}`}`
-  const parts = [heading, permalinkPart(linker, rel, target.range), excerpt, graph && graphPart(graph), graph && callersPart(graph, linker)]
+  const parts = [target.heading, permalinkPart(linker, rel, target.range), excerpt, graph && graphPart(graph), graph && callersPart(graph, linker)]
   return parts.filter((part): part is string => typeof part === 'string').join('\n\n')
 }
