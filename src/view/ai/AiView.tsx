@@ -1,6 +1,5 @@
 import type { CliStatus } from '../../../shared/settings'
 import { CLI_NAMES } from '../../model/picker'
-import JevSettings from '../jev/JevSettings'
 import { loginText } from './login'
 import { chooseAi, refreshAi, useAi } from './useAi'
 
@@ -47,7 +46,7 @@ export default function AiView() {
     <section className="conventions">
       <header className="canvas-header">
         <h2>AI</h2>
-        <p className="canvas-path">Runs through the Claude Code or Codex CLI already signed in on this machine, never through an API key. Jev, below, is optional and the only part that takes one.</p>
+        <p className="canvas-path">Runs through the Claude Code or Codex CLI already signed in on this machine, never through an API key.</p>
       </header>
 
       <div className="fn-bar">
@@ -71,11 +70,6 @@ export default function AiView() {
       )}
 
       <ol className="cv-list">{state?.clis.map(card)}</ol>
-
-      <h3 className="cv-heading">Same behavior search</h3>
-      <ol className="cv-list">
-        <JevSettings />
-      </ol>
 
       <h3 className="cv-heading">What uses it</h3>
       <p className="cv-note">{USES} The Functions page and the Tree only ever show facts read from the code, never AI text.</p>

@@ -27,7 +27,7 @@ import { readTabTitle } from '../git/title'
 import * as github from '../github/github'
 import { search } from '../search/search'
 import { openRepoBranch } from './repo'
-import { claimFor, claims, compares, holderOf, hostOf, releaseRoot, stopCompare } from './windows'
+import { claimFor, claims, compares, holderOf, hostOf, stopCompare } from './windows'
 
 function handleIn<A extends unknown[], R>(
   channel: string,
@@ -45,7 +45,7 @@ function handleIn<A extends unknown[], R>(
   })
 }
 
-function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) {
+export function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>) {
   handleIn<A, R>(channel, (_window, ...args) => fn(...args))
 }
 
@@ -116,7 +116,9 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
     if (!root) throw new Error('no project open in this tab')
     return search(root, query)
   })
-  handleIn('architect:release-root', (window) => releaseRoot(window.id))
+  handleIn('architect:release-root', (window) => {
+    claims.delete(window.id)
+  })
   handle('architect:focus-root', (root: string) => {
     const holder = holderOf(root)
     holder?.focus()

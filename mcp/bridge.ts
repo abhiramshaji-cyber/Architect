@@ -58,7 +58,6 @@ export const evidence = (input: EvidenceInput, socketPath = SOCKET_PATH) =>
 export const similarBehavior = (input: { file: string; symbol: string }, socketPath = SOCKET_PATH) =>
   callTool({ op: 'similar_behavior', ...input }, socketPath, String)
 
-export const jevStatus = (socketPath = SOCKET_PATH) => callTool({ op: 'jev_status' }, socketPath, (result) => JSON.stringify(result, null, 2))
 
 function main() {
   const server = new McpServer({ name: 'architect', version: '0.1.0' })
@@ -176,7 +175,7 @@ function main() {
     'similar_behavior',
     {
       description:
-        'Find existing functions that implement the same behavior as one function, before writing a new one or changing one copy. Pass file and symbol. Needs Jev turned on in Architect with a TypeSafe API key; when it is off the answer says so and nothing is sent anywhere, and when it is paused (TypeSafe refused the key, the account is out of credit, or the monthly budget is reached) the answer is that reason, never a search result. Candidates come from a classification index of every function, built by TypeSafe Jev from each function\'s source, signature and the names of its callers and callees, plus the structural match the where tool would give. Each candidate is then confirmed by asking Jev whether the two functions implement the same responsibility. Returns markdown listing only confirmed matches, each with its file:line, the probability Jev gave, whether it is also a structural match or found by Jev only, and a one line comparison of inputs and outputs from the scan, plus notes on what was not searched.',
+        'Find existing functions that implement the same behavior as one function, before writing a new one or changing one copy. Pass file and symbol. Runs locally in Architect with no network call: it compares the shape of every function body from the TypeScript syntax tree, with parameter and local names, types, comments and formatting ignored. Returns markdown listing exact clones (the same shape), near clones (at least 70% of the shape in common, in order) and structural matches (functions that call the same functions or are called by the same callers, as the where tool finds), each with its file:line and how much of the shape it shares. Test files and functions too short to compare are left out, and the answer says so.',
       inputSchema: {
         file: z.string().describe('path of the file, relative to the project root or the working directory'),
         symbol: z.string().describe('function name, or Class.method'),
@@ -184,8 +183,6 @@ function main() {
     },
     (input) => similarBehavior(input),
   )
-
-  server.registerTool('jev_status', { description: 'Report the state of Jev behavior search for this project, as JSON: enabled (on or off), key.set (whether a TypeSafe API key is stored, never the key itself), root, paused (null, or why every Jev request is stopped: TypeSafe refused the key, the account is out of credit, or the monthly token budget would be exceeded; nothing is sent until the user acts in Architect), index (status queued behind another project, running, done, partial when some functions failed and will be retried, paused, stopped, failed or idle, with indexed and total function counts, failed requests and the last error), usage (input tokens and requests sent to TypeSafe for this project, estimated cost in US dollars and the price per million input tokens it assumes), and budget (the optional monthly input token limit, null when off, with the tokens and cost used this month across projects). Call it before similar_behavior to see whether the index is ready.', inputSchema: {} }, () => jevStatus())
 
   const transport = new StdioServerTransport()
   server.connect(transport)

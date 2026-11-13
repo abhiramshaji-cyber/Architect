@@ -26,7 +26,7 @@ export const IGNORED_DIRS = new Set([
 
 const YIELD_EVERY = 50
 
-const SCRIPT_KINDS = new Map<string, ts.ScriptKind>([
+export const SCRIPT_KINDS = new Map<string, ts.ScriptKind>([
   ['.ts', ts.ScriptKind.TS],
   ['.mts', ts.ScriptKind.TS],
   ['.cts', ts.ScriptKind.TS],
@@ -39,7 +39,7 @@ const SCRIPT_KINDS = new Map<string, ts.ScriptKind>([
 
 type Found = { entry: FunctionEntry; node: ts.Node; owner: string; self: string }
 
-function valueOf(node: ts.Node): ts.Node | undefined {
+export function valueOf(node: ts.Node): ts.Node | undefined {
   if (ts.isExportAssignment(node)) return node.expression
   if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node) || ts.isPropertyAssignment(node)) return node.initializer
   return node
