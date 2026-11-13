@@ -4,6 +4,7 @@ import '@xyflow/react/dist/style.css'
 import type { FunctionList, FunctionRow } from '../../../shared/types'
 import { callersOf, type Way } from '../functions/facts/calls'
 import { CARD_H, layoutOf, type Spot } from '../functions/tree/layout'
+import SameBehavior from '../jev/SameBehavior'
 import FocusCard, { type FocusNode } from './FocusCard'
 import { CENTER, SIDE_H, graphOf } from './graph'
 import { keyOf, placeOf, resolve, walk, type Step, type Trail } from './history'
@@ -80,6 +81,14 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
     [place, limits],
   )
   const onWiden = useCallback(() => onScope(''), [onScope])
+  const onPick = useCallback(
+    (file: string, line: number) => {
+      const to = rows.findIndex((row) => row.file === file && row.line === line)
+      if (to >= 0) onGo(to)
+      else onScope('')
+    },
+    [rows, onGo, onScope],
+  )
 
   const sides = useMemo(() => sidesOf(list, callers, at, limits), [list, callers, at, limits])
   const graph = useMemo(() => (sides ? graphOf(at, sides) : null), [at, sides])
@@ -162,6 +171,11 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
         <Panel position="top-left">
           {steps}
         </Panel>
+        {rows[at] && (
+          <Panel position="top-right">
+            <SameBehavior key={place} row={rows[at]} onPick={onPick} />
+          </Panel>
+        )}
         <Background gap={26} size={1} />
         <Controls showInteractive={false} />
       </ReactFlow>

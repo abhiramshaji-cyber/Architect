@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { app, BrowserWindow, dialog, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeImage, safeStorage, Tray } from 'electron'
 import { SOCKET_PATH } from '../shared/socket'
 import type { Architecture, CodeMap, HistoryEntry, ProjectSummary, ReviewState } from '../shared/types'
 import { wireIpc } from './app/ipc'
@@ -8,6 +8,8 @@ import { opensAtLogin } from './app/login'
 import { broadcast, createWindow, killEveryPty, openFolders, openRoot, tabs } from './app/windows'
 import { createDaemon } from './daemon'
 import { loginPath } from './env'
+import { createJev } from './jev'
+import { wireJevIpc } from './jev/ipc'
 
 const TRAY_ICON = nativeImage.createFromPath(
   path.join(import.meta.dirname, '../../assets/trayTemplate.png'),
@@ -15,7 +17,17 @@ const TRAY_ICON = nativeImage.createFromPath(
 TRAY_ICON.setTemplateImage(true)
 
 const socketPath = process.env.ARCHITECT_SOCKET ?? (app.isPackaged ? SOCKET_PATH : `${SOCKET_PATH}-dev`)
-const daemon = createDaemon({ socketPath })
+const daemon = createDaemon({ socketPath, behavior: (root, file, symbol) => jev.similarBehavior(root, file, symbol) })
+const jev = createJev({
+  dir: path.join(app.getPath('userData'), 'jev'),
+  settings: path.join(path.dirname(socketPath), 'settings.json'),
+  crypt: safeStorage,
+  load: async (root) => {
+    if (!daemon.projects().some((project) => project.root === root)) throw new Error(`${root} is not open in Architect`)
+    return { map: daemon.codeMap(root) ?? (await daemon.rescan(root)), architecture: (await daemon.open(root)).architecture }
+  },
+  onProgress: (progress) => broadcast('architect:jev', progress),
+})
 let tray: Tray | null = null
 
 // dev and screenshot runs share userData with the installed app, so a lock there would quit them
@@ -50,6 +62,7 @@ app.whenReady().then(async () => {
   if (!primary) return
   if (process.platform !== 'win32') process.env.PATH = await loginPath(process.env)
   wireIpc(daemon, path.dirname(socketPath))
+  wireJevIpc(jev)
   createTray()
 
   daemon.onChange((root: string, architecture: Architecture) => {
@@ -63,6 +76,7 @@ app.whenReady().then(async () => {
   })
   daemon.onCodeMap((root: string, map: CodeMap) => {
     broadcast('architect:code-map-update', root, map)
+    if (jev.ready()) jev.index(root)
   })
   daemon.onSession((root: string, file: string) => void openRoot(root, file))
   daemon.onReview((state: ReviewState) => {

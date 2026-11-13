@@ -54,6 +54,9 @@ export type EvidenceInput = Omit<Extract<RequestInput, { op: 'evidence' }>, 'op'
 export const evidence = (input: EvidenceInput, socketPath = SOCKET_PATH) =>
   callTool({ op: 'evidence', ...input }, socketPath, String)
 
+export const similarBehavior = (input: { file: string; symbol: string }, socketPath = SOCKET_PATH) =>
+  callTool({ op: 'similar_behavior', ...input }, socketPath, String)
+
 function main() {
   const server = new McpServer({ name: 'architect', version: '0.1.0' })
 
@@ -164,6 +167,19 @@ function main() {
       },
     },
     (input) => evidence(input),
+  )
+
+  server.registerTool(
+    'similar_behavior',
+    {
+      description:
+        'Find existing functions that implement the same behavior as one function, before writing a new one or changing one copy. Pass file and symbol. Needs Jev turned on in Architect with a TypeSafe API key; when it is off the answer says so and nothing is sent anywhere. Candidates come from a classification index of every function, built by TypeSafe Jev from each function\'s source, signature and the names of its callers and callees, plus the structural match the where tool would give. Each candidate is then confirmed by asking Jev whether the two functions implement the same responsibility. Returns markdown listing only confirmed matches, each with its file:line, the probability Jev gave, whether it is also a structural match or found by Jev only, and a one line comparison of inputs and outputs from the scan, plus notes on what was not searched.',
+      inputSchema: {
+        file: z.string().describe('path of the file, relative to the project root or the working directory'),
+        symbol: z.string().describe('function name, or Class.method'),
+      },
+    },
+    (input) => similarBehavior(input),
   )
 
   const transport = new StdioServerTransport()

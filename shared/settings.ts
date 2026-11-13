@@ -18,7 +18,7 @@ export type AiFailure = { reason: DraftFailure; at: number }
 
 export type AiState = { choice: AiChoice; clis: CliStatus[]; failure: AiFailure | null }
 
-export type Settings = { review: boolean; conventions: boolean; ai: AiChoice }
+export type Settings = { review: boolean; conventions: boolean; ai: AiChoice; jev: boolean }
 
 function stored(file: string): Record<string, unknown> {
   try {
@@ -46,7 +46,7 @@ export function aiChoiceOf(raw: unknown): AiChoice {
 
 export function readSettings(file: string): Settings {
   const raw = stored(file)
-  return { review: raw.review === true, conventions: raw.conventions === true, ai: aiChoiceOf(raw.ai) }
+  return { review: raw.review === true, conventions: raw.conventions === true, ai: aiChoiceOf(raw.ai), jev: raw.jev === true }
 }
 
 export function saveSettings(file: string, patch: Partial<Settings>): void {
