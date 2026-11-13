@@ -4,7 +4,9 @@ import { type Cli, cliOf } from './cli'
 
 const STATUS_MS = 15_000
 const CLAUDE_MODELS = ['haiku', 'sonnet', 'opus']
-const SUBSCRIPTIONS = ['claude.ai', 'oauth_token']
+const SUBSCRIPTION = 'claude.ai'
+
+export const CLAUDE_SETTINGS = ['--setting-sources', 'user', '--settings', '{"disableAllHooks":true}']
 
 type Signed = { login: Login; detail: string }
 
@@ -20,13 +22,13 @@ function objectOf(text: string): Record<string, unknown> | null {
 }
 
 async function claudeLogin(cli: Cli): Promise<Signed> {
-  const out = await quick(cli, ['auth', 'status', '--json'])
+  const out = await quick(cli, [...CLAUDE_SETTINGS, 'auth', 'status', '--json'])
   const auth = objectOf(out.stdout.trim())
   if (!auth || typeof auth.loggedIn !== 'boolean') return { login: 'unreadable', detail: (out.stderr || out.stdout).trim() }
   if (!auth.loggedIn) return { login: 'logged-out', detail: '' }
 
   const method = String(auth.authMethod)
-  if (!SUBSCRIPTIONS.includes(method)) return { login: 'api-key', detail: method }
+  if (method !== SUBSCRIPTION) return { login: 'api-key', detail: method }
   return { login: 'ready', detail: typeof auth.subscriptionType === 'string' ? `${auth.subscriptionType} plan` : method }
 }
 

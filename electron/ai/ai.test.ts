@@ -16,7 +16,7 @@ function fake(name: string, script: string) {
   fs.writeFileSync(file, `#!/bin/sh\n${script}\n`, { mode: 0o755 })
 }
 
-const auth = (method: string, loggedIn = true) => `if [ "$1" = auth ]; then echo '{"loggedIn": ${loggedIn}, "authMethod": "${method}", "subscriptionType": "max"}'; exit 0; fi`
+const auth = (method: string, loggedIn = true) => `if [ "$5" = auth ]; then echo '{"loggedIn": ${loggedIn}, "authMethod": "${method}", "subscriptionType": "max"}'; exit 0; fi`
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-'))
@@ -46,12 +46,12 @@ describe('aiChoiceOf', () => {
 describe('cli', () => {
   it('finds a binary on the PATH and strips every API key from the env', async () => {
     fake('claude', 'exit 0')
-    fake('codex', 'echo "a=${ANTHROPIC_API_KEY:-} b=${ANTHROPIC_AUTH_TOKEN:-} c=${OPENAI_API_KEY:-} d=${CODEX_API_KEY:-}"')
+    fake('codex', 'echo "a=${ANTHROPIC_API_KEY:-} b=${ANTHROPIC_AUTH_TOKEN:-} c=${OPENAI_API_KEY:-} d=${CODEX_API_KEY:-} e=${CLAUDE_CODE_OAUTH_TOKEN:-}"')
     expect(cliOf('claude')?.bin).toBe(path.join(dir, 'bin', 'claude'))
-    Object.assign(process.env, { ANTHROPIC_API_KEY: 'k', ANTHROPIC_AUTH_TOKEN: 't', OPENAI_API_KEY: 'k', CODEX_API_KEY: 'k' })
+    Object.assign(process.env, { ANTHROPIC_API_KEY: 'k', ANTHROPIC_AUTH_TOKEN: 't', OPENAI_API_KEY: 'k', CODEX_API_KEY: 'k', CLAUDE_CODE_OAUTH_TOKEN: 't' })
     const out = await cliOf('codex')?.exec([], '', { cwd: dir, timeoutMs: 5000 })
-    for (const key of ['ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY']) delete process.env[key]
-    expect(out?.stdout.trim()).toBe('a= b= c= d=')
+    for (const key of ['ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) delete process.env[key]
+    expect(out?.stdout.trim()).toBe('a= b= c= d= e=')
   })
 
   it('reports claude missing when nothing is installed', async () => {
@@ -64,6 +64,8 @@ describe('statusOf', () => {
     fake('claude', auth('claude.ai'))
     expect(await statusOf('claude')).toEqual({ provider: 'claude', login: 'ready', detail: 'max plan', models: ['haiku', 'sonnet', 'opus'] })
     fake('claude', auth('api_key'))
+    expect((await statusOf('claude')).login).toBe('api-key')
+    fake('claude', auth('oauth_token'))
     expect((await statusOf('claude')).login).toBe('api-key')
     fake('claude', auth('none', false))
     expect((await statusOf('claude')).login).toBe('logged-out')
@@ -95,7 +97,7 @@ describe('aiRun', () => {
     saveSettings(path.join(dir, 'settings.json'), { ai: { connected: true, provider: 'claude', models: { claude: 'sonnet', codex: 'gpt-6-luna' } } })
     const out = await aiRun(dir)('hello', dir)
     expect(out).toMatchObject({ code: 0, cli: 'claude' })
-    expect(out.stdout).toContain('args=--print --model sonnet')
+    expect(out.stdout).toContain('args=--print --setting-sources user --settings {"disableAllHooks":true} --tools  --model sonnet')
     expect(out.stdout).toContain('key=none said=hello')
   })
 
