@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { plural } from '../../../shared/text/plural'
 import type { ChangedFile, GitStatus, GithubPull } from '../../../shared/types'
 import { draftMessage, githubMessage, gitMessage } from '../../model/picker'
 import { Files, type Selected } from './Files'
@@ -123,7 +124,7 @@ export function BranchBox({
     <section className="diff-section">
       <div className="diff-branch-row">
         <button className="diff-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {`${open ? '▾' : '▸'} ${commits} ${commits === 1 ? 'commit' : 'commits'} ahead${base ? ` of ${base}` : ''}`}
+          {`${open ? '▾' : '▸'} ${plural(commits, 'commit')} ahead${base ? ` of ${base}` : ''}`}
         </button>
         {existing && (
           <a href={existing.url} target="_blank" rel="noreferrer">

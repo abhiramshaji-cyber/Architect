@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Churn } from '../../../shared/recency'
+import { errorText } from '../../../shared/text/error'
 import type { CodeMap, FunctionList, StyleFile } from '../../../shared/types'
 import { useProject } from '../../model/store'
 import { type MapNode, nest } from './layout/nest'
@@ -32,7 +33,7 @@ function useAsked<T>(
       (value) => live && setFound({ root, value, error: null, answered: true }),
       (err: unknown) =>
         live &&
-        setFound({ root, value: null, error: err instanceof Error ? err.message : String(err), answered: true }),
+        setFound({ root, value: null, error: errorText(err), answered: true }),
     )
     return () => {
       live = false

@@ -1,3 +1,4 @@
+import { counted } from './home'
 import type { Fn, Resolved } from './refs'
 
 export type Match = { name: string; at: string; callees: string[]; callers: string[] }
@@ -8,7 +9,6 @@ const at = (fn: Fn | undefined) => (fn ? `${fn.file}:${fn.line} ${fn.name}` : ''
 
 export function similarOf(fns: Fn[], edges: number[][], calls: Resolved[], callers: Resolved[]): Similar {
   const out = edges.map((targets) => new Set(targets))
-  const counted = (ref: Resolved) => ref.status === 'function' || ref.status === 'file'
   const wanted = calls.filter(counted)
   const calling = callers.filter(counted)
 

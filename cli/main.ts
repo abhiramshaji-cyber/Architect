@@ -1,3 +1,4 @@
+import { errorText } from '../shared/text/error'
 import { run, USAGE } from './check'
 
 run(
@@ -9,6 +10,6 @@ run(
     process.exitCode = code
   })
   .catch((error: unknown) => {
-    process.stderr.write(`architect: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.stderr.write(`architect: ${errorText(error)}\n`)
     process.exitCode = USAGE
   })

@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MAX_DIFF_BYTES, type ChangedFile, type DiffSection } from '../../shared/types'
-import { branchPatch, changes, fileDiff, mergeBase, stageAll, stagedPatch, stageFile, unstageFile } from './diff'
+import { branchPatch, changes, fileDiff, mergeBase, parseChanges, stageAll, stagedPatch, stageFile, unstageFile } from './diff'
 
 const roots: string[] = []
 
@@ -76,6 +76,25 @@ async function hunksOf(root: string, id: DiffSection, file: ChangedFile, full = 
 
 afterAll(() => {
   for (const root of roots) fs.rmSync(root, { recursive: true, force: true })
+})
+
+describe('parseChanges', () => {
+  it('pairs each raw record with its numstat counts in one listing', () => {
+    const raw = [':100644 100644 aaa bbb M', 'bin', ':000000 100644 000 ccc A', 'n.txt', ':100644 100644 ddd eee M', 'ta\tb.txt', ':100644 100644 fff ggg R085', 'one.txt', 'two.txt', ':100644 000000 hhh 000 D', 'gone.txt']
+    const numstat = ['-\t-\tbin', '1\t0\tn.txt', '1\t1\tta\tb.txt', '1\t0\t', 'one.txt', 'two.txt', '0\t3\tgone.txt']
+    expect(parseChanges([...raw, ...numstat, ''].join('\0'))).toEqual([
+      { path: 'bin', from: null, status: 'modified', similarity: null, added: null, removed: null, binary: true },
+      { path: 'n.txt', from: null, status: 'added', similarity: null, added: 1, removed: 0, binary: false },
+      { path: 'ta\tb.txt', from: null, status: 'modified', similarity: null, added: 1, removed: 1, binary: false },
+      { path: 'two.txt', from: 'one.txt', status: 'renamed', similarity: 85, added: 1, removed: 0, binary: false },
+      { path: 'gone.txt', from: null, status: 'deleted', similarity: null, added: 0, removed: 3, binary: false },
+    ])
+  })
+
+  it('leaves counts empty for a file numstat did not list and reads nothing from empty output', () => {
+    expect(parseChanges(':100644 100644 aaa bbb T\0link\0')).toEqual([{ path: 'link', from: null, status: 'typechanged', similarity: null, added: null, removed: null, binary: false }])
+    expect(parseChanges('')).toEqual([])
+  })
 })
 
 describe('changes', () => {

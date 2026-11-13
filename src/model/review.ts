@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { errorText } from '../../shared/text/error'
 import type { Architecture, ReviewItem, ReviewState } from '../../shared/types'
 
 export type Mark = 'added' | 'removed' | 'changed' | 'touched'
@@ -17,7 +18,7 @@ function set(patch: Partial<Store>): void {
 }
 
 function failed(err: unknown): void {
-  set({ error: err instanceof Error ? err.message : String(err) })
+  set({ error: errorText(err) })
 }
 
 function subscribe(listen: () => void): () => void {

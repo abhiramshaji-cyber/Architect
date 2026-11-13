@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 
 export function useWork<Kind extends string>() {
   const [busy, setBusy] = useState<Kind | null>(null)
@@ -10,7 +11,7 @@ export function useWork<Kind extends string>() {
     try {
       setNote(await run())
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err))
+      setNote(errorText(err))
     } finally {
       setBusy(null)
     }

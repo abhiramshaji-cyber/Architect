@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { CodeMap, FunctionList } from '../../../shared/types'
 
 export type Functions = {
@@ -24,7 +25,7 @@ export function useFunctions(root: string | null, codeMap: CodeMap | null | unde
         if (live) setFound({ list, error: null, asked: { root, scope } })
       },
       (err: unknown) => {
-        if (live) setFound((prev) => ({ ...prev, error: err instanceof Error ? err.message : String(err) }))
+        if (live) setFound((prev) => ({ ...prev, error: errorText(err) }))
       },
     )
     return () => {

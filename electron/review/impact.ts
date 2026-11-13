@@ -1,3 +1,4 @@
+import { errorText } from '../../shared/text/error'
 import type {
   Architecture,
   DiffHunk,
@@ -78,7 +79,7 @@ async function proposalDetail(item: Extract<ReviewItem, { kind: 'proposal' }>, a
   try {
     after = proposed(architecture, proposal)
   } catch (err) {
-    return { ...empty, after: null, hunks: [], error: err instanceof Error ? err.message : String(err) }
+    return { ...empty, after: null, hunks: [], error: errorText(err) }
   }
 
   const text = proposal.kind === 'contract' ? proposal.markdown : serialize(after)

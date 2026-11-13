@@ -1,7 +1,9 @@
+import { plural as words } from '../../../shared/text/plural'
+
 const STEPS = [1, 2, 3, 4, 5]
 
 export function plural(count: number, word: string): string {
-  return `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`
+  return words(count, word, count.toLocaleString())
 }
 
 export default function Mark({ importance }: { importance: number }) {

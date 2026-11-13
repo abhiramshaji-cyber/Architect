@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { realPath } from '../../shared/disk/real'
 import { readSettings, saveSettings } from '../../shared/settings'
+import { errorText } from '../../shared/text/error'
 import {
   EDIT_TIMEOUT_MS,
   PROPOSAL_TIMEOUT_MS,
@@ -22,15 +24,6 @@ export { functionImpact, ownersOf } from './impact'
 
 type Timeouts = { proposal?: number; edit?: number }
 
-function real(target: string): string {
-  try {
-    return fs.realpathSync.native(target)
-  } catch {
-    const parent = path.dirname(target)
-    return parent === target ? target : path.join(real(parent), path.basename(target))
-  }
-}
-
 async function current(file: string): Promise<string | null> {
   try {
     return await fs.promises.readFile(file, 'utf8')
@@ -48,7 +41,7 @@ function adopted(item: Extract<ReviewItem, { kind: 'proposal' }>, adopt: (root: 
   try {
     return adopt(item.root, item.proposal)
   } catch (err) {
-    return { status: 'rejected', reason: err instanceof Error ? err.message : String(err) }
+    return { status: 'rejected', reason: errorText(err) }
   }
 }
 
@@ -87,8 +80,8 @@ export function createReview(dir: string, notify: (state: ReviewState) => void, 
   async function gate(roots: string[], change: CodeChange, signal?: AbortSignal): Promise<Decision | null> {
     if (!enabled) return null
 
-    const aliases = new Map(roots.flatMap((root) => [[real(root), root] as const, [root, root] as const]))
-    const place = rootOf(aliases, [path.resolve(change.file), real(path.resolve(change.file))])
+    const aliases = new Map(roots.flatMap((root) => [[realPath(root), root] as const, [root, root] as const]))
+    const place = rootOf(aliases, [path.resolve(change.file), realPath(path.resolve(change.file))])
     if (!place) return null
 
     const before = await current(place.file)

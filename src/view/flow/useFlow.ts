@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { Architecture, Flow, FlowAsk, FunctionList } from '../../../shared/types'
 
 export type Found = { flow: Flow | null; error: string | null }
@@ -26,7 +27,7 @@ export function useFlow(
         if (live) setFound({ flow, error: null })
       },
       (err: unknown) => {
-        if (live) setFound({ flow: null, error: err instanceof Error ? err.message : String(err) })
+        if (live) setFound({ flow: null, error: errorText(err) })
       },
     )
     return () => {

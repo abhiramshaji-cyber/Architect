@@ -1,4 +1,5 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { Architecture, DraftFailure } from '../../../shared/types'
 import { draftMessage } from '../../model/picker'
 import { AiText } from '../ai/AiText'
@@ -61,7 +62,7 @@ export default function ChatPanel({ root, architecture, view, onView, onOpenAi }
       if (live.current && applied.view !== current.current) onView(applied.view)
       add({ asker: false, text: result.value.text, notes: applied.notes })
     } catch (err) {
-      add({ asker: false, text: '', error: err instanceof Error ? err.message : String(err) })
+      add({ asker: false, text: '', error: errorText(err) })
     } finally {
       if (live.current) setPending(false)
     }

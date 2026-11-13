@@ -5,7 +5,7 @@ Architect is a drag and drop architecture canvas with an MCP server that makes t
 ## Components
 
 ### types
-The wire protocol and the domain types, shared by all three processes.
+The wire protocol and the domain types, shared by all three processes. Also the small text formatters every process reuses, and the disk lookups the main process components share.
 owns: `shared/**`
 
 ### graph
@@ -167,6 +167,7 @@ owns: `lsp/**`
 - agents -> types
 - agents -> rules
 - rules -> journal
+- journal -> types
 - daemon -> types
 - daemon -> graph
 - daemon -> draft
@@ -281,7 +282,7 @@ owns: `lsp/**`
 - names: Manager, Helper, Service, Factory, Base
 - jobs: 1
 - split: 50 lines, 3 callers
-- lines: 203 `electron/app/ipc.ts`
+- lines: 204 `electron/app/ipc.ts`
 - lines: 215 `src/view/ContractView.tsx`
 - lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
 - lines: 272 `electron/git/open.ts`
@@ -302,7 +303,7 @@ owns: `lsp/**`
 - files: 9 `src/shell`
 - files: 13 `src/model`
 - files: 22 `src/view`
-- jobs: 2 `electron/contract/history.ts`, `electron/contract/infer.ts`, `electron/draft/flow/evidence.ts`, `electron/functions/facts.ts`, `electron/functions/summary/verbs.ts`, `electron/git/diff/file.ts`, `electron/git/diff/hunks.ts`, `electron/git/diff/parse.ts`, `electron/github/github.ts`, `electron/review/change.ts`, `electron/rules/syntax.ts`, `electron/tabs.ts`, `shared/folders.ts`, `shared/recency.ts`, `src/model/buffer.ts`, `src/model/language.ts`, `src/model/recency.ts`, `src/shell/chords.ts`, `src/shell/leaderKey.ts`, `src/shell/views.ts`, `src/view/SplitDiff.tsx`, `src/view/diff/BranchBox.tsx`, `src/view/functions/Mark.tsx`, `src/view/functions/facts/Related.tsx`, `src/view/functions/facts/calls.ts`, `src/view/focus/history.ts`
+- jobs: 2 `electron/agents/write.ts`, `electron/contract/history.ts`, `electron/contract/infer.ts`, `electron/draft/flow/evidence.ts`, `electron/functions/facts.ts`, `electron/functions/summary/verbs.ts`, `electron/git/diff/file.ts`, `electron/git/diff/hunks.ts`, `electron/git/diff/parse.ts`, `electron/github/github.ts`, `electron/review/change.ts`, `electron/rules/syntax.ts`, `electron/tabs.ts`, `shared/folders.ts`, `shared/recency.ts`, `src/model/buffer.ts`, `src/model/language.ts`, `src/model/recency.ts`, `src/shell/chords.ts`, `src/shell/leaderKey.ts`, `src/shell/views.ts`, `src/view/SplitDiff.tsx`, `src/view/diff/BranchBox.tsx`, `src/view/functions/Mark.tsx`, `src/view/functions/facts/Related.tsx`, `src/view/functions/facts/calls.ts`, `src/view/focus/history.ts`
 - jobs: 3 `electron/app/launch.ts`, `electron/functions/scope.ts`, `electron/scan/traits.ts`, `lsp/features.ts`, `src/shell/pane-tree.ts`, `src/view/editor/trail.ts`, `src/view/segments.ts`
 - jobs: 4 `electron/app/windows.ts`, `src/model/codemap.ts`, `src/model/live/recent.ts`, `src/view/editor/symbols.ts`, `src/view/functions/scope/pick.ts`
 - jobs: 5 `electron/contract/graph.ts`, `electron/git/diff/changes.ts`, `src/model/layout.ts`, `src/model/live/history.ts`, `src/model/store.ts`, `src/model/tree.ts`

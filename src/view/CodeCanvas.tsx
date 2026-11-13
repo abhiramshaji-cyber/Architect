@@ -10,6 +10,7 @@ import {
   type Node,
   type NodeProps
 } from '@xyflow/react'
+import { plural } from '../../shared/text/plural'
 import '@xyflow/react/dist/style.css'
 import type { CodeMap, SourceWindow } from '../../shared/types'
 import {
@@ -57,10 +58,6 @@ function card(kind: string, picked: boolean) {
 
 function cssVar(name: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-}
-
-function plural(n: number, one: string) {
-  return `${n} ${one}${n === 1 ? '' : 's'}`
 }
 
 function Open({ path, name }: { path: string; name: string }) {

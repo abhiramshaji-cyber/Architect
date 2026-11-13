@@ -1,3 +1,4 @@
+import { plural } from '../../shared/text/plural'
 import { git } from '../git/git'
 
 export type Repo = { owner: string; name: string }
@@ -36,7 +37,7 @@ export function permalink(repo: Repo, commit: string, file: string, start: numbe
 function driftOf(sha: string, upstream: string, counts: string): string | null {
   const [ahead = 0, behind = 0] = counts.trim().split(/\s+/).map(Number)
   if (ahead === 0 && behind === 0) return null
-  const gap = [ahead > 0 ? `${ahead} commit${ahead === 1 ? '' : 's'} ahead of` : '', behind > 0 ? `${behind} commit${behind === 1 ? '' : 's'} behind` : ''].filter(Boolean).join(' and ')
+  const gap = [ahead > 0 ? `${plural(ahead, 'commit')} ahead of` : '', behind > 0 ? `${plural(behind, 'commit')} behind` : ''].filter(Boolean).join(' and ')
   return `Note: the link points at local commit ${sha.slice(0, 7)}, which is ${gap} ${upstream}; that commit is on origin, so the link resolves.`
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { Coupling, CouplingAsk } from '../../../shared/types'
 import { gitMessage } from '../../model/picker'
 
@@ -13,7 +14,7 @@ export function useCoupling(root: string | null, ask: CouplingAsk, codeMap: unkn
     let live = true
     window.architect.coupling(root, ask).then(
       (result) => live && setRead({ key, coupling: result.ok ? result.value : null, error: result.ok ? null : gitMessage(result.error) }),
-      (err: unknown) => live && setRead({ key, coupling: null, error: err instanceof Error ? err.message : String(err) }),
+      (err: unknown) => live && setRead({ key, coupling: null, error: errorText(err) }),
     )
     return () => {
       live = false

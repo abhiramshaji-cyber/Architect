@@ -19,7 +19,6 @@ import {
   push,
   remoteBranches,
   status,
-  unquotePath,
 } from "./git";
 
 const roots: string[] = [];
@@ -574,11 +573,6 @@ describe("parseWorktrees", () => {
     ]);
   });
 
-  it("unquotes a path git had to escape", () => {
-    expect(unquotePath('"/home/u/a\\nb"')).toBe("/home/u/a\nb");
-    expect(unquotePath('"/home/u/caf\\303\\251"')).toBe("/home/u/café");
-    expect(unquotePath("/home/u/plain")).toBe("/home/u/plain");
-  });
 });
 
 describe("parseStatus", () => {

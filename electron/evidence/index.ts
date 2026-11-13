@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { plural } from '../../shared/text/plural'
 import type { CodeMap, FileEntry, Request } from '../../shared/types'
 import { projectPath } from '../where/refs'
 import { excerptOf, type Range } from './excerpt'
@@ -20,8 +21,6 @@ const inside = (inner: { at: number; range: Range }, outer: { at: number; range:
   inner.at !== outer.at && holds(outer.range, inner.range) && (span(outer.range) > span(inner.range) || outer.at < inner.at)
 
 const linesOf = (range: Range) => (range.start === range.end ? `line ${range.start}` : `lines ${range.start}-${range.end}`)
-
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 
 const placeOf = (site: Graph['sites'][number]) => (site.line === undefined ? site.file : `${site.file}:${site.line}`)
 

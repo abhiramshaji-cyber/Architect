@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
+import { plural } from '../../../shared/text/plural'
 import type { SearchResult } from '../../../shared/types'
 import { openFile } from '../../model/store'
 
@@ -12,7 +14,7 @@ function statusOf(found: Found, query: string): string {
   if (found.error !== null) return found.error
   const count = found.result?.hits.length ?? 0
   if (count === 0) return 'No results'
-  return found.result?.capped ? `First ${count} results` : `${count} ${count === 1 ? 'result' : 'results'}`
+  return found.result?.capped ? `First ${count} results` : plural(count, 'result')
 }
 
 export default function SearchPanel({ onClose }: { onClose: () => void }) {
@@ -30,7 +32,7 @@ export default function SearchPanel({ onClose }: { onClose: () => void }) {
     const timer = setTimeout(() => {
       window.architect.search(query).then(
         (result) => live && setFound({ query, result, error: null }),
-        (err: unknown) => live && setFound({ query, result: null, error: err instanceof Error ? err.message : String(err) })
+        (err: unknown) => live && setFound({ query, result: null, error: errorText(err) })
       )
     }, DEBOUNCE_MS)
     return () => {

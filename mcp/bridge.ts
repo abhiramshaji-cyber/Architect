@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { SOCKET_PATH } from '../shared/socket.js'
+import { errorText } from '../shared/text/error'
 import { isMain } from './entry.js'
 import { runHook } from './hook.js'
 import { send, type RequestInput } from './socket.js'
@@ -16,7 +17,7 @@ async function callTool(req: RequestInput, socketPath: string, render: (result: 
     const result = await send(req, socketPath)
     return { content: [{ type: 'text', text: render(result) }] }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = errorText(err)
     return { content: [{ type: 'text', text: message }], isError: true }
   }
 }

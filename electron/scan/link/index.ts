@@ -1,6 +1,6 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
+import { realPath } from '../../../shared/disk/real'
 import type { CallRef, FileStart, FunctionEntry } from '../../../shared/types'
 import { linked, type Links } from './exports'
 import { placeSites, type Raw } from './sites'
@@ -58,18 +58,10 @@ function resolversOf(root: string, files: string[]): (from: string) => ts.Compil
   }
 }
 
-function realRoot(root: string): string {
-  try {
-    return fs.realpathSync(root)
-  } catch {
-    return root
-  }
-}
-
 export function link(root: string, parsed: Map<string, Parsed>): Map<string, Links> {
   const optionsOf = resolversOf(root, [...parsed.keys()])
   const caches = new Map<ts.CompilerOptions, ts.ModuleResolutionCache>()
-  const bases = [...new Set([root, realRoot(root)])]
+  const bases = [...new Set([root, realPath(root)])]
 
   const target = (from: string, spec: string): string | undefined => {
     for (const options of optionsOf(from)) {

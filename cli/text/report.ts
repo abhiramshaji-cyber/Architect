@@ -1,3 +1,4 @@
+import { plural } from '../../shared/text/plural'
 import type { Architecture, FileSplit, FunctionSplit, RuleViolation, SplitSuggestion, Verdict } from '../../shared/types'
 
 export type Violation = { from: string; to: string; verdict: Verdict; evidence: { from: string; to: string }[] }
@@ -8,10 +9,6 @@ function describe(violation: Violation): string {
   if (violation.verdict.status === 'unknown-component') return `unknown component: ${violation.verdict.ids.join(', ')}`
   if (violation.verdict.status === 'unknown' && violation.verdict.reason) return `unknown: ${violation.verdict.reason}`
   return 'unknown'
-}
-
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
 }
 
 function overText(over: NonNullable<FileSplit['over']['lines']>, word: string): string {

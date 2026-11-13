@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { errorText } from '../../shared/text/error'
 import type {
   Architecture,
   CodeMap,
@@ -168,10 +169,6 @@ export function parseErrorOf(s: ProjectState): string | null {
 
 export function loadErrorOf(s: ProjectState): string | null {
   return s.currentRoot ? s.entries[s.currentRoot]?.error ?? null : null
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 function fail(err: unknown): void {

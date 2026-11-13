@@ -1,5 +1,5 @@
-import fs from 'node:fs'
 import path from 'node:path'
+import { realPath } from '../../shared/disk/real'
 import type { CodeMap } from '../../shared/types'
 
 export type Fn = { file: string; name: string; line: number; test: boolean }
@@ -12,22 +12,8 @@ export type Resolved = {
   matches: string[]
 }
 
-function real(target: string): string {
-  const rest: string[] = []
-  let dir = target
-  while (!fs.existsSync(dir) && path.dirname(dir) !== dir) {
-    rest.unshift(path.basename(dir))
-    dir = path.dirname(dir)
-  }
-  try {
-    return path.join(fs.realpathSync.native(dir), ...rest)
-  } catch {
-    return target
-  }
-}
-
 export function projectPath(root: string, cwd: string, file: string): string {
-  return path.relative(real(root), real(path.resolve(cwd, file))).split(path.sep).join('/')
+  return path.relative(realPath(root), realPath(path.resolve(cwd, file))).split(path.sep).join('/')
 }
 
 const at = (fn: Fn) => `${fn.file}:${fn.line}`
