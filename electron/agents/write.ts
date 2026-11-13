@@ -1,18 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { readText } from '../../shared/disk/read'
 import type { AgentsReport, Architecture } from '../../shared/types'
 import { IGNORED_DIRS } from '../scan/scan'
 import { MARKER, renderAgents } from './render'
 
 const NAME = 'AGENTS.md'
-
-function readText(file: string): string | undefined {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return undefined
-  }
-}
 
 function generatedIn(root: string, relative = ''): string[] {
   let entries: fs.Dirent[]

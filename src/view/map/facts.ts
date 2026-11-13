@@ -1,3 +1,4 @@
+import { plural } from '../../../shared/text/plural'
 import type { MapNode } from './layout/nest'
 import { churnOf, type Facts } from './modes/shade'
 import { RULES, scoreOf } from './style/score'
@@ -13,8 +14,6 @@ const KINDS: Record<MapNode['kind'], string> = {
   function: 'function',
   rest: 'lines outside functions',
 }
-
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
 
 function functionsUnder(node: MapNode): number[] {
   if (node.fn !== undefined) return [node.fn]

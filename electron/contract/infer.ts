@@ -1,3 +1,4 @@
+import { plural } from '../../shared/text/plural'
 import type { Architecture, CodeMap } from '../../shared/types'
 import type { AiRun } from '../ai'
 import { canonical, ownership } from './graph'
@@ -81,10 +82,9 @@ export function question(path: string, architecture: Architecture, map: CodeMap)
 
 export function promptFor(question: Question): string {
   const choices = question.choices.map((c) => `- ${c.id}: ${c.purpose || '(no stated purpose)'}`)
-  const plural = (n: number) => (n === 1 ? 'file' : 'files')
   const nearby = question.nearby.map(
     (n) =>
-      `- ${n.component}: ${n.folder} ${plural(n.folder)} in the same folder, ${n.calls} ${plural(n.calls)} it calls or is called by`,
+      `- ${n.component}: ${plural(n.folder, 'file')} in the same folder, ${plural(n.calls, 'file')} it calls or is called by`,
   )
 
   return [

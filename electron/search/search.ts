@@ -31,35 +31,43 @@ function parsed(row: string): RgEvent | null {
   }
 }
 
-export function parseRg(stdout: string, cap = MAX_HITS): SearchResult {
+function gathered(found: (SearchHit | null)[], cap: number): SearchResult {
   const hits: SearchHit[] = []
+  const perFile = new Map<string, number>()
 
-  for (const row of stdout.split('\n')) {
-    const event = row.startsWith('{') ? parsed(row) : null
-    if (event?.type !== 'match') continue
-    const file = decode(event.data?.path)
-    const text = decode(event.data?.lines)
-    const line = event.data?.line_number
-    if (file === null || text === null || typeof line !== 'number') continue
+  for (const each of found) {
+    if (!each) continue
+    const seen = perFile.get(each.file) ?? 0
+    if (seen === PER_FILE) continue
     if (hits.length === cap) return { hits, capped: true }
-    hits.push(hit(file, line, text))
+    perFile.set(each.file, seen + 1)
+    hits.push(each)
   }
 
   return { hits, capped: false }
 }
 
+function rgHit(row: string): SearchHit | null {
+  const event = row.startsWith('{') ? parsed(row) : null
+  if (event?.type !== 'match') return null
+  const file = decode(event.data?.path)
+  const text = decode(event.data?.lines)
+  const line = event.data?.line_number
+  return file === null || text === null || typeof line !== 'number' ? null : hit(file, line, text)
+}
+
+function gitGrepHit(row: string): SearchHit | null {
+  const [file, line, ...rest] = row.split('\0')
+  const number = Number(line)
+  return !file || rest.length === 0 || !Number.isInteger(number) || number < 1 ? null : hit(file, number, rest.join('\0'))
+}
+
+export function parseRg(stdout: string, cap = MAX_HITS): SearchResult {
+  return gathered(stdout.split('\n').map(rgHit), cap)
+}
+
 export function parseGitGrep(stdout: string, cap = MAX_HITS): SearchResult {
-  const hits: SearchHit[] = []
-
-  for (const row of stdout.split('\n')) {
-    const [file, line, ...rest] = row.split('\0')
-    const number = Number(line)
-    if (!file || rest.length === 0 || !Number.isInteger(number) || number < 1) continue
-    if (hits.length === cap) return { hits, capped: true }
-    hits.push(hit(file, number, rest.join('\0')))
-  }
-
-  return { hits, capped: false }
+  return gathered(stdout.split('\n').map(gitGrepHit), cap)
 }
 
 function run(command: string, args: string[], cwd: string): Promise<Ran> {

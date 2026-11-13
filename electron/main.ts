@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { app, BrowserWindow, dialog, Menu, nativeImage, safeStorage, Tray } from 'electron'
 import { SOCKET_PATH } from '../shared/socket'
+import { errorText } from '../shared/text/error'
 import type { Architecture, CodeMap, HistoryEntry, ProjectSummary, ReviewState } from '../shared/types'
 import { wireIpc } from './app/ipc'
 import { launchArgs } from './app/launch'
@@ -87,7 +88,7 @@ app.whenReady().then(async () => {
   try {
     await daemon.listen()
   } catch (err) {
-    dialog.showErrorBox('Architect could not start', err instanceof Error ? err.message : String(err))
+    dialog.showErrorBox('Architect could not start', errorText(err))
     app.quit()
     return
   }

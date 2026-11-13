@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { errorText } from '../../shared/text/error'
 import type { Architecture, Edit, EditStatus, EditSummary } from '../../shared/types'
 import { parse, serialize } from './graph'
 
@@ -68,7 +69,7 @@ export function listEdits(root: string): EditSummary[] {
     try {
       summaries.push({ id, status, title: parse(fs.readFileSync(path.join(dir, name), 'utf8')).title })
     } catch (err) {
-      summaries.push({ id, status, title: '', error: err instanceof Error ? err.message : String(err) })
+      summaries.push({ id, status, title: '', error: errorText(err) })
     }
   }
 

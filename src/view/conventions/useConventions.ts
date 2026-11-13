@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { Convention, Conventions } from '../../../shared/types'
 import { draftMessage } from '../../model/picker'
 
 type Ai = { busy: boolean; found: Convention[] | null; error: string | null }
 
 const idle: Ai = { busy: false, found: null, error: null }
-
-const text = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 export function useConventions(root: string | null, architecture: unknown) {
   const [state, setState] = useState<Conventions | null>(null)
@@ -25,7 +24,7 @@ export function useConventions(root: string | null, architecture: unknown) {
     const read = ++reads.current
     window.architect.conventions(root).then(
       (next) => read === reads.current && (setState(next), setError(null)),
-      (err: unknown) => read === reads.current && setError(text(err)),
+      (err: unknown) => read === reads.current && setError(errorText(err)),
     )
     return () => {
       reads.current++
@@ -39,7 +38,7 @@ export function useConventions(root: string | null, architecture: unknown) {
     const read = ++reads.current
     window.architect.setConventions(root, !state.enabled).then(
       (next) => read === reads.current && setState(next),
-      (err: unknown) => read === reads.current && setError(text(err)),
+      (err: unknown) => read === reads.current && setError(errorText(err)),
     )
   }, [root, state])
 
@@ -49,7 +48,7 @@ export function useConventions(root: string | null, architecture: unknown) {
     const settle = (next: Ai) => asked.current === root && setAi(next)
     window.architect.suggestConventions(root).then(
       (result) => settle(result.ok ? { busy: false, found: result.value, error: null } : { busy: false, found: null, error: draftMessage(result.error) }),
-      (err: unknown) => settle({ busy: false, found: null, error: text(err) }),
+      (err: unknown) => settle({ busy: false, found: null, error: errorText(err) }),
     )
   }, [root])
 
@@ -61,7 +60,7 @@ export function useConventions(root: string | null, architecture: unknown) {
         setError(null)
         return true
       } catch (err) {
-        setError(text(err))
+        setError(errorText(err))
         return false
       }
     },

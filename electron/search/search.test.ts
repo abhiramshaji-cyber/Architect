@@ -1,5 +1,20 @@
-import { describe, expect, it } from 'vitest'
-import { parseGitGrep, parseRg } from './search'
+import { execFile } from 'node:child_process'
+import { describe, expect, it, vi } from 'vitest'
+import { parseGitGrep, parseRg, search } from './search'
+
+vi.mock('node:child_process', () => ({ execFile: vi.fn() }))
+
+type Done = (error: unknown, stdout: string, stderr: string) => void
+
+const lines = (count: number, row: (n: number) => string) => Array.from({ length: count }, (_, i) => row(i + 1)).join('\n')
+
+function answer(rg: string | null, git: string) {
+  vi.mocked(execFile).mockImplementation(((command: string, _args: string[], _options: object, done: Done) => {
+    if (command === 'git') done(null, git, '')
+    else if (rg === null) done(Object.assign(new Error('spawn rg ENOENT'), { code: 'ENOENT' }), '', '')
+    else done(null, rg, '')
+  }) as unknown as typeof execFile)
+}
 
 const match = (path: object, line: number, lines: object) =>
   JSON.stringify({ type: 'match', data: { path, lines, line_number: line } })
@@ -25,6 +40,22 @@ describe('parseRg', () => {
   it('stops at the cap', () => {
     const out = [1, 2, 3].map((n) => match({ text: 'a' }, n, { text: 'x' })).join('\n')
     expect(parseRg(out, 2)).toEqual({ hits: [expect.anything(), expect.anything()], capped: true })
+  })
+})
+
+describe('search', () => {
+  const rg = lines(120, (n) => match({ text: './big.ts' }, n, { text: 'x' })) + '\n' + match({ text: './small.ts' }, 1, { text: 'x' })
+  const git = lines(120, (n) => `big.ts\u0000${n}\u0000x`) + '\nsmall.ts\u00001\u0000x\n'
+
+  it.each([
+    ['ripgrep', rg],
+    ['git grep', null],
+  ])('keeps at most 50 hits per file with %s', async (_backend, out) => {
+    answer(out, git)
+    const found = await search('/repo', 'x')
+    expect(found.capped).toBe(false)
+    expect(found.hits.filter((hit) => hit.file === 'big.ts')).toHaveLength(50)
+    expect(found.hits.filter((hit) => hit.file === 'small.ts')).toHaveLength(1)
   })
 })
 

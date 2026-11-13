@@ -1,5 +1,6 @@
 import picomatch from 'picomatch'
 import { findCycle } from '../../../shared/cycle'
+import { errorText } from '../../../shared/text/error'
 import type { Architecture, Component, DraftResult, Edge } from '../../../shared/types'
 import { parse, serialize } from '../../contract/graph'
 import type { Evidence } from './evidence'
@@ -116,7 +117,7 @@ export function validate(text: string, found: Evidence, title: string, scope = '
   try {
     parse(markdown)
   } catch (err) {
-    return unusable(err instanceof Error ? err.message : String(err))
+    return unusable(errorText(err))
   }
   return { ok: true, value: markdown }
 }

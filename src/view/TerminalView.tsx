@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import { errorText } from '../../shared/text/error'
 import '@xterm/xterm/css/xterm.css'
 import { useProject } from '../model/store'
 import type { PtyEvent } from '../../shared/types'
@@ -101,7 +102,7 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
         for (const event of early.splice(0)) if (event.id === session) consume(event)
         resize()
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => setError(errorText(err)))
 
     return () => {
       disposed = true

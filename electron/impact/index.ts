@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { errorText } from '../../shared/text/error'
 import type { Architecture, CodeMap, FileEntry } from '../../shared/types'
 import { ownership } from '../contract/graph'
 import { edgesOf } from '../functions/facts'
@@ -162,7 +163,7 @@ export async function impactFor(input: ImpactInput, root: string, architecture: 
     const impact = impactOf(input, root, architecture, map, Math.min(until, Date.now() + WORK_MS))
     return stale === null ? impact : { ...impact, notes: capped([`architect.md does not parse (${stale}); components come from the last version that parsed`, ...impact.notes]) }
   } catch (err) {
-    return failed('failed', `impact could not be worked out: ${err instanceof Error ? err.message : String(err)}`)
+    return failed('failed', `impact could not be worked out: ${errorText(err)}`)
   } finally {
     clearTimeout(timer)
   }

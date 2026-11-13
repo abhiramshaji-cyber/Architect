@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
+import { errorText } from '../../shared/text/error'
 import {
   type Architecture,
   type ChangedFile,
@@ -39,7 +40,7 @@ function handleIn<A extends unknown[], R>(
     try {
       return { ok: true, value: await fn(window, ...args) }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      return { ok: false, error: errorText(err) }
     }
   })
 }

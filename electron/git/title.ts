@@ -1,5 +1,5 @@
-import fs from 'node:fs'
 import path from 'node:path'
+import { realPath } from '../../shared/disk/real'
 import type { Head } from '../../shared/types'
 import { git, head } from './git'
 import { within } from './session'
@@ -29,21 +29,13 @@ export function tabTitle(root: string, repo: TitleRepo | null, found: Head | nul
   return `${label} · ${headName(found) ?? path.basename(repo.top)}`
 }
 
-function real(target: string): string {
-  try {
-    return fs.realpathSync.native(target)
-  } catch {
-    return target
-  }
-}
-
 export async function readTabTitle(root: string): Promise<string> {
   if (typeof root !== 'string' || !root) return APP_TITLE
 
   const probed = await git(root, ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'])
   const [top, gitDir, common] = probed.ok ? probed.value.split('\n') : []
-  const repo = top && gitDir && common ? { top: real(top), gitDir: real(gitDir), common: real(path.resolve(root, common)) } : null
+  const repo = top && gitDir && common ? { top: realPath(top), gitDir: realPath(gitDir), common: realPath(path.resolve(root, common)) } : null
 
   const found = repo && repo.gitDir !== repo.common ? await head(root) : null
-  return tabTitle(real(root), repo, found?.ok ? found.value : null)
+  return tabTitle(realPath(root), repo, found?.ok ? found.value : null)
 }

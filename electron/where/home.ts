@@ -20,7 +20,7 @@ export type FolderPick = { status: 'found' | 'tied' | 'none'; path: string | nul
 
 type Side = { ref: Resolved; calls: boolean }
 
-const counted = (side: Side) => side.ref.status === 'function' || side.ref.status === 'file'
+export const counted = (ref: Resolved) => ref.status === 'function' || ref.status === 'file'
 
 function ownersOf(architecture: Architecture, files: string[]): Map<string, string[]> {
   const { owned, multi } = ownership(files, architecture.components)
@@ -82,7 +82,7 @@ function folderPick(sides: Side[], keep: (file: string) => boolean): FolderPick 
 }
 
 export function homeOf(architecture: Architecture | null, files: string[], calls: Resolved[], callers: Resolved[]): { component: ComponentPick; folder: FolderPick } {
-  const sides = [...calls.map((ref) => ({ ref, calls: true })), ...callers.map((ref) => ({ ref, calls: false }))].filter(counted)
+  const sides = [...calls.map((ref) => ({ ref, calls: true })), ...callers.map((ref) => ({ ref, calls: false }))].filter((side) => counted(side.ref))
   const owners = architecture ? ownersOf(architecture, files) : new Map<string, string[]>()
   const component = componentOf(architecture, owners, sides)
 

@@ -1,6 +1,6 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
+import { readText } from '../../shared/disk/read'
 import type { CodeMap, FunctionEntry } from '../../shared/types'
 
 type Named = { name: string; line: number }
@@ -66,12 +66,5 @@ export function factsOf(file: string, read: () => string | undefined, functions:
 }
 
 export function sourcesIn(root: string, map: CodeMap, classes?: Classes): SourceFacts[] {
-  const read = (file: string) => () => {
-    try {
-      return fs.readFileSync(path.join(root, file), 'utf8')
-    } catch {
-      return undefined
-    }
-  }
-  return map.folders.flatMap((folder) => folder.files.flatMap((file) => factsOf(file.path, read(file.path), () => file.functions, classes) ?? []))
+  return map.folders.flatMap((folder) => folder.files.flatMap((file) => factsOf(file.path, () => readText(path.join(root, file.path)), () => file.functions, classes) ?? []))
 }

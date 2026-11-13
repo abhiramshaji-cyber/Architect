@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { readText } from '../../shared/disk/read'
+import { realPath } from '../../shared/disk/real'
 import type { Architecture, RuleEntry, RuleViolation } from '../../shared/types'
 import { functionsIn, IGNORED_DIRS } from '../scan/scan'
 import { auditRules, effective, folderOf } from './audit'
@@ -25,14 +27,6 @@ export function proposedViolations(
   return now.filter((violation) => !was.some((old) => old.key === violation.key && old.amount >= violation.amount))
 }
 
-function readText(file: string): string | undefined {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return undefined
-  }
-}
-
 function filesIn(root: string, folder: string): string[] {
   try {
     return fs
@@ -48,20 +42,6 @@ function codeIn(root: string, folder: string): string[] {
   return filesIn(root, folder).filter((file) => factsOf(file, () => '', () => []) !== null)
 }
 
-function onDisk(target: string): string {
-  const rest: string[] = []
-  let dir = target
-  while (!fs.existsSync(dir) && path.dirname(dir) !== dir) {
-    rest.unshift(path.basename(dir))
-    dir = path.dirname(dir)
-  }
-  try {
-    return path.join(fs.realpathSync.native(dir), ...rest)
-  } catch {
-    return target
-  }
-}
-
 export function proposedFile(
   root: string,
   rules: RuleEntry[] | undefined,
@@ -69,7 +49,7 @@ export function proposedFile(
   file: string,
   content: string,
 ): { relative: string; violations: RuleViolation[] } {
-  const relative = path.relative(onDisk(root), onDisk(path.resolve(root, file))).split(path.sep).join('/')
+  const relative = path.relative(realPath(root), realPath(path.resolve(root, file))).split(path.sep).join('/')
   if (relative === '' || relative.startsWith('../') || relative === '..' || path.isAbsolute(relative)) {
     throw new Error(`${file} is outside the project at ${root}`)
   }

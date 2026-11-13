@@ -1,4 +1,5 @@
 import { findCycle } from '../../shared/cycle'
+import { errorText } from '../../shared/text/error'
 import type { Architecture, CodeMap, LayerCall } from '../../shared/types'
 import { crossings } from '../layers/crossings'
 import { movesOf } from './moves'
@@ -111,7 +112,7 @@ export async function cutFor(architecture: Architecture, load: () => Promise<Cod
     const map = await Promise.race([load(), late])
     return map === null ? failed(`the cheapest edge to cut was not worked out: reading the scan took longer than ${timeoutMs} ms`) : cutOf(architecture, map, root, path)
   } catch (err) {
-    return failed(`the cheapest edge to cut could not be worked out: ${err instanceof Error ? err.message : String(err)}`)
+    return failed(`the cheapest edge to cut could not be worked out: ${errorText(err)}`)
   } finally {
     clearTimeout(timer)
   }

@@ -2,28 +2,17 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { realPath } from '../../shared/disk/real'
+import { errorText } from '../../shared/text/error'
 import type { CodeMap } from '../../shared/types'
 import type { DescriptionCache } from './describe'
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
 
 const MAP_VERSION = 12
 
 const LEGACY_MAP = path.join('.architect', 'map.json')
 
-function canonicalRoot(root: string): string {
-  const resolved = path.resolve(root)
-  try {
-    return fs.realpathSync.native(resolved)
-  } catch {
-    return resolved
-  }
-}
-
 export function cacheKey(root: string): string {
-  return createHash('sha256').update(canonicalRoot(root)).digest('hex')
+  return createHash('sha256').update(realPath(root)).digest('hex')
 }
 
 function mapPath(dir: string, root: string) {

@@ -10,6 +10,7 @@ import { splitsIn } from '../electron/rules/split'
 import { scan } from '../electron/scan/scan'
 import { whereOf } from '../electron/where'
 import { SOCKET_PATH } from '../shared/socket'
+import { errorText } from '../shared/text/error'
 import type { Architecture, CodeMap, RuleRun } from '../shared/types'
 import { parseArgs, USAGE_TEXT } from './args'
 import { agentsText } from './text/agents'
@@ -70,7 +71,7 @@ function readContract(root: string): Architecture | null | string {
   try {
     return parse(markdown)
   } catch (err) {
-    return `could not parse ${file}: ${err instanceof Error ? err.message : String(err)}`
+    return `could not parse ${file}: ${errorText(err)}`
   }
 }
 

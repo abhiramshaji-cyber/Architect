@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { percent } from '../../../shared/text/percent'
 import type { CouplingAsk } from '../../../shared/types'
 import { folderName } from '../../model/layout'
 import { loadCodeMap, openFile, rescan, useProject } from '../../model/store'
@@ -71,7 +72,7 @@ export default function CouplingView({ show }: ViewProps) {
         <>
           <p className="cp-note">
             Pairs of files changed together with no import either way, directly or through a re-export. <code>confidence = shared ÷ the fewer changes of the two</code>. A pair
-            shows when its commits or its sessions reach {plural(coupling.ask.minShared, 'shared change')} and {Math.round(coupling.ask.minConfidence * 100)}% confidence.
+            shows when its commits or its sessions reach {plural(coupling.ask.minShared, 'shared change')} and {percent(coupling.ask.minConfidence)} confidence.
           </p>
           <p className="cp-note">
             {plural(coupling.skipped, 'commit')} touching more than {coupling.ask.maxFiles} files in the last {coupling.ask.days} days {coupling.skipped === 1 ? 'is' : 'are'}{' '}
