@@ -163,6 +163,7 @@ type DaemonOptions = {
   claude?: AiRun
   reviewTimeouts?: { proposal?: number; edit?: number }
   behavior?: (root: string, file: string, symbol: string) => Promise<string>
+  jevStatus?: (root: string) => unknown
 }
 
 function sameContract(a: ContractState, b: ContractState): boolean {
@@ -851,6 +852,8 @@ export function createDaemon(options: DaemonOptions = {}) {
           const text = options.behavior ? await options.behavior(root, projectPath(root, req.cwd, req.file), req.symbol) : 'Jev is not available in this Architect process.'
           return { id: req.id, ok: true, result: text }
         }
+
+        if (req.op === 'jev_status') return { id: req.id, ok: true, result: options.jevStatus ? options.jevStatus(root) : 'Jev is not available in this Architect process.' }
 
         if (req.op === 'list_edits') return { id: req.id, ok: true, result: listEdits(root) }
         if (req.op === 'write_agents') {

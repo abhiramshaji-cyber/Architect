@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import type { JevRun } from '../../../shared/jev/types'
+import type { JevRun, JevUsage } from '../../../shared/jev/types'
 import { useProject } from '../../model/store'
 import { useJev } from './useJev'
 
@@ -11,6 +11,11 @@ function runText(run: JevRun | null): string {
   const failed = run.failed > 0 ? `, ${run.failed} failed` : ''
   const label = { running: 'Indexing', done: 'Indexed', stopped: 'Stopped', failed: 'Failed' }[run.status]
   return `${label}: ${counted}${failed}${run.error ? ` (${run.error})` : ''}`
+}
+
+function usageText(usage: JevUsage): string {
+  const cost = usage.cost.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: usage.cost < 1 ? 4 : 2 })
+  return `${usage.indexed.toLocaleString()} functions indexed, ${usage.tokens.toLocaleString()} input tokens used, about ${cost}`
 }
 
 export default function JevSettings() {
@@ -47,6 +52,7 @@ export default function JevSettings() {
         )}
       </form>
 
+      {currentRoot && state.usage && (state.usage.requests > 0 || state.usage.indexed > 0) && <p className="cv-detail">{usageText(state.usage)}</p>}
       {!state.enabled && state.key.set && <p className="cv-detail">{NOTICE}</p>}
       <div className="ai-card-actions">
         {state.enabled && currentRoot && <span className="cv-detail">{runText(state.run)}</span>}

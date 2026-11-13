@@ -1,12 +1,13 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Architecture } from '../../../shared/types'
 import { scan } from '../../scan/scan'
-import { JevError, type Question, type Reply } from '../client'
+import { JEV_MODEL, JevError, questionProblem, type Question, type Reply } from '../client'
 import { storeOf } from './cache'
-import { BEHAVIORS, questionsOf } from './questions'
+import { BEHAVIOR_QUESTIONS, BEHAVIORS, questionsOf } from './questions'
 import { CONCURRENCY, newestModel, runIndex, type Ask } from './run'
 import { LONGEST_SOURCE, targetsOf } from './targets'
 
@@ -54,9 +55,15 @@ const tempStore = () => {
 }
 
 describe('questionsOf', () => {
-  it('asks the generic behavior question alone without at least two components', () => {
-    expect(Object.keys(questionsOf(null).questions)).toEqual(['behavior'])
-    expect(Object.keys(questionsOf({ ...architecture('x'), components: [architecture('x').components[0]!] }).questions)).toEqual(['behavior'])
+  it('asks the behavior facets alone without at least two components, each within the Jev limits', () => {
+    expect(Object.keys(questionsOf(null).questions)).toEqual([...BEHAVIOR_QUESTIONS])
+    expect(Object.keys(questionsOf({ ...architecture('x'), components: [architecture('x').components[0]!] }).questions)).toEqual([...BEHAVIOR_QUESTIONS])
+    expect(questionProblem(questionsOf(architecture('The http surface.')).questions)).toBeNull()
+  })
+
+  it('changes the version from the behavior only set, so every cached answer is asked again', () => {
+    const behaviorOnly = createHash('sha256').update(JSON.stringify([JEV_MODEL, { behavior: questionsOf(null).questions.behavior }])).digest('hex').slice(0, 16)
+    expect(questionsOf(null).version).not.toBe(behaviorOnly)
   })
 
   it('labels responsibility with the component ids and their own purpose, clipped to the Jev limit', () => {
@@ -139,6 +146,22 @@ describe('runIndex', () => {
     const pending = runIndex({ targets, set, store: tempStore(), ask: slow, signal: stop.signal, onProgress: progress })
     stop.abort()
     expect(await pending).toMatchObject({ status: 'stopped', sent: 0, failed: 0 })
+  })
+
+  it('keeps token usage and index progress per project, and starts from zero on a missing or damaged file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-usage-'))
+    roots.push(dir)
+    const store = storeOf(dir, '/some/repo')
+    expect(store.usage()).toEqual({ tokens: 0, requests: 0, indexed: 0, total: 0 })
+    store.addTokens(1200)
+    store.addTokens(800.4)
+    store.setProgress(3, 10)
+    expect(storeOf(dir, '/some/repo').usage()).toEqual({ tokens: 2000, requests: 2, indexed: 3, total: 10 })
+    expect(storeOf(dir, '/other/repo').usage().tokens).toBe(0)
+
+    const file = fs.readdirSync(path.join(dir, 'usage'))[0] ?? ''
+    fs.writeFileSync(path.join(dir, 'usage', file), '{"tokens": -5, "requests": "x"')
+    expect(store.usage()).toEqual({ tokens: 0, requests: 0, indexed: 0, total: 0 })
   })
 
   it('treats the newest model as current', () => {

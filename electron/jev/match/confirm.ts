@@ -17,9 +17,11 @@ export const PAIR_QUESTIONS: Record<string, NoulQuestion> = {
 
 const PAIR_VERSION = createHash('sha256').update(JSON.stringify(PAIR_QUESTIONS)).digest('hex').slice(0, 16)
 
-export type Confirmed = { at: number; probability: number }
+export type Checked = { at: number; probability: number }
 
-export type Pairing = { store: Store; ask: Ask; signal: AbortSignal; model: string }
+export type Pairing = { store: Store; ask: Ask; signal: AbortSignal; model: string; guard: number }
+
+export type Confirmation = { checked: Checked[]; failed: number; unchecked: number }
 
 const side = (target: Target) => ({ function: target.name, file: target.file, signature: target.signature, source: target.source })
 
@@ -27,36 +29,36 @@ export function pairKey(a: string, b: string): string {
   return createHash('sha256').update([PAIR_VERSION, ...[a, b].sort()].join('\0')).digest('hex')
 }
 
-export async function confirmAll(subject: Target, candidates: Target[], pairing: Pairing): Promise<{ confirmed: Confirmed[]; failed: number }> {
+export async function confirmAll(subject: Target, candidates: Target[], pairing: Pairing): Promise<Confirmation> {
   const known = pairing.store.pairs()
-  const confirmed: Confirmed[] = []
-  let failed = 0
-  let next = 0
-
-  async function asked(other: Target, key: string): Promise<number> {
-    const state = JSON.stringify({ first: side(subject), second: side(other) })
-    const reply = await pairing.ask(state, PAIR_QUESTIONS, pairing.signal)
-    const answer = reply.answers.same
-    const noul = answer?.type === 'noul' ? answer.noul : 0
-    pairing.store.addPair({ key, a: subject.key, b: other.key, model: reply.model, at: Date.now(), noul })
-    return noul
+  const checked: Checked[] = []
+  const unknown: { other: Target; key: string }[] = []
+  for (const other of candidates) {
+    const key = pairKey(subject.key, other.key)
+    const cached = known.get(key)
+    if (cached?.model === pairing.model) checked.push({ at: other.at, probability: cached.noul })
+    else unknown.push({ other, key })
   }
 
+  const asking = unknown.slice(0, pairing.guard)
+  let failed = 0
+  let next = 0
   async function work(): Promise<void> {
-    while (!pairing.signal.aborted && next < candidates.length) {
-      const other = candidates[next++]
-      if (!other) return
-      const key = pairKey(subject.key, other.key)
-      const cached = known.get(key)
+    while (!pairing.signal.aborted && next < asking.length) {
+      const job = asking[next++]
+      if (!job) return
       try {
-        const noul = cached?.model === pairing.model ? cached.noul : await asked(other, key)
-        confirmed.push({ at: other.at, probability: noul })
+        const reply = await pairing.ask(JSON.stringify({ first: side(subject), second: side(job.other) }), PAIR_QUESTIONS, pairing.signal)
+        const answer = reply.answers.same
+        const noul = answer?.type === 'noul' ? answer.noul : 0
+        pairing.store.addPair({ key: job.key, a: subject.key, b: job.other.key, model: reply.model, at: Date.now(), noul })
+        checked.push({ at: job.other.at, probability: noul })
       } catch {
         failed += 1
       }
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, work))
-  return { confirmed: confirmed.filter((item) => item.probability > 0.5), failed }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, asking.length) }, work))
+  return { checked, failed, unchecked: unknown.length - asking.length }
 }

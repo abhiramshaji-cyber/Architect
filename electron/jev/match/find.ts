@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { BehaviorMatch, SameBehavior } from '../../../shared/jev/types'
+import { POSSIBLE, type BehaviorMatch, type JevRun, type SameBehavior } from '../../../shared/jev/types'
 import type { Architecture, CodeMap } from '../../../shared/types'
 import { edgesOf } from '../../functions/facts'
 import type { Resolved } from '../../where/refs'
@@ -9,12 +9,13 @@ import { questionsOf, type QuestionSet } from '../classify/questions'
 import { vectorOf, type Ask } from '../classify/run'
 import { targetsOf, type Target } from '../classify/targets'
 import { confirmAll } from './confirm'
+import { groupOf, type Member } from './group'
 import { standoutsOf } from './similarity'
 
 // cost guard: pairwise confirmations sent for one question, strongest first
 export const CONFIRM_GUARD = 24
 
-export type Finding = { root: string; map: CodeMap; architecture: Architecture | null; file: string; symbol: string; store: Store; ask: Ask; signal: AbortSignal }
+export type Finding = { root: string; map: CodeMap; architecture: Architecture | null; file: string; symbol: string; store: Store; ask: Ask; signal: AbortSignal; run?: JevRun | null }
 
 function subjectOf(targets: Target[], root: string, file: string, symbol: string): Target | string {
   const relative = path.relative(root, path.resolve(root, file)).split(path.sep).join('/')
@@ -50,6 +51,18 @@ function ioOf(a: Target, b: Target): string {
   return `${inputs}, ${output}: ${a.name}${a.signature || '()'} vs ${b.name}${b.signature || '()'}`
 }
 
+export function responsibilityOf(entry: Entry | undefined): string | null {
+  const ranked = Object.entries(entry?.vector.responsibility ?? {}).sort((x, y) => y[1] - x[1])
+  return ranked[0] && ranked[0][1] > 0 ? ranked[0][0] : null
+}
+
+function waiting(run: JevRun | null | undefined, others: number): string {
+  if (run?.status === 'running') return `Jev is indexing this project: ${run.done} of ${run.total} functions classified so far, none of the other ${others} yet. Ask again in a moment.`
+  return `none of the other ${others} functions is classified yet${run?.error ? ` (the last index run stopped: ${run.error})` : ''}; the Jev index starts on its own while Jev is on`
+}
+
+const ordered = (a: BehaviorMatch, b: BehaviorMatch) => Number(a.via !== null) - Number(b.via !== null) || b.probability - a.probability || a.file.localeCompare(b.file) || a.line - b.line
+
 export async function findSame(input: Finding): Promise<SameBehavior> {
   const set = questionsOf(input.architecture)
   const targets = targetsOf(input.root, input.map, set.version)
@@ -62,24 +75,38 @@ export async function findSame(input: Finding): Promise<SameBehavior> {
     const entry = index.get(target.key)
     return entry ? [{ at: target.at, entry }] : []
   })
-  if (indexed.length === 0) return { status: 'unindexed', reason: 'no other function is classified yet; let the Jev index finish first' }
+  if (indexed.length === 0) return { status: 'unindexed', reason: waiting(input.run, others.length) }
   const entry = await entryOf(subject, index, input, set)
 
   const structural = structuralOf(targets, input.map, subject)
-  const picked = [...structural, ...standoutsOf(entry, indexed).map((item) => item.at).filter((i) => !structural.has(i))]
-  const sent = picked.slice(0, CONFIRM_GUARD).flatMap((i) => targets[i] ?? [])
-  const { confirmed, failed } = await confirmAll(subject, sent, { store: input.store, ask: input.ask, signal: input.signal, model: entry.model })
+  const picked = [...structural, ...standoutsOf(entry, indexed).map((item) => item.at).filter((i) => !structural.has(i))].flatMap((i) => targets[i] ?? [])
+  const { checked, failed, unchecked } = await confirmAll(subject, picked, { store: input.store, ask: input.ask, signal: input.signal, model: entry.model, guard: CONFIRM_GUARD })
 
-  const matches: BehaviorMatch[] = confirmed.flatMap(({ at, probability }) => {
-    const other = targets[at]
-    return other ? [{ name: other.name, file: other.file, line: other.line, probability, structural: structural.has(at), io: ioOf(subject, other) }] : []
-  })
-  matches.sort((a, b) => b.probability - a.probability || a.file.localeCompare(b.file) || a.line - b.line)
+  const live = new Map(others.map((target) => [target.key, target.at]))
+  live.set(subject.key, subject.at)
+  const { group, possible } = groupOf(subject.at, input.store.pairs().values(), live, entry.model)
+  const shown = (member: Member): BehaviorMatch[] => {
+    const other = targets[member.at]
+    if (!other) return []
+    const via = member.via === null ? null : (targets[member.via]?.name ?? null)
+    return [{ name: other.name, file: other.file, line: other.line, probability: member.probability, structural: structural.has(member.at), io: ioOf(subject, other), responsibility: responsibilityOf(index.get(other.key)), via }]
+  }
 
   const notes = [
-    ...(indexed.length < others.length ? [`${indexed.length} of ${others.length} functions are classified so far, so matches among the rest are not searched yet`] : []),
-    ...(picked.length > sent.length ? [`${picked.length - sent.length} weaker candidates were not confirmed, to bound the cost of one question at ${CONFIRM_GUARD} pairwise checks`] : []),
+    ...(indexed.length < others.length ? [`${indexed.length} of ${others.length} functions are classified so far${input.run?.status === 'running' ? ' and indexing is running' : ''}, so matches among the rest are not searched yet`] : []),
+    ...(unchecked > 0 ? [`${unchecked} weaker candidates were not confirmed, to bound the cost of one question at ${CONFIRM_GUARD} pairwise checks`] : []),
     ...(failed > 0 ? [`${failed} confirmations failed and were left out`] : []),
   ]
-  return { status: 'done', name: subject.name, file: subject.file, line: subject.line, matches, candidates: sent.length, rejected: sent.length - confirmed.length - failed, notes }
+  return {
+    status: 'done',
+    name: subject.name,
+    file: subject.file,
+    line: subject.line,
+    responsibility: responsibilityOf(entry),
+    matches: group.flatMap(shown).sort(ordered),
+    possible: possible.flatMap(shown).sort(ordered),
+    candidates: checked.length,
+    rejected: checked.filter((item) => item.probability < POSSIBLE).length,
+    notes,
+  }
 }

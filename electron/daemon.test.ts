@@ -2798,4 +2798,17 @@ describe("similar_behavior", () => {
     bare.close();
     expect(none).toMatchObject({ ok: true, result: "Jev is not available in this Architect process." });
   });
+
+  it("answers jev_status with the status the app hands it for the project root", async () => {
+    const drawn = fs.mkdtempSync(path.join(tmpRoot, "drawn-"));
+    writeArchitect(drawn, fixture(component("store")));
+    const jevStatus = vi.fn((root: string) => ({ enabled: true, key: { set: true }, root }));
+    daemon = createDaemon({ socketPath, jevStatus });
+    await daemon.listen();
+
+    const c = await client(socketPath);
+    const asked = await c.request({ op: "jev_status", cwd: drawn });
+    c.close();
+    expect(asked).toMatchObject({ ok: true, result: { enabled: true, key: { set: true }, root: drawn } });
+  });
 });

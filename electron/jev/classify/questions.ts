@@ -17,6 +17,41 @@ export const BEHAVIORS: Record<string, string> = {
   setup: 'Creates, wires or configures resources, settings or dependencies before use.',
 }
 
+export const INPUTS: Record<string, string> = {
+  nothing: 'Takes no arguments, or ignores the ones it is given.',
+  text: 'A string: free text, a name, an identifier or a line of output.',
+  path: 'A file or folder path, a URL or another address of something to open.',
+  number: 'A number, count, size, ratio, index or time.',
+  record: 'One structured object, options bag, entity or configuration.',
+  collection: 'A list, map, set, stream or table of many items.',
+  error: 'An error, a thrown value of unknown type, or a failure result.',
+  event: 'An event, request, message or callback payload delivered from outside.',
+  resource: 'A live handle: a process, socket, database, element, window or client.',
+}
+
+export const OUTPUTS: Record<string, string> = {
+  nothing: 'Returns nothing a caller uses; its work is its side effects.',
+  text: 'A string meant for a person or for another program to read.',
+  number: 'A number, count, size, ratio, index or time.',
+  verdict: 'A yes or no, a pass or fail, or a list of problems found.',
+  record: 'One structured object or entity.',
+  collection: 'A list, map, set or table of many items.',
+  view: 'Interface markup, a component tree or something drawn on screen.',
+  resource: 'A live handle: a process, socket, server, connection, client or subscription.',
+}
+
+export const EFFECTS: Record<string, string> = {
+  none: 'Touches nothing outside its own return value.',
+  files: 'Reads or writes files or folders on disk.',
+  network: 'Sends or receives over the network.',
+  process: 'Starts, signals or talks to another process or the operating system.',
+  screen: 'Changes what is shown on screen or in the document.',
+  memory: 'Changes in-memory state that outlives the call: caches, stores, listeners.',
+  log: 'Writes logs, metrics or diagnostics.',
+}
+
+export const BEHAVIOR_QUESTIONS = ['behavior', 'input', 'output', 'effect'] as const
+
 export type QuestionSet = { version: string; questions: Record<string, ChoiceQuestion> }
 
 function clipped(text: string, limit: number): string {
@@ -46,6 +81,21 @@ export function questionsOf(architecture: Architecture | null): QuestionSet {
       type: 'choice',
       instructions: 'What is the main thing this function does with its inputs? Judge by its body, its signature and the functions it calls.',
       criteria: BEHAVIORS,
+    },
+    input: {
+      type: 'choice',
+      instructions: 'What kind of value does this function mainly work on? Judge by how the body uses its parameters, not by their names.',
+      criteria: INPUTS,
+    },
+    output: {
+      type: 'choice',
+      instructions: 'What kind of value does this function hand back to its caller? Judge by what the body returns or resolves to.',
+      criteria: OUTPUTS,
+    },
+    effect: {
+      type: 'choice',
+      instructions: 'What does this function change outside its return value, directly or through the functions it calls?',
+      criteria: EFFECTS,
     },
     ...(responsibility ? { responsibility } : {}),
   }
