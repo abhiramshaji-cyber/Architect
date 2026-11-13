@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { JevProgress } from '../../shared/jev/types'
 import { scan } from '../scan/scan'
+import { PRICE_PER_MILLION_INPUT_TOKENS } from './client'
 import { createJev, DISABLED, type JevOptions } from '.'
 import { trustedSender, wireJevIpc } from './ipc'
 import type { Crypt } from './key'
@@ -36,13 +37,12 @@ function temp(files: Record<string, string> = {}): string {
   return dir
 }
 
-function setup(fetch: typeof globalThis.fetch) {
-  const home = temp()
+function setup(fetch: typeof globalThis.fetch, home = temp()) {
   const root = temp({ 'a.ts': 'export function load(id: string) {\n  return id\n}\n\nexport function fetchIt(id: string) {\n  return id\n}\n' })
   const progress: JevProgress[] = []
   const load = vi.fn(async (at: string) => ({ map: await scan(at), architecture: null }))
-  const options: JevOptions = { dir: path.join(home, 'jev'), settings: path.join(home, 'settings.json'), crypt, load, onProgress: (event) => progress.push(event), fetch }
-  return { jev: createJev(options), root, home, progress, load }
+  const options: JevOptions = { dir: path.join(home, 'jev'), settings: path.join(home, 'settings.json'), crypt, load, projects: () => [root], onProgress: (event) => progress.push(event), fetch }
+  return { jev: createJev(options), root, home, progress, load, options }
 }
 
 const everyFile = (dir: string): string[] =>
@@ -51,9 +51,10 @@ const everyFile = (dir: string): string[] =>
 describe('off path', () => {
   it('makes no network call while off, with or without a key, and says it is disabled', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
-    const { jev, root, load } = setup(fetch)
+    const { jev, root, load, options } = setup(fetch)
 
-    expect(jev.state(root)).toEqual({ enabled: false, key: { set: false }, encryption: true, run: null })
+    expect(jev.state(root)).toEqual({ enabled: false, key: { set: false }, encryption: true, run: null, usage: { indexed: 0, total: 0, tokens: 0, requests: 0, cost: 0 } })
+    jev.indexOpen()
     expect(jev.index(root).run).toBeNull()
     expect(await jev.same(root, 'a.ts', 'load')).toEqual({ status: 'disabled', reason: DISABLED })
     expect(await jev.similarBehavior(root, 'a.ts', 'load')).toBe(DISABLED)
@@ -63,13 +64,92 @@ describe('off path', () => {
     expect(jev.index(root).run).toBeNull()
     expect(await jev.same(root, 'a.ts', 'load')).toMatchObject({ status: 'disabled' })
 
-    jev.setEnabled(true)
     jev.removeKey()
+    fs.writeFileSync(options.settings, JSON.stringify({ jev: true }))
+    jev.indexOpen(true)
+    expect(jev.state().enabled).toBe(true)
     expect(jev.index(root).run).toBeNull()
     expect(await jev.similarBehavior(root, 'a.ts', 'load')).toBe(DISABLED)
 
     expect(fetch).not.toHaveBeenCalled()
     expect(load).not.toHaveBeenCalled()
+  })
+})
+
+const answer = (labels: string[]) => ({ type: 'choice', choice: labels[0], probabilities: Object.fromEntries(labels.map((label, i) => [label, i === 0 ? 1 : 0])) })
+
+function replying(tokens: number) {
+  return vi.fn<typeof globalThis.fetch>(async (_url, init) => {
+    const { questions } = JSON.parse(String(init?.body)) as { questions: Record<string, { type: string; criteria: Record<string, string> }> }
+    const answers = Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, question.type === 'noul' ? { type: 'noul', noul: 0.1 } : answer(Object.keys(question.criteria))]))
+    return new Response(JSON.stringify({ model: 'jev-1', answers, usage: { input_tokens: tokens } }), { status: 200 })
+  })
+}
+
+describe('auto index', () => {
+  it('indexes every open project as soon as Jev is on with a key, and not again while a run exists', async () => {
+    const fetch = replying(50)
+    const { jev, root, progress } = setup(fetch)
+    jev.setKey(KEY)
+    expect(progress).toEqual([])
+    jev.setEnabled(true)
+    await vi.waitFor(() => expect(progress.at(-1)?.run).toMatchObject({ status: 'done', done: 2, total: 2 }))
+    expect(progress.every((event) => event.root === root)).toBe(true)
+
+    const calls = fetch.mock.calls.length
+    jev.indexOpen()
+    expect(fetch.mock.calls.length).toBe(calls)
+  })
+
+  it('starts at app launch for a project that opens while Jev is already on, and resumes from the cache', async () => {
+    const home = temp()
+    const first = setup(replying(50), home)
+    first.jev.setKey(KEY)
+    first.jev.setEnabled(true)
+    await vi.waitFor(() => expect(first.progress.at(-1)?.run.status).toBe('done'))
+
+    const fetch = replying(50)
+    const launched = createJev({ ...first.options, fetch, projects: () => [first.root], onProgress: (event) => first.progress.push(event) })
+    first.progress.length = 0
+    launched.indexOpen()
+    await vi.waitFor(() => expect(first.progress.at(-1)?.run).toMatchObject({ status: 'done', done: 2, sent: 0 }))
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('starts an index when asked for the same behavior with none running, and reports its progress', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Promise<Response>(() => {}))
+    const { jev, root, load, options } = setup(fetch)
+    jev.setKey(KEY)
+    const quiet = createJev({ ...options, projects: () => [] })
+    quiet.setEnabled(true)
+    const found = await quiet.same(root, 'a.ts', 'load')
+    expect(found).toEqual({ status: 'unindexed', reason: 'Jev is indexing this project: 0 of 2 functions classified so far, none of the other 1 yet. Ask again in a moment.' })
+    expect(quiet.status(root).index).toEqual({ status: 'running', indexed: 0, total: 2, failed: 0 })
+    expect(load).toHaveBeenCalled()
+    quiet.setEnabled(false)
+  })
+})
+
+describe('usage', () => {
+  it('counts input tokens from every reply per project, persists them and prices them from one constant', async () => {
+    const home = temp()
+    const { jev, root, progress, options } = setup(replying(1_000_000), home)
+    jev.setKey(KEY)
+    jev.setEnabled(true)
+    await vi.waitFor(() => expect(progress.at(-1)?.run.status).toBe('done'))
+
+    const usage = { indexed: 2, total: 2, tokens: 2_000_000, requests: 2, cost: 2 * PRICE_PER_MILLION_INPUT_TOKENS }
+    expect(progress.at(-1)?.usage).toEqual(usage)
+    expect(createJev(options).state(root).usage).toEqual(usage)
+    expect(PRICE_PER_MILLION_INPUT_TOKENS).toBe(0.042)
+    expect(jev.status(root)).toEqual({
+      enabled: true,
+      key: { set: true },
+      root,
+      index: { status: 'done', indexed: 2, total: 2, failed: 0 },
+      usage: { tokens: 2_000_000, requests: 2, cost: 2 * PRICE_PER_MILLION_INPUT_TOKENS, pricePerMillionInputTokens: PRICE_PER_MILLION_INPUT_TOKENS },
+    })
+    expect(createJev(options).status(root).index).toEqual({ status: 'idle', indexed: 2, total: 2, failed: 0 })
   })
 })
 
@@ -81,7 +161,7 @@ describe('key safety', () => {
 
     const returned: unknown[] = [jev.setKey(KEY), jev.setEnabled(true, root)]
     await vi.waitFor(() => expect(progress.at(-1)?.run.status).toBe('done'))
-    returned.push(jev.state(root), await jev.same(root, 'a.ts', 'load').catch((err: unknown) => String(err)), await jev.similarBehavior(root, 'a.ts', 'load').catch((err: unknown) => String(err)))
+    returned.push(jev.state(root), jev.status(root), await jev.same(root, 'a.ts', 'load').catch((err: unknown) => String(err)), await jev.similarBehavior(root, 'a.ts', 'load').catch((err: unknown) => String(err)))
 
     const authorization = (fetch.mock.calls[0]?.[1]?.headers as Record<string, string>).Authorization
     expect(authorization).toBe(`Bearer ${KEY}`)
@@ -113,7 +193,7 @@ describe('key safety', () => {
       await call('architect:jev-set-key', trusted, `${KEY} spaced`),
       await call('architect:jev-remove-key', trusted),
     ]
-    expect(results[0]).toEqual({ ok: true, value: { enabled: false, key: { set: true }, encryption: true, run: null } })
+    expect(results[0]).toEqual({ ok: true, value: { enabled: false, key: { set: true }, encryption: true, run: null, usage: null } })
     expect(results[6]).toEqual({ ok: false, error: 'that does not look like a TypeSafe API key' })
     expect(JSON.stringify(results)).not.toContain(KEY)
     expect([...handlers.keys()].sort()).toEqual(['architect:jev-cancel', 'architect:jev-index', 'architect:jev-remove-key', 'architect:jev-same', 'architect:jev-set', 'architect:jev-set-key', 'architect:jev-state'])

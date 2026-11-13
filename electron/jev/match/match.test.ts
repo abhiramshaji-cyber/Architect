@@ -77,24 +77,31 @@ describe('standoutsOf', () => {
   const subject = entry({ behavior: { x: 1, y: 0 } })
   const others = (scores: number[], model?: string) => scores.map((score, at) => ({ at, entry: entry({ behavior: { x: score * score, y: 1 - score * score } }, model) }))
 
-  it('keeps the scores above the widest drop over the median, and none when nothing stands out', () => {
+  it('keeps the whole top cluster of a two group split, and every tie when nothing separates them', () => {
     const kept = standoutsOf(subject, others([0.9, 0.88, 0.3, 0.2, 0.1]))
     expect(kept.map((item) => item.at)).toEqual([0, 1])
     expect(kept[0]?.score).toBeCloseTo(0.9)
     expect(standoutsOf(subject, others([0.95, 0.5, 0.45, 0.2, 0.1])).map((item) => item.at)).toEqual([0])
-    expect(standoutsOf(subject, others([0.4, 0.4, 0.4, 0.4]))).toEqual([])
+    expect(standoutsOf(subject, others([0.4, 0.4, 0.4, 0.4])).map((item) => item.at)).toEqual([0, 1, 2, 3])
+    expect(standoutsOf(subject, others([0, 0, 0]))).toEqual([])
+    expect(standoutsOf(subject, [])).toEqual([])
   })
 
-  it('compares only answers from the same model and multiplies the overlap of every shared question', () => {
+  it('does not starve a small helper whose copies sit on a slope under one stand out', () => {
+    const slope = [0.99, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, ...Array.from({ length: 20 }, () => 0.05)]
+    expect(standoutsOf(subject, others(slope)).map((item) => item.at)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  })
+
+  it('compares only answers from the same model and scores behavior alone, never responsibility', () => {
     expect(standoutsOf(subject, others([1, 0.1, 0.1], 'jev-0'))).toEqual([])
-    const drawn = entry({ behavior: { x: 1 }, responsibility: { api: 1, store: 0 } })
+    const drawn = entry({ behavior: { x: 1 }, effect: { none: 1 }, responsibility: { api: 1, store: 0 } })
     const scores = standoutsOf(drawn, [
-      { at: 0, entry: entry({ behavior: { x: 1 }, responsibility: { api: 0, store: 1 } }) },
-      { at: 1, entry: entry({ behavior: { x: 1 }, responsibility: { api: 1, store: 0 } }) },
-      { at: 2, entry: entry({ behavior: { x: 1 } }) },
+      { at: 0, entry: entry({ behavior: { x: 1 }, effect: { none: 1 }, responsibility: { api: 0, store: 1 } }) },
+      { at: 1, entry: entry({ behavior: { x: 1 }, effect: { none: 1 }, responsibility: { api: 1, store: 0 } }) },
+      { at: 2, entry: entry({ behavior: { x: 1 }, effect: { files: 1 } }) },
       ...[3, 4, 5].map((at) => ({ at, entry: entry({ behavior: { y: 1 } }) })),
     ])
-    expect(scores).toEqual([{ at: 1, score: 1 }, { at: 2, score: 1 }])
+    expect(scores).toEqual([{ at: 0, score: 1 }, { at: 1, score: 1 }])
   })
 })
 
@@ -111,6 +118,7 @@ describe('findSame', () => {
     ])
     expect(found.matches[0]).toMatchObject({ file: 'billing/accounts.ts', line: 1, probability: 0.92, io: 'same inputs, same output: loadUser(id: string): string vs findAccount(id: string): string' })
     expect(found.rejected).toBe(found.candidates - 2)
+    expect(found.possible).toEqual([])
     expect(fakeAsk.mock.calls.every(([state]) => 'first' in JSON.parse(state))).toBe(true)
 
     fakeAsk.mockClear()
@@ -120,6 +128,7 @@ describe('findSame', () => {
     const markdown = behaviorMarkdown(found)
     expect(markdown).toContain('`findAccount` at billing/accounts.ts:1, 92% same, found by Jev only.')
     expect(markdown).toContain('`fetchOrder` at store/orders.ts:3, 92% same, also a structural match.')
+    expect(markdown).toContain('## Same behavior group of `loadUser` (store/users.ts:1)')
   })
 
   it('names the functions a file has when the symbol is unknown, and waits for an index', async () => {

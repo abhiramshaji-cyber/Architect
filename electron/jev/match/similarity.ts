@@ -1,36 +1,37 @@
 import type { Entry } from '../classify/cache'
+import { BEHAVIOR_QUESTIONS } from '../classify/questions'
 
 export type Scored = { at: number; score: number }
 
-function overlap(a: Entry['vector'], b: Entry['vector']): number {
-  const shared = Object.keys(a).filter((id) => id in b)
-  if (shared.length === 0) return 0
-  return shared.reduce((product, id) => {
-    const p = a[id] ?? {}
-    const q = b[id] ?? {}
-    const coefficient = Object.keys(p).reduce((sum, label) => sum + Math.sqrt(Math.max(0, p[label] ?? 0) * Math.max(0, q[label] ?? 0)), 0)
-    return product * Math.min(1, coefficient)
-  }, 1)
+function coefficient(p: Record<string, number>, q: Record<string, number>): number {
+  return Math.min(1, Object.keys(p).reduce((sum, label) => sum + Math.sqrt(Math.max(0, p[label] ?? 0) * Math.max(0, q[label] ?? 0)), 0))
 }
 
-function aboveWidestDrop(sorted: Scored[]): Scored[] {
-  if (sorted.length < 2) return sorted.filter((item) => item.score > 0)
-  const median = sorted[Math.floor(sorted.length / 2)]?.score ?? 0
-  const upper = sorted.filter((item) => item.score > median)
+export function behaviorOverlap(a: Entry['vector'], b: Entry['vector']): number {
+  const shared = BEHAVIOR_QUESTIONS.filter((id) => a[id] && b[id])
+  if (shared.length === 0) return 0
+  return shared.reduce((product, id) => product * coefficient(a[id] ?? {}, b[id] ?? {}), 1)
+}
 
-  let cut = upper.length
-  let widest = -1
-  upper.forEach((item, i) => {
-    const below = upper[i + 1]?.score ?? median
-    if (item.score - below > widest) {
-      widest = item.score - below
-      cut = i + 1
+export function topCluster(sorted: Scored[]): Scored[] {
+  const n = sorted.length
+  const total = sorted.reduce((sum, item) => sum + item.score, 0)
+  let best = 0
+  let cut = n
+  let head = 0
+  for (let i = 1; i < n; i += 1) {
+    head += sorted[i - 1]?.score ?? 0
+    if (sorted[i - 1]?.score === sorted[i]?.score) continue
+    const between = (i / n) * ((n - i) / n) * (head / i - (total - head) / (n - i)) ** 2
+    if (between > best) {
+      best = between
+      cut = i
     }
-  })
-  return upper.slice(0, cut)
+  }
+  return sorted.slice(0, cut).filter((item) => item.score > 0)
 }
 
 export function standoutsOf(subject: Entry, others: { at: number; entry: Entry }[]): Scored[] {
-  const scored = others.filter(({ entry }) => entry.model === subject.model).map(({ at, entry }) => ({ at, score: overlap(subject.vector, entry.vector) }))
-  return aboveWidestDrop(scored.sort((x, y) => y.score - x.score || x.at - y.at))
+  const scored = others.filter(({ entry }) => entry.model === subject.model).map(({ at, entry }) => ({ at, score: behaviorOverlap(subject.vector, entry.vector) }))
+  return topCluster(scored.sort((x, y) => y.score - x.score || x.at - y.at))
 }

@@ -3,12 +3,11 @@ import type { JevState } from '../../../shared/jev/types'
 
 export type JevHook = {
   state: JevState | null
+  ready: boolean
   busy: boolean
   error: string | null
   act: (request: () => Promise<JevState>) => void
 }
-
-export const jevReady = (state: JevState | null) => state !== null && state.enabled && state.key.set
 
 export function useJev(root: string | null): JevHook {
   const [state, setState] = useState<JevState | null>(null)
@@ -19,7 +18,7 @@ export function useJev(root: string | null): JevHook {
     setBusy(true)
     request().then(
       (next) => {
-        setState((now) => ({ ...next, run: next.run ?? now?.run ?? null }))
+        setState((now) => ({ ...next, run: next.run ?? now?.run ?? null, usage: next.usage ?? now?.usage ?? null }))
         setError(null)
         setBusy(false)
       },
@@ -33,21 +32,17 @@ export function useJev(root: string | null): JevHook {
   useEffect(() => {
     let live = true
     window.architect.jevState(root ?? undefined).then(
-      (first) => {
-        if (!live) return
-        setState(first)
-        if (root && jevReady(first) && first.run === null) act(() => window.architect.indexJev(root))
-      },
+      (first) => live && setState(first),
       (err: unknown) => live && setError(err instanceof Error ? err.message : String(err)),
     )
     const off = window.architect.onJev((progress) => {
-      if (progress.root === root) setState((now) => (now ? { ...now, run: progress.run } : now))
+      if (progress.root === root) setState((now) => (now ? { ...now, run: progress.run, usage: progress.usage } : now))
     })
     return () => {
       live = false
       off()
     }
-  }, [root, act])
+  }, [root])
 
-  return { state, busy, error, act }
+  return { state, ready: state !== null && state.enabled && state.key.set, busy, error, act }
 }

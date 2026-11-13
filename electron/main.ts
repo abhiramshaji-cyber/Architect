@@ -17,7 +17,7 @@ const TRAY_ICON = nativeImage.createFromPath(
 TRAY_ICON.setTemplateImage(true)
 
 const socketPath = process.env.ARCHITECT_SOCKET ?? (app.isPackaged ? SOCKET_PATH : `${SOCKET_PATH}-dev`)
-const daemon = createDaemon({ socketPath, behavior: (root, file, symbol) => jev.similarBehavior(root, file, symbol) })
+const daemon = createDaemon({ socketPath, behavior: (root, file, symbol) => jev.similarBehavior(root, file, symbol), jevStatus: (root) => jev.status(root) })
 const jev = createJev({
   dir: path.join(app.getPath('userData'), 'jev'),
   settings: path.join(path.dirname(socketPath), 'settings.json'),
@@ -26,6 +26,7 @@ const jev = createJev({
     if (!daemon.projects().some((project) => project.root === root)) throw new Error(`${root} is not open in Architect`)
     return { map: daemon.codeMap(root) ?? (await daemon.rescan(root)), architecture: (await daemon.open(root)).architecture }
   },
+  projects: () => daemon.projects().map((project) => project.root),
   onProgress: (progress) => broadcast('architect:jev', progress),
 })
 let tray: Tray | null = null
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
   })
   daemon.onProjects((projects: ProjectSummary[]) => {
     broadcast('architect:projects-update', projects)
+    jev.indexOpen()
   })
   daemon.onCodeMap((root: string, map: CodeMap) => {
     broadcast('architect:code-map-update', root, map)

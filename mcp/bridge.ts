@@ -57,6 +57,8 @@ export const evidence = (input: EvidenceInput, socketPath = SOCKET_PATH) =>
 export const similarBehavior = (input: { file: string; symbol: string }, socketPath = SOCKET_PATH) =>
   callTool({ op: 'similar_behavior', ...input }, socketPath, String)
 
+export const jevStatus = (socketPath = SOCKET_PATH) => callTool({ op: 'jev_status' }, socketPath, (result) => JSON.stringify(result, null, 2))
+
 function main() {
   const server = new McpServer({ name: 'architect', version: '0.1.0' })
 
@@ -181,6 +183,8 @@ function main() {
     },
     (input) => similarBehavior(input),
   )
+
+  server.registerTool('jev_status', { description: 'Report the state of Jev behavior search for this project, as JSON: enabled (on or off), key.set (whether a TypeSafe API key is stored, never the key itself), root, index (status running, done, stopped, failed or idle, with indexed and total function counts, failed requests and the last error), and usage (input tokens and requests sent to TypeSafe for this project, estimated cost in US dollars and the price per million input tokens it assumes). Call it before similar_behavior to see whether the index is ready.', inputSchema: {} }, () => jevStatus())
 
   const transport = new StdioServerTransport()
   server.connect(transport)

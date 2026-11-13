@@ -2,6 +2,8 @@ export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
 
 export const JEV_MODEL = 'jev-latest'
 
+export const PRICE_PER_MILLION_INPUT_TOKENS = 0.042
+
 export const LIMITS = { choices: 255, label: 64, description: 500, bodyBytes: 32 * 1024 * 1024 }
 
 const RETRIES = 6

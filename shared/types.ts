@@ -218,6 +218,7 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
   z.object({ id: z.string(), op: z.literal('evidence'), cwd: z.string(), file: z.string(), symbol: z.string().optional(), lines: z.object({ start: z.number().int(), end: z.number().int() }).optional(), notes: z.array(z.object({ line: z.number().int(), text: z.string() })).optional(), depth: z.number().int().optional() }),
   z.object({ id: z.string(), op: z.literal('similar_behavior'), cwd: z.string(), file: z.string(), symbol: z.string() }),
+  z.object({ id: z.string(), op: z.literal('jev_status'), cwd: z.string() }),
   z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string(), session: z.string().optional(), file: z.string().optional(), digest: z.string().optional() }),
 ])
 

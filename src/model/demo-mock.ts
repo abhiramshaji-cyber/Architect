@@ -638,12 +638,12 @@ export function installMock() {
       throw new Error('nothing is waiting for review in the demo')
     },
     async decide() {},
-    jevState: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
+    jevState: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null, usage: null }),
     setJevKey: async () => Promise.reject(new Error('the demo has no keychain')),
-    removeJevKey: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
+    removeJevKey: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null, usage: null }),
     setJev: async () => Promise.reject(new Error('Jev needs the app')),
-    indexJev: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
-    cancelJev: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null }),
+    indexJev: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null, usage: null }),
+    cancelJev: async () => ({ enabled: false, key: { set: false }, encryption: false, run: null, usage: null }),
     sameBehavior: async () => ({ status: 'disabled', reason: 'Jev needs the app' }),
     onJev: () => () => {},
     onReview() {
