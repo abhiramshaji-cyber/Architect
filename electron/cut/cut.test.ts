@@ -33,7 +33,7 @@ async function project(files = FILES) {
 describe('cutFor', () => {
   it('costs every edge on the cycle and picks the drawn one with the fewest calls, with its call sites and where the callee could go', async () => {
     const { root, map } = await project()
-    const cut = cutFor(contract(['api -> store', 'store -> jobs']), map, root, 'jobs', 'api')
+    const cut = await cutFor(contract(['api -> store', 'store -> jobs']), async () => map, root, 'jobs', 'api')
     expect(cut?.path).toEqual(['jobs', 'api', 'store', 'jobs'])
     expect(cut?.edges).toEqual([
       { from: 'jobs', to: 'api', calls: 0, proposed: true },
@@ -47,17 +47,32 @@ describe('cutFor', () => {
 
   it('breaks a tie by the order on the cycle and says so', async () => {
     const { root, map } = await project({ ...FILES, 'api/handler.ts': "import { load } from '../store/db'\n\nexport function handle() {\n  return load()\n}\n" })
-    const cut = cutFor(contract(['api -> store', 'store -> jobs']), map, root, 'jobs', 'api')
+    const cut = await cutFor(contract(['api -> store', 'store -> jobs']), async () => map, root, 'jobs', 'api')
     expect(cut?.cheapest).toMatchObject({ from: 'api', to: 'store', calls: 1, tie: 'api -> store, store -> jobs each have 1 calls; api -> store is picked because it comes first on the cycle after the proposed edge' })
   })
 
   it('says a drawn edge with no calls can simply be removed, and that a self edge has nothing to cut', async () => {
     const { root, map } = await project({ ...FILES, 'store/db.ts': 'export function load() {\n  return 1\n}\n\nexport function save() {\n  return 2\n}\n' })
     const architecture = contract(['api -> store', 'store -> jobs'])
-    const cut = cutFor(architecture, map, root, 'jobs', 'api')
+    const cut = await cutFor(architecture, async () => map, root, 'jobs', 'api')
     expect(cut?.cheapest).toMatchObject({ from: 'store', to: 'jobs', calls: 0, listed: [] })
-    expect(cut?.notes[0]).toBe('store -> jobs is drawn but no call in the scan crosses it, so removing it from architect.md breaks the cycle without moving code')
-    expect(cutFor(architecture, map, root, 'api', 'api')?.notes).toEqual(['api -> api makes api depend on itself, so there is no drawn edge to cut'])
-    expect(cutFor(architecture, map, root, 'api', 'jobs')).toBeUndefined()
+    expect(cut?.notes[0]).toBe('store -> jobs is drawn but no call between functions crosses it (calls from top level code and imports of values or types are not counted), so it may be removable from architect.md without moving code')
+    expect((await cutFor(architecture, async () => map, root, 'api', 'api'))?.notes).toEqual(['api -> api makes api depend on itself, so there is no drawn edge to cut'])
+    expect(await cutFor(architecture, async () => map, root, 'api', 'jobs')).toBeUndefined()
+  })
+
+  it('keeps cutting until no path is left, and turns a failed or slow scan into a note', async () => {
+    const { root, map } = await project({ ...FILES, 'api/jobs.ts': "import { tick } from '../jobs/clock'\n\nexport function a() {\n  return tick()\n}\n\nexport function b() {\n  return tick() + 1\n}\n" })
+    const architecture = contract(['api -> store', 'store -> jobs', 'api -> jobs'])
+    const cut = await cutFor(architecture, async () => map, root, 'jobs', 'api')
+    expect(cut?.path).toEqual(['jobs', 'api', 'jobs'])
+    expect(cut?.cheapest).toMatchObject({ from: 'api', to: 'jobs', calls: 2 })
+    expect(cut?.also).toEqual([{ from: 'store', to: 'jobs', calls: 1 }])
+    expect(cut?.notes[0]).toBe('cutting api -> jobs alone leaves another path from api back to jobs; also listed are the cheapest edges on each path left, cut together')
+
+    const broken = await cutFor(architecture, async () => Promise.reject(new Error('disk gone')), root, 'jobs', 'api')
+    expect(broken).toMatchObject({ cheapest: null, notes: ['the cheapest edge to cut could not be worked out: disk gone'] })
+    const slow = await cutFor(architecture, () => new Promise(() => {}), root, 'jobs', 'api', 0)
+    expect(slow?.notes).toEqual(['the cheapest edge to cut was not worked out: reading the scan took longer than 0 ms'])
   })
 })

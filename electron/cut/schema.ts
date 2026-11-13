@@ -10,6 +10,7 @@ export const cutSchema = z.object({
   path: z.array(z.string()),
   edges: z.array(edgeSchema),
   cheapest: z.object({ from: z.string(), to: z.string(), calls: z.number().int().nonnegative(), tie: z.string().nullable(), listed: z.array(callSchema) }).nullable(),
+  also: z.array(edgeSchema.omit({ proposed: true })),
   moves: z.array(moveSchema),
   notes: z.array(z.string()),
 })

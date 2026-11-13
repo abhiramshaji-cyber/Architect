@@ -803,7 +803,7 @@ export function createDaemon(options: DaemonOptions = {}) {
           }
           const at = Date.now()
           const impact = await impactFor(req, root, state.architecture, stale, readStoredMap(cacheDir, root)?.map ?? null)
-          const cut = verdict.status === 'cycle' && req.from && req.to ? cutFor(state.architecture, readStoredMap(cacheDir, root)?.map ?? (await scan(root)), root, req.from, req.to) : undefined
+          const cut = verdict.status === 'cycle' && req.from && req.to ? await cutFor(state.architecture, async () => readStoredMap(cacheDir, root)?.map ?? (await scan(root)), root, req.from, req.to) : undefined
           logVerdict(root, req, verdict, stale, { impact, ...(cut ? { cut } : {}) }, at)
           return { id: req.id, ok: true, result: { ...verdict, impact, ...(cut ? { cut } : {}) } }
         }
@@ -815,7 +815,7 @@ export function createDaemon(options: DaemonOptions = {}) {
             ? await reviewChange(root, req.proposal, req.rationale, closed.signal)
             : proposeChange(root, req.proposal)
           const { architecture } = loadProject(root)
-          const cut = decided.status === 'rejected' && req.proposal.kind === 'edge' && architecture && check(architecture, req.proposal.from, req.proposal.to).status === 'cycle' ? cutFor(architecture, readStoredMap(cacheDir, root)?.map ?? (await scan(root)), root, req.proposal.from, req.proposal.to) : undefined
+          const cut = decided.status === 'rejected' && req.proposal.kind === 'edge' && architecture && check(architecture, req.proposal.from, req.proposal.to).status === 'cycle' ? await cutFor(architecture, async () => readStoredMap(cacheDir, root)?.map ?? (await scan(root)), root, req.proposal.from, req.proposal.to) : undefined
           return { id: req.id, ok: true, result: cut ? { ...decided, cut } : decided }
         }
 

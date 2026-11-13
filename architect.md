@@ -78,7 +78,7 @@ Answers check_change for a dependency or a proposed file: the drawn verdict for 
 owns: `electron/verdict/**`
 
 ### cut
-When a dependency is rejected because it would close a cycle, works out the cheapest drawn edge on that cycle to cut: each edge on the path `findCycle` returns is costed by the calls that cross it, counted from the same crossings `architect check` reads, and the edge with the fewest calls wins, ties going to the edge that comes first on the path after the proposed one, with the tie stated. Its calls are listed with the caller, the call site and the callee by file:line, and for each called function `where` answers where it could go once that edge is gone and the proposed one is drawn. Fully deterministic, no model calls.
+When a dependency is rejected because it would close a cycle, works out the cheapest drawn edge on that cycle to cut: each edge on the path `findCycle` returns is costed by the calls that cross it, counted from the same crossings `architect check` reads, and the edge with the fewest calls wins, ties going to the edge that comes first on the path after the proposed one, with the tie stated. When another path would still close the cycle once that edge is gone, the cheapest edge on each remaining path is listed too, until none is left. Its calls are listed with the caller, the call site and the callee by file:line, and for each called function `where` answers where it could go once that edge is gone and the proposed one is drawn. Fully deterministic, no model calls.
 owns: `electron/cut/**`
 
 ### impact
