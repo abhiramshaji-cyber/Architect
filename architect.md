@@ -282,12 +282,12 @@ owns: `lsp/**`
 - jobs: 1
 - split: 50 lines, 3 callers
 - lines: 203 `electron/app/ipc.ts`
-- lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`, `src/view/ContractView.tsx`
+- lines: 215 `src/view/ContractView.tsx`
+- lines: 216 `electron/pty/pty.ts`, `src/view/FileTree.tsx`
 - lines: 272 `electron/git/open.ts`
 - lines: 279 `src/model/codemap.ts`
 - lines: 328 `src/view/Inspector.tsx`
-- lines: 337 `src/view/Canvas.tsx`
-- lines: 339 `src/view/CodeCanvas.tsx`
+- lines: 339 `src/view/Canvas.tsx`, `src/view/CodeCanvas.tsx`
 - lines: 405 `electron/contract/graph.ts`
 - lines: 425 `src/view/RepoPicker.tsx`
 - lines: 469 `electron/github/github.ts`

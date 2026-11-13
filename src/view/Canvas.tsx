@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   ReactFlow,
@@ -52,7 +52,8 @@ type CanvasProps = {
   marks?: Record<string, Mark>
   tone?: Record<string, Tone>
   sideways?: boolean
-  children?: ReactNode
+  fit?: string[]
+  view?: string
 }
 
 type Shown = NodeData & { hint?: string; sideways?: boolean }
@@ -65,17 +66,19 @@ function classOf(recent: Recent, marks: Record<string, Mark> | undefined, id: st
 
 const FIT = { padding: FIT_PADDING }
 
-function Reveal({ count, stage }: { count: number; stage: number }) {
+function Reveal({ count, stage, fit, view }: { count: number; stage: number; fit: string; view: string }) {
   const flow = useReactFlow()
   const size = useStore((s) => `${s.width}x${s.height}`)
-  const seen = useRef({ count, size, stage })
+  const seen = useRef({ count, size, stage, fit: '', view })
 
   useEffect(() => {
-    const grew = count > seen.current.count
-    const relaid = count !== seen.current.count || size !== seen.current.size || stage !== seen.current.stage
-    seen.current = { count, size, stage }
-    if (relaid) void flow.fitView({ ...FIT, duration: grew ? motionMs(220) : 0 })
-  }, [count, size, stage, flow])
+    const was = seen.current
+    seen.current = { count, size, stage, fit, view }
+    const asked = fit !== was.fit || view !== was.view
+    if (!asked && count === was.count && size === was.size && stage === was.stage) return
+    const nodes = fit === '' ? undefined : fit.split('\n').map((id) => ({ id }))
+    void flow.fitView({ ...FIT, nodes, duration: motionMs(asked ? 400 : count > was.count ? 220 : 0) })
+  }, [count, size, stage, fit, view, flow])
 
   return null
 }
@@ -176,7 +179,7 @@ const nodeTypes = { component: ComponentNode }
 
 const DELETE_KEYS = ['Delete', 'Backspace']
 
-export default function Canvas({ architecture, ownership, changes, recent, theme, selectedId, onSelect, onEdit, marks, tone, sideways, children }: CanvasProps) {
+export default function Canvas({ architecture, ownership, changes, recent, theme, selectedId, onSelect, onEdit, marks, tone, sideways, fit, view = '' }: CanvasProps) {
   const editing = onEdit !== undefined
 
   const colors = useMemo(() => palette(), [theme])
@@ -323,11 +326,10 @@ export default function Canvas({ architecture, ownership, changes, recent, theme
         onNodeClick={(_event, node) => onSelect(node.id)}
         onPaneClick={close}
       >
-        <Reveal count={nodes.length} stage={stage} />
+        <Reveal count={nodes.length} stage={stage} fit={fit?.join('\n') ?? ''} view={view} />
         <Follow ids={selectedId ? [selectedId] : []} />
         <Background gap={26} size={1} color={colors.dots} />
         <Controls showInteractive={false} />
-        {children}
       </ReactFlow>
       {changes && Object.keys(changes).length > 0 && <Legend className="canvas-legend" />}
       {ownership && <OwnershipPanel ownership={ownership} />}

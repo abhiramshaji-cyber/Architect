@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Architecture, DraftFailure } from '../../shared/types'
 import Canvas from './Canvas'
 import ChatPanel from './chat/ChatPanel'
-import FitTo from './chat/FitTo'
 import { shape } from './chat/shape'
 import { useContractView } from './chat/useContractView'
 import EditBar from './EditBar'
@@ -152,9 +151,9 @@ export default function ContractView({ theme, show }: ViewProps) {
               selectedId={selectedId}
               onSelect={setSelectedId}
               onEdit={draft && draft.status === 'draft' ? edit : undefined}
-            >
-              <FitTo ids={shaped?.fit ?? []} stamp={JSON.stringify(view)} />
-            </Canvas>
+              fit={shaped?.fit}
+              view={JSON.stringify(view)}
+            />
           </>
         )}
       </div>
