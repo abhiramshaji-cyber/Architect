@@ -83,12 +83,12 @@
 }
 
 .code-fn {
-  height: 30px;
+  min-height: 30px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
   border-top: 1px solid var(--line);
-  overflow: hidden;
 }
 
 .code-fn-name {
@@ -102,15 +102,19 @@
 
 .code-fn-desc {
   font-size: 10px;
-  line-height: 1.25;
+  line-height: 1.6;
   color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+
+.code-node .node-id,
+.code-node .code-fn-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .code-note {
-  height: 20px;
+  min-height: 20px;
   display: flex;
   align-items: center;
   font-size: 10px;
@@ -133,11 +137,6 @@
 
 .code-fn-lead {
   margin-top: 5px;
-  white-space: normal;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  max-height: 25px;
 }
 
 .code-empty {
