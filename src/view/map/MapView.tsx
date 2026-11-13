@@ -106,7 +106,7 @@ export default function MapView({ theme, show }: ViewProps) {
         <>
           <p className="map-grouped">
             Grouped by {grouped === 'components' ? 'contract component' : 'top level folder'}, then folder, file and
-            function. Click a tile to zoom in, or a function to open it.
+            function. Click a tile to zoom in, or a function to open it. Scroll to zoom, drag to pan, press 0 to fit.
           </p>
           <div className="map-body">
             <Treemap focus={focus} values={values} token={mode.token} theme={theme} describe={describe} onPick={pick} />

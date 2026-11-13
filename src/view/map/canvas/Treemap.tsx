@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MapNode } from '../layout/nest'
 import { hit } from '../layout/hit'
 import { place } from '../layout/place'
-import { draw, type Ink } from './draw'
+import { draw, toScreen, type Ink } from './draw'
+import { FIT, panBy, wheel, type View } from './zoom'
 import type { Line } from '../facts'
 
 type Props = {
@@ -32,7 +33,11 @@ export default function Treemap({ focus, values, token, theme, describe, onPick 
   const box = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
-  const [hover, setHover] = useState<{ at: number; x: number; y: number } | null>(null)
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
+  const [view, setView] = useState<View>(FIT)
+  const [panning, setPanning] = useState(false)
+  const drag = useRef<{ x: number; y: number; from: View; moved: boolean } | null>(null)
+  const dragged = useRef(false)
   const tip = useRef<HTMLDivElement>(null)
   const [tall, setTall] = useState(0)
 
@@ -49,7 +54,8 @@ export default function Treemap({ focus, values, token, theme, describe, onPick 
   const tiles = useMemo(() => place(focus, size.w, size.h), [focus, size])
 
   useEffect(() => {
-    setHover(null)
+    setPoint(null)
+    setView(FIT)
   }, [tiles])
 
   useEffect(() => {
@@ -58,15 +64,34 @@ export default function Treemap({ focus, values, token, theme, describe, onPick 
     const ratio = window.devicePixelRatio || 1
     el.width = size.w * ratio
     el.height = size.h * ratio
-    draw(el, tiles, values, inkOf(token), size.w, size.h)
-  }, [tiles, values, token, theme, size])
+    draw(el, tiles, values, inkOf(token), size.w, size.h, view)
+  }, [tiles, values, token, theme, size, view])
+
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const rect = canvas.current?.getBoundingClientRect()
+      if (!rect) return
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      setView((from) => wheel(from, event, x, y, rect.width, rect.height))
+      setPoint({ x, y })
+      el.focus({ preventScroll: true })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   const pointAt = (event: React.MouseEvent) => {
     const rect = event.currentTarget.getBoundingClientRect()
     return { x: event.clientX - rect.left, y: event.clientY - rect.top }
   }
+  const hitAt = (x: number, y: number) => hit(tiles, (x - view.x) / view.k, (y - view.y) / view.k)
 
-  const shown = hover ? tiles[hover.at] : undefined
+  const shown = point ? tiles[hitAt(point.x, point.y).at] : undefined
+  const ring = shown ? toScreen(view, shown) : undefined
   const told = useMemo(() => (shown ? describe(shown.node) : null), [shown, describe])
 
   useLayoutEffect(() => {
@@ -74,32 +99,69 @@ export default function Treemap({ focus, values, token, theme, describe, onPick 
   }, [told])
 
   return (
-    <div className="map-box" ref={box}>
+    <div
+      className="map-box"
+      ref={box}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key !== '0' || event.metaKey || event.ctrlKey || event.altKey) return
+        event.preventDefault()
+        setView(FIT)
+      }}
+    >
       <canvas
         ref={canvas}
-        className="map-canvas"
+        className={panning ? 'map-canvas map-canvas--panning' : 'map-canvas'}
         style={{ width: size.w, height: size.h }}
-        onMouseMove={(event) => {
-          const { x, y } = pointAt(event)
-          const { at } = hit(tiles, x, y)
-          setHover(at < 0 ? null : { at, x, y })
+        onPointerDown={(event) => {
+          if (event.button !== 0) return
+          drag.current = { x: event.clientX, y: event.clientY, from: view, moved: false }
+          event.currentTarget.setPointerCapture(event.pointerId)
         }}
-        onMouseLeave={() => setHover(null)}
+        onPointerMove={(event) => {
+          setPoint(pointAt(event))
+          const start = drag.current
+          if (!start) return
+          const dx = event.clientX - start.x
+          const dy = event.clientY - start.y
+          if (!start.moved && Math.hypot(dx, dy) < 4) return
+          start.moved = true
+          setPanning(true)
+          setView(panBy(start.from, dx, dy, size.w, size.h))
+        }}
+        onPointerUp={() => {
+          dragged.current = drag.current?.moved ?? false
+          drag.current = null
+          setPanning(false)
+        }}
+        onPointerCancel={() => {
+          drag.current = null
+          setPanning(false)
+        }}
+        onPointerLeave={() => setPoint(null)}
         onClick={(event) => {
+          if (dragged.current) {
+            dragged.current = false
+            return
+          }
           const { x, y } = pointAt(event)
-          const top = tiles[hit(tiles, x, y).top]
+          const top = tiles[hitAt(x, y).top]
           if (top) onPick(top.node)
         }}
+        onDoubleClick={(event) => {
+          const { x, y } = pointAt(event)
+          if (hitAt(x, y).top < 0) setView(FIT)
+        }}
       />
-      {shown && <div className="map-hover" style={{ left: shown.x, top: shown.y, width: shown.w, height: shown.h }} />}
-      {hover && told && (
+      {ring && <div className="map-hover" style={{ left: ring.x, top: ring.y, width: ring.w, height: ring.h }} />}
+      {point && told && (
         <div
           ref={tip}
           className="map-tip"
           role="tooltip"
           style={{
-            left: Math.min(hover.x + 14, Math.max(0, size.w - 320)),
-            top: hover.y + 14 + tall > size.h ? Math.max(0, Math.min(hover.y - 14, size.h) - tall) : hover.y + 14,
+            left: Math.min(point.x + 14, Math.max(0, size.w - 320)),
+            top: point.y + 14 + tall > size.h ? Math.max(0, Math.min(point.y - 14, size.h) - tall) : point.y + 14,
           }}
         >
           <p className="map-tip-kind">{told.kind}</p>
