@@ -52,6 +52,7 @@ describe('factsOf', () => {
       lines: 1,
       exported: true,
       entry: null,
+      untraced: null,
     })
     expect(by.loop).toMatchObject({
       fanIn: 0,

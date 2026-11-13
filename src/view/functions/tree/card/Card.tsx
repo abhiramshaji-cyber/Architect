@@ -90,7 +90,12 @@ function Body({ data }: { data: CardData }) {
           <span className="fn-card-file">
             {leafOf(row.file)}:{row.line}
           </span>
-          <span className="fn-card-lines">{plural(row.lines, 'line')}</span>
+          {data.notes.length === 0 && <span className="fn-card-lines">{plural(row.lines, 'line')}</span>}
+          {data.notes.map((note) => (
+            <span key={note} className="fn-card-reach" title={note}>
+              {note}
+            </span>
+          ))}
         </span>
       </button>
       {data.elsewhere > 0 && (

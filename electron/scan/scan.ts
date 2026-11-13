@@ -4,8 +4,9 @@ import path from 'node:path'
 import ts from 'typescript'
 import type { CallRef, CodeMap, FileEntry, FileStart, FolderEntry, FunctionEntry } from '../../shared/types'
 import { link, type Parsed, type Pending, type Raw } from './link'
-import { calleeName, lineOf, startsIn, type Call, type Site } from './starts'
+import { calleeName, isTestFile, lineOf, startsIn, type Call, type Site } from './starts'
 import { docOf, renderedTag, signatureOf } from './traits'
+import { usedIn } from './values'
 import { isCode, lineCount } from '../rules/facts'
 
 export const IGNORED_DIRS = new Set([
@@ -53,7 +54,7 @@ function isFunctionValue(node: ts.Node | undefined): boolean {
 function declaredName(node: ts.Node, owner: string): string | undefined {
   const prefix = owner ? `${owner}.` : ''
 
-  if (ts.isFunctionDeclaration(node)) return node.name?.text ?? 'default'
+  if (ts.isFunctionDeclaration(node)) return (ts.isModuleBlock(node.parent) ? prefix : '') + (node.name?.text ?? 'default')
   if (ts.isConstructorDeclaration(node)) return `${owner || 'default'}.constructor`
 
   if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
@@ -82,7 +83,12 @@ function declaredName(node: ts.Node, owner: string): string | undefined {
 }
 
 function ownerFor(node: ts.Node, owner: string): string {
+  if (ts.isClassDeclaration(node) && node.name === undefined) return 'default'
   if (ts.isClassLike(node)) return node.name?.text ?? owner
+  if (ts.isModuleDeclaration(node) && ts.isIdentifier(node.name) && !(node.flags & ts.NodeFlags.GlobalAugmentation)) {
+    return owner ? `${owner}.${node.name.text}` : node.name.text
+  }
+  if (ts.isModuleBlock(node)) return owner
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text
   if (ts.isObjectLiteralExpression(node)) return owner
 
@@ -195,6 +201,8 @@ function exportedFrom(
   if (!hasKeyword(statement, ts.SyntaxKind.ExportKeyword)) return
   const fallback = hasKeyword(statement, ts.SyntaxKind.DefaultKeyword)
 
+  if (ts.isModuleDeclaration(statement) && ts.isIdentifier(statement.name)) return void into.set(statement.name.text, statement.name.text)
+
   if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) {
     const name = statement.name?.text ?? 'default'
     into.set(name, name)
@@ -250,12 +258,16 @@ function shadowsOf(source: ts.SourceFile): Map<ts.Node, Set<string>> {
   return byScope
 }
 
+function isMember(node: ts.Node): boolean {
+  return ts.isClassElement(node) || ts.isObjectLiteralElement(node)
+}
+
 function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
   const byScope = new Map<ts.Node, Map<string, number>>()
 
   for (const [i, f] of found.entries()) {
     const scope = scopeOf(f.node)
-    if (scope === undefined) continue
+    if (scope === undefined || (f.owner === '' && isMember(f.node))) continue
 
     const names = byScope.get(scope) ?? new Map<string, number>()
     byScope.set(scope, names)
@@ -265,6 +277,8 @@ function bindingsOf(found: Found[]): Map<ts.Node, Map<string, number>> {
     if (previous === undefined || !isOverloadSignature(f.node) || isOverloadSignature(previous.node)) {
       names.set(f.entry.name, i)
     }
+    const bare = f.entry.name.split('.').pop() ?? f.entry.name
+    if (ts.isModuleBlock(f.node.parent) && !names.has(bare)) names.set(bare, i)
   }
 
   return byScope
@@ -287,6 +301,23 @@ function resolveCall(
   }
 
   return undefined
+}
+
+function membersOf(
+  name: string,
+  at: ts.Node,
+  byScope: Map<ts.Node, Map<string, number>>,
+  shadows: Map<ts.Node, Set<string>>,
+  imported: Map<string, ImportBinding | null>,
+): Call[] {
+  const root = name.split('.')[0] ?? name
+  for (let scope = scopeOf(at); scope !== undefined; scope = scopeOf(scope)) {
+    const hits = [...(byScope.get(scope) ?? [])].filter(([key]) => key.startsWith(`${name}.`)).map(([, fn]) => fn)
+    if (hits.length > 0) return hits
+    if (shadows.get(scope)?.has(root)) return []
+    if (ts.isSourceFile(scope) && imported.has(root)) return [{ name, root }]
+  }
+  return []
 }
 
 function isFree(
@@ -335,7 +366,16 @@ function distinct(sites: Site[]): Call[] {
 }
 
 function empty(): Parsed {
-  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], raw: new Map(), specs: new Set() }
+  return { functions: [], starts: [], topLevel: new Map(), exports: new Map(), reexports: new Map(), stars: [], pending: [], raw: new Map(), specs: new Set(), typed: new Set(), computed: false }
+}
+
+function isTypeOnly(node: ts.Node): boolean {
+  if (ts.isExportDeclaration(node)) return node.isTypeOnly
+  if (!ts.isImportDeclaration(node) || node.importClause === undefined) return false
+  const clause = node.importClause
+  const named = clause.namedBindings
+  const elements = named && ts.isNamedImports(named) ? named.elements : undefined
+  return clause.isTypeOnly || (clause.name === undefined && elements !== undefined && elements.length > 0 && elements.every((one) => one.isTypeOnly))
 }
 
 function loadedSpec(node: ts.Node): string | undefined {
@@ -358,10 +398,11 @@ function parseFile(source: string, file: string): Parsed {
     const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind)
     const found: Found[] = []
     const specs = new Set<string>()
+    const typed = new Set<string>()
 
     const visit = (node: ts.Node, owner: string): void => {
       const spec = loadedSpec(node)
-      if (spec !== undefined) specs.add(spec)
+      if (spec !== undefined) (isTypeOnly(node) ? typed : specs).add(spec)
 
       const name = declaredName(node, owner)
       if (name !== undefined) {
@@ -391,6 +432,16 @@ function parseFile(source: string, file: string): Parsed {
     const sites = found.map((f) => callsIn(f.node, f.owner, nested, resolver))
     const sitesIn = (node: ts.Node) => callsIn(node, '', nested, resolver)
     const opened = startsIn(sourceFile, found.map((f) => f.node), nested, resolve, imported, sitesIn)
+    const index = new Map(found.map((f, i) => [f.node, i]))
+    const lookup = {
+      resolve,
+      members: (name: string, at: ts.Node) => membersOf(name, at, byScope, shadows, imported),
+      local: (node: ts.Node) => index.get(node),
+    }
+    const { used, linked, computed } = isTestFile(file)
+      ? { used: [], linked: [], computed: false }
+      : usedIn([...found.map((f) => ({ node: f.node, self: f.owner })), { node: sourceFile, self: '' }], nested, lookup, imported)
+    if (used.length + linked.length > 0) opened.push({ kind: 'value', calls: used })
 
     const order = found
       .map((f, i) => ({ f, i }))
@@ -443,18 +494,24 @@ function parseFile(source: string, file: string): Parsed {
       if (placed.length > 0) raw.set(from, placed)
     }
 
+    const bound = new Set([...byScope.values()].flatMap((names) => [...names.values()]))
     const functions = order.map(({ f, i }, from) => {
       rawOf(sites[i] ?? [], from)
-      return { ...f.entry, calls: refsOf(distinct(sites[i] ?? []), from) }
+      const entry: FunctionEntry = { ...f.entry, calls: refsOf(distinct(sites[i] ?? []), from) }
+      const accessor = ts.isGetAccessorDeclaration(f.node) || ts.isSetAccessorDeclaration(f.node)
+      if (isOverloadSignature(f.node) || (accessor && !bound.has(i))) entry.twin = true
+      return entry
     })
     const starts: FileStart[] = opened.map(({ sites: handled, ...start }, k) => {
       rawOf(handled ?? [], functions.length + k)
       return { ...start, calls: refsOf(start.calls, functions.length + k) }
     })
 
+    for (const { spec, key } of linked) pending.push({ from: functions.length + starts.length - 1, spec, key })
+
     // reexports
     if (reexports.size > 0 || stars.length > 0) {
-      for (const { spec, name } of reexports.values()) if (name !== '*') pending.push({ from: functions.length + starts.length, spec, key: name })
+      for (const { spec, name } of reexports.values()) pending.push({ from: functions.length + starts.length, spec, key: name === '*' ? '' : name })
       starts.push({ kind: 'exports', calls: [] })
     }
 
@@ -463,8 +520,9 @@ function parseFile(source: string, file: string): Parsed {
       const fn = functions[at]
       if (fn !== undefined && exportedLocals.has(name.split('.')[0] ?? name)) fn.exported = true
     }
+    for (const fn of functions) if (fn.twin && topLevel.has(fn.name) && exportedLocals.has(fn.name.split('.')[0] ?? fn.name)) fn.exported = true
 
-    return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs }
+    return { functions, starts, topLevel, exports, reexports, stars, pending, raw, specs, typed, computed }
   } catch {
     return empty()
   }
@@ -544,9 +602,11 @@ export async function scan(root: string, digests = new Map<string, string>()): P
 
   for (const folder of folders) {
     for (const file of folder.files) {
-      const { imports = [], reexports = [] } = links.get(file.path) ?? {}
+      const { imports = [], typeImports = [], reexports = [] } = links.get(file.path) ?? {}
       if (imports.length > 0) file.imports = imports
+      if (typeImports.length > 0) file.typeImports = typeImports
       if (reexports.length > 0) file.reexports = reexports
+      if (parsed.get(file.path)?.computed) file.computed = true
       const starts = parsed.get(file.path)?.starts
       if (starts !== undefined && starts.length > 0) file.starts = starts
     }

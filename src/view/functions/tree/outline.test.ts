@@ -25,6 +25,7 @@ const row = (name: string, doc?: string): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
   ...(doc === undefined ? {} : { doc }),
 })
@@ -34,6 +35,7 @@ const rows = [row('main'), row('load'), row('parse', 'Reads the config.'), row('
 const tree: FunctionTree = {
   starts: [0, 5],
   groups: [],
+  unknown: [],
   unreached: [3],
   children: [[1], [2], [], [4], [], []],
   also: [0, 0, 0, 0, 0, 0],
@@ -92,7 +94,7 @@ describe('outline', () => {
 
   it('handles an empty project and lays out an indented outline, one row per card', () => {
     const empty = outlineOf({
-      tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
+      tree: { starts: [], groups: [], unknown: [], unreached: [], children: [], also: [] },
       rows: [],
       calls: [],
       owners: {},
@@ -133,6 +135,7 @@ describe('outline', () => {
     const big: FunctionTree = {
       starts: [0],
       groups: [],
+      unknown: [],
       unreached: [],
       children: Array.from({ length: 1500 }, (_, at) => [2 * at + 1, 2 * at + 2].filter((to) => to < 1500)),
       also: new Array(1500).fill(0),
@@ -154,6 +157,7 @@ describe('outline', () => {
       tree: {
         starts: wide.map((_, at) => at),
         groups: [{ file: 'preload.ts', reason: 'bridge', members: wide.map((_, at) => at) }],
+        unknown: [],
         unreached: [],
         children: wide.map(() => []),
         also: wide.map(() => 0),
@@ -226,6 +230,7 @@ describe('outline', () => {
       tree: {
         starts: [0],
         groups: [],
+        unknown: [],
         unreached: [],
         children: Array.from({ length: count }, (_, at) => (at === 0 ? Array.from({ length: count - 1 }, (_, k) => k + 1) : [])),
         also: new Array(count).fill(0),

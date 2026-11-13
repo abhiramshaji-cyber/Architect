@@ -9,7 +9,7 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-const MAP_VERSION = 11
+const MAP_VERSION = 12
 
 const LEGACY_MAP = path.join('.architect', 'map.json')
 

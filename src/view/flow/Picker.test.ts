@@ -11,6 +11,7 @@ const row = (name: string, line: number, entry = true): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: entry ? { reason: 'mcpTool', file: 'a.ts' } : null,
+  untraced: null,
   importance: 1,
 })
 

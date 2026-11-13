@@ -14,6 +14,7 @@ const row = (over: Partial<FunctionRow>): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
   ...over,
 })
@@ -38,6 +39,7 @@ const rows = [
 const facts = (over: Partial<Facts> = {}): Facts => ({
   rows,
   unreached: new Set([2]),
+  unknown: new Set(),
   churn: { days: 90, files: {}, functions: { 'a/one.ts:1:top': 7, 'b/two.ts:1:lone': 1 } },
   sessions: new Map([['b/two.ts', [{ session: 's', at: 1 }]]]),
   recorded: 1,
@@ -47,7 +49,7 @@ const facts = (over: Partial<Facts> = {}): Facts => ({
 
 describe('unreachedOf', () => {
   it('collects every function under the unreached roots once, even across a cycle', () => {
-    const tree: FunctionTree = { starts: [0], groups: [], unreached: [1], children: [[], [2], [1, 3], []], also: [] }
+    const tree: FunctionTree = { starts: [0], groups: [], unknown: [], unreached: [1], children: [[], [2], [1, 3], []], also: [] }
     expect([...unreachedOf(tree)].sort()).toEqual([1, 2, 3])
   })
 })
@@ -170,7 +172,7 @@ describe('churnTop', () => {
 
 describe('gather', () => {
   it('collects the rows, the whole unreached bucket and the session files', () => {
-    const tree: FunctionTree = { starts: [0], groups: [], unreached: [2], children: [[1], [], []], also: [] }
+    const tree: FunctionTree = { starts: [0], groups: [], unknown: [], unreached: [2], children: [[1], [], []], also: [] }
     const found = gather(
       { rows, calls: [], tree, scope: '', folders: [], owners: {} },
       null,

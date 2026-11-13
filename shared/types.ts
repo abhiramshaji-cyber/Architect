@@ -231,6 +231,7 @@ export type FunctionEntry = {
   calls: CallRef[]
   sites?: CallSite[]
   exported?: true
+  twin?: true
   doc?: string
   signature?: Signature
 }
@@ -239,11 +240,11 @@ export type Param = { name: string; type?: string; value?: string; optional?: tr
 export type Signature = { generics?: string; params: Param[]; returns?: string }
 
 export type StartReason = 'mcpTool' | 'ipcHandler' | 'bridge' | 'cliCommand'
-export type StartKind = 'load' | 'exports' | StartReason
+export type StartKind = 'load' | 'exports' | 'value' | StartReason
 
 export type FileStart = { kind: StartKind; calls: CallRef[]; channel?: string; member?: string; line?: number; sites?: CallSite[] }
 
-export type FileEntry = { path: string; lines?: number; code?: true; functions: FunctionEntry[]; imports?: string[]; reexports?: string[]; starts?: FileStart[] }
+export type FileEntry = { path: string; lines?: number; code?: true; functions: FunctionEntry[]; imports?: string[]; typeImports?: string[]; computed?: true; reexports?: string[]; starts?: FileStart[] }
 
 export type FolderEntry = { path: string; folders: string[]; files: FileEntry[] }
 
@@ -491,6 +492,8 @@ export type DraftFailure =
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
 
+export type Untraced = 'value' | 'load' | 'export' | 'orphan' | 'computed' | 'unparsed' | 'test'
+
 export type FunctionFacts = {
   file: string
   name: string
@@ -500,9 +503,11 @@ export type FunctionFacts = {
   fanOut: number
   exported: boolean
   entry: Entry | null
+  untraced: Untraced | null
+  twin?: true
 }
 
-export type EntryReason = StartReason | 'electronMain' | 'preload' | 'renderer' | 'page' | 'bin' | 'main' | 'script'
+export type EntryReason = StartReason | 'electronMain' | 'preload' | 'renderer' | 'page' | 'bin' | 'main' | 'exports' | 'module' | 'script'
 
 export type Entry = { reason: EntryReason; file: string }
 
@@ -519,7 +524,7 @@ export type FunctionRow = FunctionFacts & {
 
 export type EntryGroup = { file: string; reason: EntryReason; members: number[] }
 
-export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unreached: number[]; children: number[][]; also: number[] }
+export type FunctionTree = { starts: number[]; groups: EntryGroup[]; unknown: number[]; unreached: number[]; children: number[][]; also: number[] }
 
 export type ScopeFolder = { path: string; functions: number }
 

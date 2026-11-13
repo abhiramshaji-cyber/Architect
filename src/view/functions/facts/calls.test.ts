@@ -11,6 +11,7 @@ const row = (name: string, over: Partial<FunctionRow> = {}): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
   ...over,
 })
@@ -18,7 +19,7 @@ const row = (name: string, over: Partial<FunctionRow> = {}): FunctionRow => ({
 const list = (rows: FunctionRow[], calls: number[][]): FunctionList => ({
   rows,
   calls,
-  tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
+  tree: { starts: [], groups: [], unknown: [], unreached: [], children: [], also: [] },
   scope: '',
   folders: [],
   owners: {},
