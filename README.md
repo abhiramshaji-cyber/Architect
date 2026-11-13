@@ -268,6 +268,10 @@ I would like to hear what worked and what did not. Reply in the [feedback discus
 
 Ideas are wanted, especially on the open design questions in the issues. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Credits
+
+A big thank you to [sebyx07](https://github.com/sebyx07) for [cybercore-css](https://github.com/sebyx07/cybercore-css), the theme and components that give Architect its look. cybercore-css is MIT licensed.
+
 ## License
 
 Apache 2.0, copyright Abhiram Shaji. Contributions under DCO.
