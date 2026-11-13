@@ -1,5 +1,6 @@
 import type { JevProgress, JevRun, JevState, JevStatus, JevUsage, SameBehavior } from '../../shared/jev/types'
 import { readSettings, saveSettings } from '../../shared/settings'
+import { errorText } from '../../shared/text/error'
 import type { Architecture, CodeMap } from '../../shared/types'
 import { storeOf, type Store } from './classify/cache'
 import { questionsOf } from './classify/questions'
@@ -23,8 +24,6 @@ export type JevOptions = {
 export type Jev = ReturnType<typeof createJev>
 
 export const DISABLED = 'Jev is off. Turn it on in the AI page of Architect and add a TypeSafe API key to find functions with the same behavior.'
-
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 export const costOf = (tokens: number) => (tokens / 1_000_000) * PRICE_PER_MILLION_INPUT_TOKENS
 

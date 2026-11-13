@@ -1,6 +1,5 @@
 import { CONFIRMED, POSSIBLE, type BehaviorMatch, type SameBehavior } from '../../../shared/jev/types'
-
-const percent = (value: number) => `${Math.round(value * 100)}%`
+import { percent } from '../../../shared/text/percent'
 
 function row(match: BehaviorMatch): string {
   const joined = match.via ? ` (joined through \`${match.via}\`)` : ''

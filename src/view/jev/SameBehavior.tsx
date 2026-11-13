@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { CONFIRMED, POSSIBLE, type BehaviorMatch, type SameBehavior as Found } from '../../../shared/jev/types'
+import { percent } from '../../../shared/text/percent'
 import type { FunctionRow } from '../../../shared/types'
 import { useProject } from '../../model/store'
 import { useJev } from './useJev'
 
 type SameProps = { row: FunctionRow; onPick: (file: string, line: number) => void }
-
-const percent = (value: number) => `${Math.round(value * 100)}%`
 
 function Matches({ matches, onPick }: { matches: BehaviorMatch[]; onPick: SameProps['onPick'] }) {
   return (
