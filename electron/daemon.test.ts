@@ -753,6 +753,12 @@ describe("applying proposals", () => {
 
     const plain = (await propose({ kind: "edge", from: "api", to: "ghost" })) as Decision & { cut?: unknown };
     expect(plain.cut).toBeUndefined();
+
+    writeArchitect(tmpRoot, contract().replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
+    await vi.waitFor(() => expect(daemon.projects()[0]?.contract.status).toBe("invalid"), { timeout: 5000 });
+    const broken = (await propose({ kind: "edge", from: "db", to: "api" })) as Decision & { cut?: unknown };
+    expect(broken.status).toBe("rejected");
+    expect(broken.cut).toBeUndefined();
   });
 
   it("rejects an edge the contract forbids", async () => {

@@ -88,7 +88,22 @@ describe('cutFor', () => {
     }
     const { root, map } = await project(files)
     const cut = await cutFor(contractOf(['q -> x', 'x -> y', 'x -> z', 'y -> p', 'z -> p']), async () => map, root, 'p', 'q')
-    expect(cut?.cheapest).toMatchObject({ from: 'q', to: 'x', calls: 2, tie: 'cutting q -> x alone breaks every path for 2 calls, no more than cutting one edge on each path; ties between single edges go to the first by name' })
+    expect(cut?.cheapest).toMatchObject({ from: 'q', to: 'x', calls: 2, tie: null })
+    expect(cut?.notes[0]).toBe('cutting q -> x alone breaks every path for 2 calls, no more than cutting one edge on each path; ties between single edges go to the first by name')
     expect(cut?.also).toEqual([])
+  })
+
+  it('drops a cut edge that the other cuts make pointless', async () => {
+    const parts = ['f', 't', 'a', 'b', 'g']
+    const contractOf = (edges: string[]) => parse(['# Demo', '', 'A demo.', '', '## Components', '', ...parts.flatMap((id) => [`### ${id}`, 'Part.', `owns: \`${id}/**\``, '']), '## Dependencies', '', ...edges.map((edge) => `- ${edge}`), ''].join('\n'))
+    const fn = (dir: string, name: string, calls: [string, string][]) => [`${dir}/${name}.ts`, `${calls.map(([d, n]) => `import { ${n} } from '../${d}/${n}'`).join('\n')}\n\nexport function ${name}() {\n${calls.map(([, n]) => `  ${n}()\n`).join('')}  return 1\n}\n`] as const
+    const files = Object.fromEntries([
+      fn('f', 'f1', []), fn('g', 'g1', [['f', 'f1']]), fn('g', 'g2', [['f', 'f1']]), fn('g', 'g3', [['f', 'f1']]),
+      fn('a', 'a1', [['f', 'f1'], ['g', 'g1'], ['g', 'g2']]), fn('b', 'b1', [['g', 'g1'], ['g', 'g2']]),
+      fn('t', 't1', [['a', 'a1'], ['b', 'b1']]), fn('t', 't2', [['a', 'a1'], ['b', 'b1']]),
+    ])
+    const { root, map } = await project(files)
+    const cut = await cutFor(contractOf(['t -> a', 't -> b', 'a -> f', 'a -> g', 'b -> g', 'g -> f']), async () => map, root, 'f', 't')
+    expect([cut?.cheapest, ...(cut?.also ?? [])].map((edge) => `${edge?.from} -> ${edge?.to} ${edge?.calls}`)).toEqual(['t -> a 2', 't -> b 2'])
   })
 })

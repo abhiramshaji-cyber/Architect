@@ -47,7 +47,9 @@ function listOf(map: CodeMap, calls: LayerCall[], limit: number): CutCall[] {
 export function cutOf(architecture: Architecture, map: CodeMap, root: string, path: string[]): Cut {
   const [from, to] = [path[0] ?? '', path[1] ?? '']
   const all = crossings(map, architecture)
-  const callsOf = (edge: Pair) => all.filter((one) => same(one, edge)).map((one) => one.call)
+  const byEdge = new Map<string, LayerCall[]>()
+  for (const one of all) byEdge.set(`${one.from}\0${one.to}`, [...(byEdge.get(`${one.from}\0${one.to}`) ?? []), one.call])
+  const callsOf = (edge: Pair) => byEdge.get(`${edge.from}\0${edge.to}`) ?? []
   const cost = (edge: Pair) => callsOf(edge).length
   const edges = path.slice(1).map((next, i) => ({ from: path[i] ?? '', to: next, calls: cost({ from: path[i] ?? '', to: next }), proposed: i === 0 }))
   const drawn = edges.filter((edge) => !edge.proposed)
@@ -60,21 +62,31 @@ export function cutOf(architecture: Architecture, map: CodeMap, root: string, pa
   let tie = tied.length > 1 ? `${tied.map((edge) => `${edge.from} -> ${edge.to}`).join(', ')} each have ${least} calls; ${pick.from} -> ${pick.to} is picked because it comes first on the cycle after the proposed edge` : null
   const total = (cuts: Pair[]) => cuts.reduce((sum, edge) => sum + cost(edge), 0)
   const single = also.length === 0 ? [] : architecture.edges.filter((edge) => !findCycle(drawnWithout(architecture, [edge]), from, to)).sort((a, b) => cost(a) - cost(b) || `${a.from} -> ${a.to}`.localeCompare(`${b.from} -> ${b.to}`))
+  let alone: string | null = null
   if (single[0] && cost(single[0]) <= total([pick, ...also])) {
     pick = single[0]
     also = []
-    tie = `cutting ${pick.from} -> ${pick.to} alone breaks every path for ${cost(pick)} calls, no more than cutting one edge on each path; ties between single edges go to the first by name`
+    tie = null
+    alone = `cutting ${pick.from} -> ${pick.to} alone breaks every path for ${cost(pick)} calls, no more than cutting one edge on each path; ties between single edges go to the first by name`
   }
+  const kept = [pick, ...also]
+  for (const edge of [...kept].sort((a, b) => cost(b) - cost(a))) {
+    const rest = kept.filter((other) => other !== edge)
+    if (rest.length > 0 && !findCycle(drawnWithout(architecture, rest), from, to)) kept.splice(kept.indexOf(edge), 1)
+  }
+  if (!kept.includes(pick)) tie = null
+  ;[pick, ...also] = [kept[0] as Pair, ...kept.slice(1)]
 
   const calls = callsOf(pick)
   const callees = [...new Map(calls.map((call) => [`${call.target}:${call.targetLine}`, { file: call.target, line: call.targetLine, name: call.targetFn }])).values()]
   const { moves, more } = movesOf(map, root, { ...architecture, edges: [...drawnWithout(architecture, [pick, ...also]), { from, to }] }, callees)
   const notes = [
+    ...(alone ? [alone] : []),
     ...(also.length > 0 ? [`cutting ${pick.from} -> ${pick.to} alone leaves another path from ${to} back to ${from}; also lists the cheapest edge on each path left, to cut together`] : []),
     ...(cost(pick) === 0 ? [`${pick.from} -> ${pick.to} is drawn but no call between functions crosses it (calls from top level code and imports of values or types are not counted), so it may be removable from architect.md without moving code`] : []),
     ...(calls.length > LISTED ? [`${calls.length - LISTED} of ${calls.length} calls are counted but not listed`] : []),
     ...(more > 0 ? [`${more} more called functions would move too; where they could go is not worked out here`] : []),
-    `moves say where each called function could go once the cut edges are removed and ${from} -> ${to} is drawn, answered by where`,
+    ...(moves.length > 0 ? [`moves say where each called function could go once the cut edges are removed and ${from} -> ${to} is drawn, answered by where`] : []),
   ]
   return { path, edges, cheapest: { from: pick.from, to: pick.to, calls: cost(pick), tie, listed: listOf(map, calls, LISTED) }, also: also.map((edge) => ({ from: edge.from, to: edge.to, calls: cost(edge), listed: listOf(map, callsOf(edge), ALSO_LISTED) })), moves, notes }
 }
@@ -84,6 +96,7 @@ const TIMEOUT_MS = 5000
 export async function cutFor(architecture: Architecture, load: () => Promise<CodeMap>, root: string, from: string, to: string, timeoutMs = TIMEOUT_MS): Promise<Cut | undefined> {
   const path = findCycle(architecture.edges, from, to)
   if (!path) return undefined
+  if (path.length === 2) return cutOf(architecture, { root, scannedAt: 0, folders: [] }, root, path)
   const failed = (note: string): Cut => ({ path, edges: [], cheapest: null, also: [], moves: [], notes: [note] })
   let timer: NodeJS.Timeout | undefined
   const late = new Promise<null>((resolve) => {
