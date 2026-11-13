@@ -114,6 +114,8 @@ By default there is no approval step (turn on [change review](#change-review) if
 
 **You never read a text diff. You watch a picture of your system change.**
 
+Every `check_change` answer also carries the impact of the change, worked out from the scan with no model call: the functions it adds, changes or removes, their callers at each depth, the entry code that reaches them (such as an MCP tool or an IPC handler), the components they belong to, and the test files that reach them, each with `file:line` evidence. A slow scan is cut at a time limit and says so.
+
 ## Change review
 
 Change review is off by default. Turn it on with the **Review** switch in the status bar, or **Toggle change review** in the command palette (Space), and Claude has to wait for you:
@@ -140,6 +142,7 @@ Everything lives in one `architect.md` at your repo root. It is readable with no
 ## Components
 
 ### api
+
 HTTP layer, request validation, auth.
 owns: `src/api/**`
 
