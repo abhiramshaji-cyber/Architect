@@ -5,6 +5,7 @@ import { refusalOf } from '../model/buffer'
 import type { CodeNodeData, FnRef } from '../model/codemap'
 import { renameComponent, setOwns, setPurpose, type OpResult } from '../model/edit-ops'
 import { clampInspectorWidth, INSPECTOR_W, type NodeData } from '../model/layout'
+import { AiSummary, AiText } from './ai/AiText'
 import Icon from './Icon'
 import Listing from './source/Listing'
 
@@ -156,12 +157,7 @@ export function CodeInspector({
               </p>
             </section>
 
-            {node.description !== '' && (
-              <section className="inspector-section">
-                <h3>Description</h3>
-                <p className="inspector-purpose">{node.description}</p>
-              </section>
-            )}
+            <AiSummary text={node.description} />
 
             <Names title="Calls" refs={node.calls} home={node.path} />
             <Names title="Called by" refs={node.callers} home={node.path} />
@@ -194,7 +190,7 @@ export function CodeInspector({
                       <span className="code-fn-name">{fn.name}</span>
                       <span className="inspector-fn-line">line {fn.line}</span>
                     </div>
-                    {fn.description !== '' && <p className="inspector-fn-desc">{fn.description}</p>}
+                    <AiText as="p" className="inspector-fn-desc" text={fn.description} />
                   </li>
                 ))}
               </ul>

@@ -98,6 +98,8 @@ function mockArchitect(overrides: Partial<ArchitectApi> = {}): ArchitectApi {
     repoOpen: vi.fn(),
     review: vi.fn().mockResolvedValue({ enabled: false, items: [] }),
     setReview: vi.fn(),
+    aiState: vi.fn(),
+    chooseAi: vi.fn(),
     reviewDetail: vi.fn(),
     decide: vi.fn(),
     onReview: vi.fn().mockReturnValue(() => {}),

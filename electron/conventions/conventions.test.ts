@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Architecture, CodeMap, FileEntry } from '../../shared/types'
-import type { ClaudeRun } from '../draft/draft'
+import type { AiRun } from '../draft/draft'
 import type { SourceFacts } from '../rules/facts'
 import { conventionsOf, promoteConvention, suggestedConventions, switchConventions } from '.'
 import { impactOf } from './impact'
@@ -110,7 +110,7 @@ describe('impactOf', () => {
 describe('the switch', () => {
   it('is off by default and loads nothing, calls no model and writes no rule while off', async () => {
     const load = vi.fn()
-    const run = vi.fn<ClaudeRun>()
+    const run = vi.fn<AiRun>()
     fs.writeFileSync(path.join(dir, 'architect.md'), '# A\n')
 
     expect(await conventionsOf(dir, load)).toEqual({ enabled: false })
@@ -147,7 +147,7 @@ describe('suggestedConventions', () => {
         { title: 'Plain', detail: 'd', files: ['a/y.ts'], rule: '' },
       ],
     }
-    const run = vi.fn<ClaudeRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify(reply), stderr: '' })
+    const run = vi.fn<AiRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify(reply), stderr: '', cli: 'claude' })
     const load = async () => ({ root: dir, map: mapOf('a/x.ts', 'a/y.ts'), architecture: null })
 
     const result = await suggestedConventions(dir, load, run)
@@ -165,8 +165,8 @@ describe('suggestedConventions', () => {
     on()
     write('a/x.ts', 1)
     const load = async () => ({ root: dir, map: mapOf('a/x.ts'), architecture: null })
-    expect(await suggestedConventions(dir, load, async () => ({ code: 'missing', stdout: '', stderr: '' }))).toEqual({ ok: false, error: { kind: 'not-installed' } })
-    expect(await suggestedConventions(dir, load, async () => ({ code: 0, stdout: 'sure!', stderr: '' }))).toMatchObject({ ok: false, error: { kind: 'unusable' } })
+    expect(await suggestedConventions(dir, load, async () => ({ code: 'missing', stdout: '', stderr: '', cli: 'claude' }))).toEqual({ ok: false, error: { kind: 'not-installed', cli: 'claude' } })
+    expect(await suggestedConventions(dir, load, async () => ({ code: 0, stdout: 'sure!', stderr: '', cli: 'claude' }))).toMatchObject({ ok: false, error: { kind: 'unusable' } })
   })
 })
 
@@ -176,10 +176,10 @@ describe('stopping a running ask', () => {
     write('a/x.ts', 1)
     const load = async () => ({ root: dir, map: mapOf('a/x.ts'), architecture: null })
     let seen: AbortSignal | undefined
-    const run: ClaudeRun = (_prompt, _cwd, _ms, _model, signal) =>
+    const run: AiRun = (_prompt, _cwd, _ms, signal) =>
       new Promise((resolve) => {
         seen = signal
-        signal?.addEventListener('abort', () => resolve({ code: 1, stdout: '', stderr: '' }))
+        signal?.addEventListener('abort', () => resolve({ code: 1, stdout: '', stderr: '', cli: 'claude' }))
       })
 
     const asked = suggestedConventions(dir, load, run)
@@ -194,7 +194,7 @@ describe('stopping a running ask', () => {
     write('pkg/a/x.ts', 1)
     write('other/y.ts', 1)
     write('top.ts', 1)
-    const run = vi.fn<ClaudeRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify({ conventions: [{ title: 'T', detail: '', files: ['./top.ts'], rule: '' }] }), stderr: '' })
+    const run = vi.fn<AiRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify({ conventions: [{ title: 'T', detail: '', files: ['./top.ts'], rule: '' }] }), stderr: '', cli: 'claude' })
     const architecture = { ...drawn([]), scope: 'pkg' }
     await suggestedConventions(dir, async () => ({ root: dir, map: mapOf('pkg/a/x.ts', 'other/y.ts'), architecture }), run)
     expect(run.mock.calls[0]?.[0]).toContain('pkg/a: x.ts')
@@ -211,7 +211,7 @@ describe('names suggestions', () => {
     write('a/x.ts', 3)
     write('a/y.ts', 5)
     const reply = { conventions: [{ title: 'No utils', detail: '', files: ['a/x.ts'], rule: '- names: Util `a/**`' }] }
-    const run = vi.fn<ClaudeRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify(reply), stderr: '' })
+    const run = vi.fn<AiRun>().mockResolvedValue({ code: 0, stdout: JSON.stringify(reply), stderr: '', cli: 'claude' })
     const architecture = drawn([['a/**']], [{ rule: 'lines', limit: 4, globs: ['a/empty/**'] }])
     const load = async () => ({ root: dir, map: mapOf('a/x.ts', 'a/y.ts'), architecture })
 
@@ -226,7 +226,7 @@ describe('switching off mid ask', () => {
   it('starts no model call when switched off while the project loads', async () => {
     on()
     write('a/x.ts', 1)
-    const run = vi.fn<ClaudeRun>()
+    const run = vi.fn<AiRun>()
     const load = async () => {
       await switchConventions(dir, false, load)
       return { root: dir, map: mapOf('a/x.ts'), architecture: null }
@@ -239,10 +239,10 @@ describe('switching off mid ask', () => {
     on()
     write('a/x.ts', 1)
     const signals: AbortSignal[] = []
-    const run: ClaudeRun = (_p, _c, _m, _model, signal) =>
+    const run: AiRun = (_p, _c, _m, signal) =>
       new Promise((resolve) => {
         if (signal) signals.push(signal)
-        setTimeout(() => resolve({ code: 0, stdout: '{"conventions": []}', stderr: '' }), 20)
+        setTimeout(() => resolve({ code: 0, stdout: '{"conventions": []}', stderr: '', cli: 'claude' }), 20)
       })
     const load = (root: string) => async () => ({ root, map: mapOf('a/x.ts'), architecture: null })
     const first = suggestedConventions(dir, load(dir), run)
@@ -255,7 +255,7 @@ describe('switching off mid ask', () => {
   it('names only a sample of the files in a large folder', async () => {
     on()
     const many = Array.from({ length: 30 }, (_, i) => `big/f${i}.ts`)
-    const run = vi.fn<ClaudeRun>().mockResolvedValue({ code: 0, stdout: '{"conventions": []}', stderr: '' })
+    const run = vi.fn<AiRun>().mockResolvedValue({ code: 0, stdout: '{"conventions": []}', stderr: '', cli: 'claude' })
     await suggestedConventions(dir, async () => ({ root: dir, map: mapOf(...many), architecture: null }), run)
     expect(run.mock.calls[0]?.[0]).toContain('and 22 more files')
     expect(run.mock.calls[0]?.[0]).not.toContain('f29.ts')

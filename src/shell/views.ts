@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import AiView from '../view/ai/AiView'
 import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
 import ConventionsView from '../view/conventions/ConventionsView'
@@ -15,7 +16,7 @@ import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'map' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'coupling' | 'conventions' | 'replay' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'ai' | 'functions' | 'map' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'coupling' | 'conventions' | 'replay' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
@@ -35,6 +36,7 @@ export const views: Record<ViewId, { label: string; component: ComponentType<Vie
   terminal: { label: 'Terminal', component: TerminalView },
   shell: { label: 'Shell', component: PlainShell },
   repos: { label: 'Repos', component: RepoPicker },
+  ai: { label: 'AI', component: AiView },
 }
 
 export const VIEW_IDS = Object.keys(views) as ViewId[]

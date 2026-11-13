@@ -1,10 +1,9 @@
 import type { Architecture, CodeMap, Convention, DraftResult } from '../../shared/types'
 import { evidence } from './flow/evidence'
-import { type ClaudeRun, runClaude } from './flow/run'
+import { type AiRun, failureOf } from '../ai'
 import { reply, scrub } from './message'
 
 const TIMEOUT_MS = 3 * 60 * 1000
-const MAX_STDERR = 400
 const MAX_FOLDERS = 300
 const MAX_PLAIN = 8
 
@@ -90,14 +89,13 @@ function suggestion(row: unknown, known: Set<string>): Convention | null {
   return { source: 'ai', title, detail: text('detail'), files, ...(rule === '' ? {} : { rule }) }
 }
 
-export async function suggestConventions(root: string, map: CodeMap, known: Known, run: ClaudeRun = runClaude, signal?: AbortSignal): Promise<DraftResult<Convention[]>> {
+export async function suggestConventions(root: string, map: CodeMap, known: Known, run: AiRun, signal?: AbortSignal): Promise<DraftResult<Convention[]>> {
   const files = new Set(map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
   if (files.size === 0) return { ok: false, error: { kind: 'nothing-to-draft' } }
 
-  const out = await run(promptOf(map, known), root, TIMEOUT_MS, undefined, signal)
-  if (out.code === 'missing') return { ok: false, error: { kind: 'not-installed' } }
-  if (out.code === 'timeout') return { ok: false, error: { kind: 'timed-out' } }
-  if (out.code !== 0) return { ok: false, error: { kind: 'failed', code: out.code, stderr: out.stderr.trim().slice(0, MAX_STDERR) } }
+  const out = await run(promptOf(map, known), root, TIMEOUT_MS, signal)
+  const failed = failureOf(out)
+  if (failed) return { ok: false, error: failed }
 
   const rows = reply(out.stdout)?.conventions
   if (!Array.isArray(rows)) return { ok: false, error: { kind: 'unusable', detail: 'the reply was not the JSON object that was asked for' } }

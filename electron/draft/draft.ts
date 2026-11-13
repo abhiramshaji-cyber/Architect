@@ -6,15 +6,14 @@ import { entryFiles } from '../functions'
 import { validate } from './flow/build'
 import { evidence } from './flow/evidence'
 import { promptFor } from './flow/prompt'
-import { type ClaudeRun, runClaude } from './flow/run'
+import { type AiRun, failureOf } from '../ai'
 
 export { validate } from './flow/build'
 export { type Evidence, evidence, skeleton } from './flow/evidence'
 export { promptFor } from './flow/prompt'
-export { type ClaudeOutput, type ClaudeRun, runClaude } from './flow/run'
+export type { AiOutput, AiRun } from '../ai'
 
 const ATTEMPTS = 2
-const MAX_STDERR = 400
 
 function verdictOf(result: DraftResult<string>, tops: string[]): { result: DraftResult<string>; feedback: string } {
   if (!result.ok) {
@@ -38,12 +37,11 @@ function verdictOf(result: DraftResult<string>, tops: string[]): { result: Draft
 export async function draft(
   root: string,
   map: CodeMap,
-  run: ClaudeRun = runClaude,
-  model?: string,
+  run: AiRun,
   scope = '',
 ): Promise<DraftResult<string>> {
   const found = evidence(map, scope, entryFiles(root, map))
-  if (found.functions.length === 0 && scope !== '') return draft(root, map, run, model)
+  if (found.functions.length === 0 && scope !== '') return draft(root, map, run)
   if (found.functions.length === 0) return { ok: false, error: { kind: 'nothing-to-draft' } }
 
   const title = path.basename(scope || root)
@@ -51,12 +49,9 @@ export async function draft(
   let last: DraftResult<string> = { ok: false, error: { kind: 'nothing-to-draft' } }
 
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    const out = await run(promptFor(found, title, scope, feedback), root, undefined, model)
-    if (out.code === 'missing') return { ok: false, error: { kind: 'not-installed' } }
-    if (out.code === 'timeout') return { ok: false, error: { kind: 'timed-out' } }
-    if (out.code !== 0) {
-      return { ok: false, error: { kind: 'failed', code: out.code, stderr: out.stderr.trim().slice(0, MAX_STDERR) } }
-    }
+    const out = await run(promptFor(found, title, scope, feedback), root)
+    const failed = failureOf(out)
+    if (failed) return { ok: false, error: failed }
 
     const judged = verdictOf(validate(out.stdout, found, title, scope), found.tops)
     if (judged.feedback === '') return judged.result

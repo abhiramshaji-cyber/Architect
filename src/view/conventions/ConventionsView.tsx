@@ -32,7 +32,7 @@ export default function ConventionsView({ show }: ViewProps) {
         </p>
         {state?.enabled && (
           <button className="ghost" disabled={ai.busy} onClick={suggest}>
-            {ai.busy ? 'Asking Claude Code…' : 'Suggest with AI'}
+            {ai.busy ? 'Asking the AI…' : 'Suggest with AI'}
           </button>
         )}
         {state && (
@@ -50,7 +50,7 @@ export default function ConventionsView({ show }: ViewProps) {
 
       {state && !state.enabled && (
         <p className="cv-note">
-          Off by default. When on, this page counts the size each component already keeps to, and on request asks Claude Code for conventions that need reading to spot. Nothing is
+          Off by default. When on, this page counts the size each component already keeps to, and on request asks the connected AI for conventions that need reading to spot. Nothing is
           counted and no model is called while it is off, and nothing here ever reaches the Functions page or the Tree.
         </p>
       )}
@@ -71,7 +71,7 @@ export default function ConventionsView({ show }: ViewProps) {
 
           <h3 className="cv-heading">AI suggestions</h3>
           <p className="cv-note">
-            Written by Claude Code from file and function names. They are suggestions only: check each one, nothing is added to the Rules unless you add it.
+            Written by the connected AI from file and function names. They are suggestions only: check each one, nothing is added to the Rules unless you add it.
           </p>
           {ai.error && (
             <p className="fn-notice" role="status">
@@ -79,9 +79,9 @@ export default function ConventionsView({ show }: ViewProps) {
             </p>
           )}
           {ai.found === null ? (
-            <p className="fn-empty">{ai.busy ? 'Waiting for Claude Code…' : 'Nothing asked yet.'}</p>
+            <p className="fn-empty">{ai.busy ? 'Waiting for the AI…' : 'Nothing asked yet.'}</p>
           ) : ai.found.length === 0 ? (
-            <p className="fn-empty">Claude Code suggested nothing the files back up.</p>
+            <p className="fn-empty">The AI suggested nothing the files back up.</p>
           ) : (
             <ol className="cv-list">
               {ai.found.map((convention) => (

@@ -2,11 +2,10 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
-import type { BranchPatch, CommitDraft, DraftFailure, DraftResult, PullDraft } from '../../shared/types'
-import { type ClaudeOutput, type ClaudeRun, runClaude } from './draft'
+import type { BranchPatch, CommitDraft, DraftResult, PullDraft } from '../../shared/types'
+import { type AiRun, failureOf } from '../ai'
 
 const TIMEOUT_MS = 3 * 60 * 1000
-const MAX_STDERR = 400
 const MAX_PATCH = 400 * 1024
 const MAX_LOG = 40 * 1024
 
@@ -43,13 +42,6 @@ function field(row: Record<string, unknown>, key: string): string {
   return typeof value === 'string' ? scrub(value) : ''
 }
 
-function failure(out: ClaudeOutput): DraftFailure | null {
-  if (out.code === 'missing') return { kind: 'not-installed' }
-  if (out.code === 'timeout') return { kind: 'timed-out' }
-  if (out.code !== 0) return { kind: 'failed', code: out.code, stderr: out.stderr.trim().slice(0, MAX_STDERR) }
-  return null
-}
-
 const NO_ATTRIBUTION = 'Never add a co-author line, a "Generated with" line or any other attribution.'
 
 const COMMIT_PROMPT = [
@@ -67,12 +59,12 @@ const COMMIT_PROMPT = [
 export async function commitMessage(
   root: string,
   patch: string,
-  run: ClaudeRun = runClaude,
+  run: AiRun,
 ): Promise<DraftResult<CommitDraft>> {
   if (patch.trim() === '') return { ok: false, error: { kind: 'nothing-to-draft' } }
 
   const out = await run(`${COMMIT_PROMPT}\n\n<diff>\n${patch.slice(0, MAX_PATCH)}\n</diff>`, root, TIMEOUT_MS)
-  const failed = failure(out)
+  const failed = failureOf(out)
   if (failed) return { ok: false, error: failed }
 
   const row = reply(out.stdout)
@@ -131,7 +123,7 @@ const PR_RULES = [
 export async function pullRequest(
   root: string,
   work: BranchPatch,
-  run: ClaudeRun = runClaude,
+  run: AiRun,
 ): Promise<DraftResult<PullDraft>> {
   if (work.commits === 0) return { ok: false, error: { kind: 'nothing-to-draft' } }
 
@@ -152,7 +144,7 @@ export async function pullRequest(
   ].join('\n')
 
   const out = await run(prompt, root, TIMEOUT_MS)
-  const failed = failure(out)
+  const failed = failureOf(out)
   if (failed) return { ok: false, error: failed }
 
   const row = reply(out.stdout)

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Architecture, CodeMap, Component, FileEntry } from '../../shared/types'
-import { anthropic, infer, judgementOf, promptFor, question, type Judge, type Judgement, type Question } from './infer'
+import type { AiOutput, AiRun } from '../ai'
+import { infer, judgeWith, judgementOf, promptFor, question, type Judge, type Judgement, type Question } from './infer'
 
 function component(id: string, purpose: string, ...owns: string[]): Component {
   return { id, purpose, owns }
@@ -255,62 +256,28 @@ describe('infer', () => {
   })
 })
 
-describe('anthropic', () => {
-  const swap = async (key: string | undefined, fetcher: typeof fetch, body: () => Promise<void>) => {
-    const had = process.env.ANTHROPIC_API_KEY
-    const real = globalThis.fetch
-    if (key === undefined) delete process.env.ANTHROPIC_API_KEY
-    else process.env.ANTHROPIC_API_KEY = key
-    globalThis.fetch = fetcher
-    try {
-      await body()
-    } finally {
-      globalThis.fetch = real
-      if (had === undefined) delete process.env.ANTHROPIC_API_KEY
-      else process.env.ANTHROPIC_API_KEY = had
-    }
-  }
-
+describe('judgeWith', () => {
   const asked = () => question('src/new.ts', architecture(component('one', 'first', 'src/a.ts')), map(file('src/a.ts')))
+  const says = (code: AiOutput['code'], stdout: string): AiRun => async () => ({ code, stdout, stderr: '', cli: 'claude' })
 
-  it('answers nothing and calls nobody with no api key', async () => {
-    let calls = 0
-    const counting = (async () => {
-      calls++
-      throw new Error('should not be reached')
-    }) as typeof fetch
-
-    await swap(undefined, counting, async () => {
-      expect(await anthropic(asked() as Question)).toBeNull()
-      expect(calls).toBe(0)
-    })
+  it('answers nothing when the cli is not logged in', async () => {
+    expect(await judgeWith(says('logged-out', ''), '/repo')(asked() as Question)).toBeNull()
   })
 
-  it('answers nothing when the provider fails', async () => {
-    const broken = (async () => {
-      throw new Error('network down')
-    }) as typeof fetch
-
-    await swap('test-key', broken, async () => {
-      expect(await anthropic(asked() as Question)).toBeNull()
-    })
+  it('passes the project root and a deadline to the cli', async () => {
+    const seen: Array<[string, number | undefined]> = []
+    const run: AiRun = async (_prompt, cwd, ms) => (seen.push([cwd, ms]), { code: 'timeout', stdout: '', stderr: '', cli: 'codex' })
+    expect(await judgeWith(run, '/repo')(asked() as Question)).toBeNull()
+    expect(seen).toEqual([['/repo', 30_000]])
   })
 
-  it('reads a well formed reply from the provider', async () => {
+  it('answers nothing when the cli fails', async () => {
+    expect(await judgeWith(says(1, ''), '/repo')(asked() as Question)).toBeNull()
+  })
+
+  it('reads a well formed reply from the cli', async () => {
     const reply = '{"component":"one","confidence":"certain","why":"it parses"}'
-    const ok = (async () =>
-      new Response(JSON.stringify({ content: [{ text: reply }] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })) as typeof fetch
-
-    await swap('test-key', ok, async () => {
-      expect(await anthropic(asked() as Question)).toEqual({
-        component: 'one',
-        confidence: 'certain',
-        why: 'it parses',
-      })
-    })
+    expect(await judgeWith(says(0, reply), '/repo')(asked() as Question)).toEqual({ component: 'one', confidence: 'certain', why: 'it parses' })
   })
 })
 
@@ -334,28 +301,5 @@ describe('input regions', () => {
     const q = question('src/new.ts', bare, map(file('src/a.ts')))
     expect(q?.nearby).toEqual([])
     expect(q?.choices).toHaveLength(2)
-  })
-
-  it('gives the provider a deadline and answers nothing when it expires', async () => {
-    const had = process.env.ANTHROPIC_API_KEY
-    const real = globalThis.fetch
-    let seen: AbortSignal | null = null
-    process.env.ANTHROPIC_API_KEY = 'test-key'
-    globalThis.fetch = ((_url: string, init?: RequestInit) =>
-      new Promise((_resolve, reject) => {
-        seen = init?.signal ?? null
-        if (!seen) return reject(new Error('the request carried no deadline'))
-        setTimeout(() => reject(new DOMException('timed out', 'TimeoutError')), 5)
-      })) as typeof fetch
-
-    try {
-      const q = question('src/new.ts', architecture(component('one', 'first')), map())
-      expect(await anthropic(q as Question)).toBeNull()
-      expect(seen).toBeInstanceOf(AbortSignal)
-    } finally {
-      globalThis.fetch = real
-      if (had === undefined) delete process.env.ANTHROPIC_API_KEY
-      else process.env.ANTHROPIC_API_KEY = had
-    }
   })
 })

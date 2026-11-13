@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { CodeMap, FileEntry } from '../../shared/types'
 import { ownership, parse } from '../contract/graph'
-import { type ClaudeOutput, type ClaudeRun, draft, evidence, promptFor, skeleton, validate } from './draft'
+import { type AiOutput, type AiRun, draft, evidence, promptFor, skeleton, validate } from './draft'
 import { scopeFor, scopeOf } from './scope'
 
 function fn(name: string, line: number, description: string, calls: { file: string; fn: number }[] = []) {
@@ -56,11 +56,11 @@ const folderReply = json({
   flows: [{ from: 'tests', to: 'src', label: 'calls' }],
 })
 
-const ok = (stdout: string): ClaudeOutput => ({ code: 0, stdout, stderr: '' })
+const ok = (stdout: string): AiOutput => ({ code: 0, stdout, stderr: '', cli: 'claude' })
 
-function replies(...outputs: string[]): { run: ClaudeRun; prompts: string[] } {
+function replies(...outputs: string[]): { run: AiRun; prompts: string[] } {
   const prompts: string[] = []
-  const run: ClaudeRun = async (prompt) => {
+  const run: AiRun = async (prompt) => {
     prompts.push(prompt)
     return ok(outputs[Math.min(prompts.length, outputs.length) - 1] ?? '')
   }
@@ -259,18 +259,18 @@ describe('draft', () => {
   })
 
   it('reports the agent as not installed', async () => {
-    const result = await draft('/repo', bot, async () => ({ code: 'missing', stdout: '', stderr: '' }))
-    expect(result).toEqual({ ok: false, error: { kind: 'not-installed' } })
+    const result = await draft('/repo', bot, async () => ({ code: 'missing', stdout: '', stderr: '', cli: 'claude' }))
+    expect(result).toEqual({ ok: false, error: { kind: 'not-installed', cli: 'claude' } })
   })
 
   it('reports a timed out agent', async () => {
-    const result = await draft('/repo', bot, async () => ({ code: 'timeout', stdout: '', stderr: '' }))
-    expect(result).toEqual({ ok: false, error: { kind: 'timed-out' } })
+    const result = await draft('/repo', bot, async () => ({ code: 'timeout', stdout: '', stderr: '', cli: 'claude' }))
+    expect(result).toEqual({ ok: false, error: { kind: 'timed-out', cli: 'claude' } })
   })
 
   it('reports a failing agent with its exit code and stderr', async () => {
-    const result = await draft('/repo', bot, async () => ({ code: 3, stdout: '', stderr: ' no credit left \n' }))
-    expect(result).toEqual({ ok: false, error: { kind: 'failed', code: 3, stderr: 'no credit left' } })
+    const result = await draft('/repo', bot, async () => ({ code: 3, stdout: '', stderr: ' no credit left \n', cli: 'claude' }))
+    expect(result).toEqual({ ok: false, error: { kind: 'failed', code: 3, stderr: 'no credit left', cli: 'claude' } })
   })
 
   it('runs the agent in the repo it is drafting for', async () => {
@@ -309,7 +309,7 @@ const scopedReply = json({
 describe('scoped draft', () => {
   it('drafts only the functions under the scope with globs relative to the repo root', async () => {
     const { run, prompts } = replies(scopedReply)
-    const result = await draft('/repo', monorepo, run, undefined, 'spec')
+    const result = await draft('/repo', monorepo, run, 'spec')
     if (!result.ok) throw new Error('expected a draft')
 
     const contract = parse(result.value)
@@ -330,7 +330,7 @@ describe('scoped draft', () => {
 
   it('falls back to the whole repo when the scope holds no function', async () => {
     const { run, prompts } = replies(scopedReply)
-    await draft('/repo', monorepo, run, undefined, 'spec/README.md')
+    await draft('/repo', monorepo, run, 'spec/README.md')
     expect(prompts[0]).toContain('zing/bot/src/main.ts')
   })
 })

@@ -1,7 +1,24 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import type { DraftFailure } from './types'
 
-export type Settings = { review: boolean; conventions: boolean }
+export const PROVIDERS = ['claude', 'codex'] as const
+
+export type Provider = (typeof PROVIDERS)[number]
+
+export const DEFAULT_MODELS: Record<Provider, string> = { claude: 'haiku', codex: 'gpt-6-luna' }
+
+export type AiChoice = { connected: boolean; provider: Provider; models: Record<Provider, string> }
+
+export type Login = 'ready' | 'missing' | 'logged-out' | 'api-key' | 'unreadable'
+
+export type CliStatus = { provider: Provider; login: Login; detail: string; models: string[] }
+
+export type AiFailure = { reason: DraftFailure; at: number }
+
+export type AiState = { choice: AiChoice; clis: CliStatus[]; failure: AiFailure | null }
+
+export type Settings = { review: boolean; conventions: boolean; ai: AiChoice }
 
 function stored(file: string): Record<string, unknown> {
   try {
@@ -12,9 +29,24 @@ function stored(file: string): Record<string, unknown> {
   }
 }
 
+export function isProvider(value: unknown): value is Provider {
+  return PROVIDERS.some((provider) => provider === value)
+}
+
+export function aiChoiceOf(raw: unknown): AiChoice {
+  const ai = typeof raw === 'object' && raw !== null ? (raw as { connected?: unknown; provider?: unknown; models?: unknown }) : {}
+  const models = typeof ai.models === 'object' && ai.models !== null ? (ai.models as Record<string, unknown>) : {}
+  const model = (provider: Provider) => {
+    const value = models[provider]
+    return typeof value === 'string' && value.trim() !== '' ? value.trim() : DEFAULT_MODELS[provider]
+  }
+  const provider = isProvider(ai.provider) ? ai.provider : 'claude'
+  return { connected: ai.connected === true, provider, models: { claude: model('claude'), codex: model('codex') } }
+}
+
 export function readSettings(file: string): Settings {
   const raw = stored(file)
-  return { review: raw.review === true, conventions: raw.conventions === true }
+  return { review: raw.review === true, conventions: raw.conventions === true, ai: aiChoiceOf(raw.ai) }
 }
 
 export function saveSettings(file: string, patch: Partial<Settings>): void {

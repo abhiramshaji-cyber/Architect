@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ruleViolationSchema, type RuleEntry, type StyleFile } from './rules/rules'
 import type { SplitSuggestion } from './rules/split'
+import type { AiChoice, AiState, Provider } from './settings'
 
 export * from './rules/rules'
 export * from './rules/split'
@@ -482,13 +483,15 @@ export type GithubFailure =
 export type GithubResult<T> = { ok: true; value: T } | { ok: false; error: GithubFailure }
 
 export type DraftFailure =
-  | { kind: 'not-installed' }
+  | { kind: 'not-connected' }
+  | { kind: 'not-installed'; cli: Provider }
+  | { kind: 'logged-out'; cli: Provider; detail: string }
   | { kind: 'nothing-to-draft' }
-  | { kind: 'timed-out' }
+  | { kind: 'timed-out'; cli: Provider }
   | { kind: 'unusable'; detail: string }
   | { kind: 'no-skill'; name: string }
   | { kind: 'git'; error: GitFailure }
-  | { kind: 'failed'; code: number; stderr: string }
+  | { kind: 'failed'; code: number; stderr: string; cli?: Provider }
 
 export type DraftResult<T> = { ok: true; value: T } | { ok: false; error: DraftFailure }
 
@@ -631,6 +634,8 @@ export type ArchitectApi = import('./rules/conventions').ConventionsApi & {
   githubRates(): Promise<GithubResult<GithubRates>>
   review(): Promise<ReviewState>
   setReview(enabled: boolean): Promise<ReviewState>
+  aiState(): Promise<AiState>
+  chooseAi(choice: AiChoice): Promise<AiState>
   reviewDetail(id: string): Promise<ReviewDetail>
   decide(id: string, approved: boolean, feedback?: string): Promise<void>
   onReview(fn: (state: ReviewState) => void): () => void
