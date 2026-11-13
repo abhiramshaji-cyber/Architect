@@ -149,6 +149,17 @@ The **Review** tab lists what is waiting. For each change it shows where it land
 
 A contract proposal nobody answers in 5 minutes comes back to Claude as pending with an id it can keep waiting on with `await_proposal`, and pending proposals survive a restart in `~/.architect/pending.json`. A code edit nobody answers in 9 minutes falls back to Claude Code's own permission prompt. The setting lives in `~/.architect/settings.json`. When review is off, or Architect is not running, or the file is outside every open project, the hook exits at once with no output and Claude Code behaves exactly as it does without Architect.
 
+## Same behavior search with Jev
+
+Optional, and off by default. When it is on, Architect can tell you which other functions already implement the behavior of the one you are looking at, including ones that share no callers, callees or names with it, so a second copy is not written and a change reaches every copy.
+
+It runs on [TypeSafe Jev](https://docs.typesafe.ai), a hosted classification model, and needs your own TypeSafe API key. Add it on the **AI** page under **Same behavior search**, then turn Jev on. Without a key, or while it is off, Architect makes no network call and nothing changes.
+
+- **What it does.** Every function the scan finds (test files excluded) is classified once in the background: what it mainly does with its inputs, and, when `architect.md` has components, which component's job it does, judged against each component's own purpose. Results are cached per project and keyed by a hash of what was sent, so only changed functions are sent again. In **Focus**, **Same behavior elsewhere** compares the focused function with the rest, asks Jev to confirm each strong candidate pairwise, and lists only the confirmed ones with Jev's probability, whether the structural match from `where` agrees or Jev found it alone, and how the inputs and outputs compare. Coding agents get the same answer from the `similar_behavior` MCP tool, which says Jev is off when it is.
+- **What is sent to TypeSafe.** For each function: its source code, name, file path, signature, and the names of the functions that call it and that it calls, along with the questions (which include the component names and purposes from `architect.md`). A confirmation sends the source, name, file and signature of the two functions being compared. Nothing else leaves your machine, and only after you turn Jev on.
+- **How the key is stored.** Only on this Mac, encrypted with the macOS Keychain through Electron `safeStorage`, in Architect's own app data folder. If the Keychain is not available the key is not stored at all, never in plain text. Only the main process decrypts it, for the request that needs it. It is never sent to the window, the MCP tools, logs, error messages or `architect.md`; the AI page only ever shows whether a key is set. **Remove key** deletes it.
+- **Cost.** A TypeSafe request is billed by input tokens. Indexing Architect's own repo, about 2,000 functions, sends roughly 8 million input tokens the first time, then only the functions that changed. Each search sends at most 24 pairwise confirmations, and a pair already confirmed is not asked again.
+
 ## What shows up on the canvas
 
 - **A new component.** The largest source of sprawl.

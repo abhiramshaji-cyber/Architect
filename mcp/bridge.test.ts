@@ -14,6 +14,7 @@ import {
   getEdit,
   where,
   evidence,
+  similarBehavior,
 } from './bridge.js'
 
 function socketPath() {
@@ -265,6 +266,22 @@ describe('bridge', () => {
     const result = await evidence({ file: 'a.ts', lines: { start: 2, end: 2 }, notes: [{ line: 2, text: 'here' }] }, path)
     expect(seenReq).toMatchObject({ op: 'evidence', file: 'a.ts', lines: { start: 2, end: 2 }, notes: [{ line: 2, text: 'here' }] })
     expect(result).toEqual({ content: [{ type: 'text', text: '`load` in `a.ts` line 2\n\n```\n2 | x\n```' }] })
+
+    stopServer(server, path)
+  })
+
+  it('maps similar_behavior to its op and returns the markdown as plain text', async () => {
+    let seenReq: Request | undefined
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seenReq = req
+        s.write(JSON.stringify({ id: req.id, ok: true, result: 'Jev is off.' }) + '\n')
+      })
+    })
+
+    const result = await similarBehavior({ file: 'a.ts', symbol: 'load' }, path)
+    expect(seenReq).toMatchObject({ op: 'similar_behavior', file: 'a.ts', symbol: 'load' })
+    expect(result).toEqual({ content: [{ type: 'text', text: 'Jev is off.' }] })
 
     stopServer(server, path)
   })

@@ -217,6 +217,7 @@ export const requestSchema = z.discriminatedUnion('op', [
   z.object({ id: z.string(), op: z.literal('where'), cwd: z.string(), calls: z.array(z.string()), callers: z.array(z.string()), name: z.string().optional(), file: z.string().optional() }),
   z.object({ id: z.string(), op: z.literal('get_edit'), cwd: z.string(), editId: z.string() }),
   z.object({ id: z.string(), op: z.literal('evidence'), cwd: z.string(), file: z.string(), symbol: z.string().optional(), lines: z.object({ start: z.number().int(), end: z.number().int() }).optional(), notes: z.array(z.object({ line: z.number().int(), text: z.string() })).optional(), depth: z.number().int().optional() }),
+  z.object({ id: z.string(), op: z.literal('similar_behavior'), cwd: z.string(), file: z.string(), symbol: z.string() }),
   z.object({ id: z.string(), op: z.literal('session-event'), cwd: z.string(), event: z.string(), session: z.string().optional(), file: z.string().optional(), digest: z.string().optional() }),
 ])
 
@@ -561,7 +562,7 @@ export type PtyEvent =
   | { type: 'data'; id: string; chunk: string }
   | { type: 'exit'; id: string; exitCode: number; signal?: number }
 
-export type ArchitectApi = import('./rules/conventions').ConventionsApi & {
+export type ArchitectApi = import('./rules/conventions').ConventionsApi & import('./jev/types').JevApi & {
   projects(): Promise<ProjectSummary[]>
   open(root: string): Promise<OpenedProject>
   closeProject(root: string): Promise<void>

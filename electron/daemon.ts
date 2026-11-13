@@ -59,6 +59,7 @@ import { createJournal } from './journal'
 import { styleIn } from './rules/style'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
+import { projectPath } from './where/refs'
 import { evidenceOf } from './evidence'
 import { impactFor, impactSchema, scanOf, type Impact } from './impact'
 import { cutFor, cutSchema, type Cut } from './cut'
@@ -160,6 +161,7 @@ type DaemonOptions = {
   rescanDebounceMs?: number
   claude?: AiRun
   reviewTimeouts?: { proposal?: number; edit?: number }
+  behavior?: (root: string, file: string, symbol: string) => Promise<string>
 }
 
 function sameContract(a: ContractState, b: ContractState): boolean {
@@ -847,6 +849,11 @@ export function createDaemon(options: DaemonOptions = {}) {
         const root = resolveRoot(req.cwd)
         if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
         loadProject(root)
+
+        if (req.op === 'similar_behavior') {
+          const text = options.behavior ? await options.behavior(root, projectPath(root, req.cwd, req.file), req.symbol) : 'Jev is not available in this Architect process.'
+          return { id: req.id, ok: true, result: text }
+        }
 
         if (req.op === 'list_edits') return { id: req.id, ok: true, result: listEdits(root) }
         if (req.op === 'write_agents') {
