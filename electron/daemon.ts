@@ -59,6 +59,7 @@ import { createJournal } from './journal'
 import { styleIn } from './rules/style'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
+import { evidenceOf } from './evidence'
 import { impactFor, impactSchema, scanOf, type Impact } from './impact'
 import { cutFor, cutSchema, type Cut } from './cut'
 import { changeVerdict } from './verdict'
@@ -838,6 +839,11 @@ export function createDaemon(options: DaemonOptions = {}) {
         }
 
         if (req.op === 'where') return { id: req.id, ok: true, result: await answerWhere(req, [resolveRoot(req.cwd), ...projects.keys()], loadProject, mapOf) }
+        if (req.op === 'evidence') {
+          const root = resolveRoot(req.cwd)
+          if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
+          return { id: req.id, ok: true, result: await evidenceOf(req, root, await mapOf(root)) }
+        }
         const root = resolveRoot(req.cwd)
         if (!root) return { id: req.id, ok: false, error: `no architecture defined for ${req.cwd}` }
         loadProject(root)

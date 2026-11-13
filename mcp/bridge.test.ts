@@ -13,6 +13,7 @@ import {
   listEdits,
   getEdit,
   where,
+  evidence,
 } from './bridge.js'
 
 function socketPath() {
@@ -248,6 +249,22 @@ describe('bridge', () => {
 
     await writeAgents(path)
     expect(seenReq).toMatchObject({ op: 'write_agents' })
+
+    stopServer(server, path)
+  })
+
+  it('maps evidence to op evidence and returns its markdown as plain text', async () => {
+    let seenReq: Request | undefined
+    const { server, path } = startServer((socket) => {
+      readRequests(socket, (req, s) => {
+        seenReq = req
+        s.write(JSON.stringify({ id: req.id, ok: true, result: '`load` in `a.ts` line 2\n\n```\n2 | x\n```' }) + '\n')
+      })
+    })
+
+    const result = await evidence({ file: 'a.ts', lines: { start: 2, end: 2 }, notes: [{ line: 2, text: 'here' }] }, path)
+    expect(seenReq).toMatchObject({ op: 'evidence', file: 'a.ts', lines: { start: 2, end: 2 }, notes: [{ line: 2, text: 'here' }] })
+    expect(result).toEqual({ content: [{ type: 'text', text: '`load` in `a.ts` line 2\n\n```\n2 | x\n```' }] })
 
     stopServer(server, path)
   })

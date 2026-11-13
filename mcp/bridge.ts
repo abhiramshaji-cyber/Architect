@@ -10,10 +10,10 @@ export { send, disconnect } from './socket.js'
 
 type ToolResult = { content: [{ type: 'text'; text: string }]; isError?: true }
 
-async function callTool(req: RequestInput, socketPath: string): Promise<ToolResult> {
+async function callTool(req: RequestInput, socketPath: string, render: (result: unknown) => string = JSON.stringify): Promise<ToolResult> {
   try {
     const result = await send(req, socketPath)
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+    return { content: [{ type: 'text', text: render(result) }] }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return { content: [{ type: 'text', text: message }], isError: true }
@@ -47,6 +47,11 @@ export const where = ({ calls = [], callers = [], name, file }: PlaceInput, sock
 
 export const getEdit = (editId: string, socketPath = SOCKET_PATH) =>
   callTool({ op: 'get_edit', editId }, socketPath)
+
+export type EvidenceInput = Omit<Extract<RequestInput, { op: 'evidence' }>, 'op'>
+
+export const evidence = (input: EvidenceInput, socketPath = SOCKET_PATH) =>
+  callTool({ op: 'evidence', ...input }, socketPath, String)
 
 function main() {
   const server = new McpServer({ name: 'architect', version: '0.1.0' })
@@ -142,6 +147,22 @@ function main() {
       },
     },
     (input) => where(input),
+  )
+
+  server.registerTool(
+    'evidence',
+    {
+      description:
+        'Get GitHub ready markdown evidence for one function or line range, to paste into an issue or pull request. Pass file and either symbol (a function in that file, by its name or its full Class.method name) or lines. Returns, each part left out when it has nothing to show: a permalink to the exact lines at the current HEAD commit on the github.com origin remote (GitHub embeds it as a code snippet when it sits alone on a line in an issue or pull request of that same repository), or a one line reason there is none (no GitHub origin, HEAD not pushed so the link would 404, or the file uncommitted or changed since HEAD); a fenced excerpt of the lines with line numbers and each note shown as a trailing marker on its line; a mermaid flowchart of callers into the function and its callees out to depth, each node named with its file:line; and the caller count with every call site as file:line, linked when it can be. For lines, the graph and callers are those of the smallest function holding the whole range, and are left out when none does. Call data comes from the scan, which does not yet see calls written as this.#name() or as this.name() inside a function declared within a method, so such callers are missing. An unknown symbol is an error listing the functions the file has.',
+      inputSchema: {
+        file: z.string().describe('path of the file, relative to the project root or the working directory'),
+        symbol: z.string().optional().describe('function name, or Class.method'),
+        lines: z.object({ start: z.number().int().min(1), end: z.number().int().min(1) }).optional().describe('1 based inclusive line range'),
+        notes: z.array(z.object({ line: z.number().int(), text: z.string() })).optional().describe('short annotations, each shown at the end of its line in the excerpt'),
+        depth: z.number().int().min(1).optional().describe('call graph depth in each direction, default 1'),
+      },
+    },
+    (input) => evidence(input),
   )
 
   const transport = new StdioServerTransport()

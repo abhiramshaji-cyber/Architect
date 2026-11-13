@@ -214,6 +214,8 @@ Any rule can be `off`. Backticked globs after the value limit a line to those pa
 
 `architect where` (or the `where` MCP tool) answers where a new function belongs before it is written. Pass the functions it will call and the ones that will call it, plus an optional name and file. It returns the component that owns most of those neighbours and that `architect.md` allows, the folder most of them live in, whether a new file there fits the `files` rule, the leading word most names in that folder start with, and the most similar function to copy. Every answer comes from the scan and `architect.md` with counts and `file:line` evidence, and no model is called.
 
+The `evidence` MCP tool returns GitHub ready markdown about one function or line range, for pasting into an issue or pull request. Pass `file` and either `symbol` or `lines`, plus optional `notes` (short annotations per line) and `depth`. It returns a permalink to those lines at HEAD (or the reason there is none, such as HEAD not being pushed), a numbered excerpt with the notes on their lines, a mermaid flowchart of callers and callees with `file:line`, and every call site.
+
 `architect check --suggest` adds split suggestions to the check: for a file over the `lines` or `jobs` rule, a folder of files behind the same entry file, one per group of related exported functions; for a function over the `split` threshold, the points in its body where it can be cut.
 
 Architect ships with its own [`architect.md`](architect.md) describing Architect. It is the demo, the test fixture, and the proof the tool survives contact with itself.
