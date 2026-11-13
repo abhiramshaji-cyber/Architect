@@ -13,10 +13,10 @@ export default function Actions({ id }: { id: string }) {
   return (
     <div className="review-actions">
       <div className="review-buttons">
-        <button className="primary" onClick={() => decide(id, true)}>
+        <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={() => decide(id, true)}>
           Approve
         </button>
-        <button onClick={() => decide(id, false)}>Deny</button>
+        <button className="cyber-btn cyber-btn--sm" onClick={() => decide(id, false)}>Deny</button>
         <button aria-expanded={writing} onClick={() => setWriting((open) => !open)}>
           Suggest a better way
         </button>
@@ -30,7 +30,7 @@ export default function Actions({ id }: { id: string }) {
             send()
           }}
         >
-          <textarea
+          <textarea className="cyber-textarea"
             autoFocus
             rows={3}
             value={feedback}
@@ -43,7 +43,7 @@ export default function Actions({ id }: { id: string }) {
               send()
             }}
           />
-          <button type="submit" disabled={!said}>
+          <button className="cyber-btn cyber-btn--sm" type="submit" disabled={!said}>
             Deny and tell Claude
           </button>
         </form>

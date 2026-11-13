@@ -24,8 +24,8 @@ export default function DrawnEdge({
       labelShowBg
       labelBgPadding={[4, 2]}
       labelBgBorderRadius={3}
-      labelStyle={{ fontSize: 11, fill: 'var(--text-dim)' }}
-      labelBgStyle={{ fill: 'var(--bg)' }}
+      labelStyle={{ fontSize: 11, fill: 'var(--color-text-muted)' }}
+      labelBgStyle={{ fill: 'var(--color-bg-primary)' }}
     />
   )
 }

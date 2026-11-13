@@ -45,7 +45,7 @@ export default function SearchPanel({ onClose }: { onClose: () => void }) {
     <aside className="search" aria-label="Search in project">
       <input
         ref={input}
-        className="search-input"
+        className="cyber-input search-input"
         placeholder="Search in project"
         aria-label="Search in project"
         value={query}

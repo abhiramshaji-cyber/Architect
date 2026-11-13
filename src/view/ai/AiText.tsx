@@ -7,7 +7,7 @@ export function AiText({ text, className, as: Element = 'span' }: { text: string
   if (text === '') return null
   return (
     <Element className={className}>
-      <abbr className="ai-tag" title="Written by the connected AI, not read from the code">
+      <abbr className="cyber-badge cyber-badge--sm cyber-badge--yellow ai-tag" title="Written by the connected AI, not read from the code">
         AI
       </abbr>{' '}
       {text}

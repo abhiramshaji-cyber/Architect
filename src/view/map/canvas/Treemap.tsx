@@ -18,12 +18,12 @@ function inkOf(token: string): Ink {
   const css = getComputedStyle(document.documentElement)
   const read = (name: string) => css.getPropertyValue(name).trim()
   return {
-    bg: read('--bg'),
-    raise: read('--raise'),
-    border: read('--border'),
-    text: read('--text'),
-    dim: read('--text-dim'),
-    font: read('--font'),
+    bg: read('--color-bg-primary'),
+    raise: read('--color-bg-tertiary'),
+    border: read('--color-border-default'),
+    text: read('--color-text-primary'),
+    dim: read('--color-text-muted'),
+    font: read('--font-body'),
     tint: read(token),
   }
 }

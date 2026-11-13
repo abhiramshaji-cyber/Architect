@@ -16,11 +16,7 @@
 }
 
 .picker-prompt {
-  width: 100%;
   min-height: 44px;
-  padding: 0 var(--sp-4);
-  font-size: var(--fs-md);
-  border-radius: var(--radius);
 }
 
 .picker-note,
@@ -30,7 +26,7 @@
   gap: var(--sp-2);
   align-items: baseline;
   font-size: var(--fs-sm);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .picker-error {
@@ -38,8 +34,8 @@
 }
 
 .picker-note code {
-  font-family: var(--mono);
-  color: var(--text);
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
 }
 
 .picker-list {
@@ -61,12 +57,12 @@
   padding: 0 var(--sp-3);
   background: transparent;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   text-align: left;
 }
 
 .picker-row:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .picker-row.active {
@@ -74,7 +70,7 @@
 }
 
 .picker-name {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
 }
@@ -97,9 +93,9 @@
 }
 
 .picker-preview h4 {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .picker-preview p {
@@ -108,9 +104,9 @@
 
 .picker-pre {
   margin: var(--sp-2) 0 0;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -125,8 +121,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-lg);
   padding: var(--sp-5);
   box-shadow: 0 24px 64px var(--shadow);
@@ -134,15 +130,15 @@
 
 .picker-prompt-head {
   margin: 0 0 var(--sp-2);
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
 }
 
-.picker-prompt-box .action {
+.picker-prompt-box .cyber-btn {
+  width: 100%;
   justify-content: flex-start;
   text-align: left;
   white-space: normal;
-  padding: var(--sp-2) var(--sp-4);
 }
 
 .diff-layout {
@@ -167,22 +163,17 @@
   align-items: center;
   gap: var(--sp-1) var(--sp-3);
   padding: var(--sp-5) var(--sp-5) var(--sp-4);
-  background: var(--bg);
+  background: var(--color-bg-primary);
 }
 
 .diff-header h2 {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-md);
   font-weight: 600;
   overflow-wrap: anywhere;
-}
-
-.diff-header .ghost {
-  min-height: 30px;
-  padding: 0 var(--sp-3);
 }
 
 .diff-header .diff-section-note {
@@ -219,7 +210,7 @@
 }
 
 .diff-files li:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .diff-file {
@@ -245,7 +236,7 @@
   flex: none;
   width: 1.2em;
   color: var(--text-faint);
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
   text-align: center;
@@ -306,7 +297,7 @@
 }
 
 .diff-branch-row a {
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-size: var(--fs-sm);
 }
 
@@ -317,20 +308,20 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-size: var(--fs-sm);
   text-align: left;
 }
 
 .diff-toggle:hover {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
 }
 
 .diff-file-counts {
   flex: none;
   color: var(--text-faint);
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
 
@@ -373,7 +364,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   column-gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-5);
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-code);
 }
 
@@ -400,7 +391,7 @@
   width: 6ch;
   padding-right: var(--sp-2);
   background: var(--code-bg);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   text-align: right;
   user-select: none;
 }
@@ -446,7 +437,7 @@
 
 .diff-line.blank,
 .diff-line.blank .diff-no {
-  background: var(--raise);
+  background: var(--color-bg-tertiary);
 }
 
 .diff-hunk {
@@ -455,7 +446,7 @@
   gap: var(--sp-3);
   height: 32px;
   color: var(--text-faint);
-  font-family: var(--font);
+  font-family: var(--font-body);
   font-size: var(--fs-xs);
 }
 
@@ -475,7 +466,7 @@
 .diff-eof {
   margin-left: 2ch;
   color: var(--text-faint);
-  font-family: var(--font);
+  font-family: var(--font-body);
   font-style: italic;
 }
 
@@ -497,15 +488,6 @@
   padding: 0;
 }
 
-.commit-title,
-.commit-description {
-  width: 100%;
-}
-
-.commit-description {
-  resize: vertical;
-}
-
 .commit-actions {
   display: flex;
   flex-wrap: wrap;
@@ -513,7 +495,7 @@
 }
 
 .commit-box a {
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .commit-row {

@@ -47,7 +47,7 @@ export function SyncButton({
   return (
     <>
       {label && (
-        <button className="ghost" onClick={() => void sync()} disabled={busy !== null}>
+        <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={() => void sync()} disabled={busy !== null}>
           {busy ? 'Syncing…' : label}
         </button>
       )}
@@ -131,7 +131,7 @@ export function BranchBox({
           </a>
         )}
         {canOpen && form === null && (
-          <button className="ghost" onClick={() => void draft()} disabled={busy !== null}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={() => void draft()} disabled={busy !== null}>
             {busy === 'draft' ? 'Writing…' : 'Open pull request'}
           </button>
         )}
@@ -142,14 +142,14 @@ export function BranchBox({
       {form && (
         <div className="commit-box">
           <input
-            className="commit-title"
+            className="cyber-input commit-title"
             value={form.title}
             placeholder="Title"
             aria-label="Pull request title"
             onChange={(event) => setForm({ ...form, title: event.target.value })}
           />
           <textarea
-            className="commit-description"
+            className="cyber-textarea commit-description"
             value={form.body}
             placeholder="Body"
             rows={6}
@@ -157,13 +157,13 @@ export function BranchBox({
           />
           <div className="commit-actions">
             <button
-              className="primary"
+              className="cyber-btn cyber-btn--sm cyber-btn--filled"
               onClick={() => void create()}
               disabled={busy !== null || form.title.trim() === ''}
             >
               {busy === 'open' ? 'Opening…' : 'Open'}
             </button>
-            <button className="ghost" onClick={() => setForm(null)} disabled={busy !== null}>
+            <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={() => setForm(null)} disabled={busy !== null}>
               Cancel
             </button>
           </div>

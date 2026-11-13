@@ -22,7 +22,7 @@
 .layers-source {
   flex: 1 1 auto;
   font-size: var(--fs-sm);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .layers-tag {
@@ -30,7 +30,7 @@
   align-items: center;
   gap: 6px;
   font-size: var(--fs-xs);
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
 .layers-tag::before {
@@ -45,7 +45,7 @@
 .layers-tag.forbidden::before { background: color-mix(in srgb, var(--layer-forbidden) 45%, transparent); border-color: var(--layer-forbidden); }
 .layers-tag.undrawn::before { background: color-mix(in srgb, var(--layer-undrawn) 40%, transparent); border-color: var(--layer-undrawn); }
 .layers-tag.stale::before { border-style: dashed; }
-.layers-tag.free::before { background: var(--raise); }
+.layers-tag.free::before { background: var(--color-bg-tertiary); }
 .layers-tag.cycle::before { border: 2px solid var(--layer-cycle); }
 
 .layers-body {
@@ -96,7 +96,7 @@
 
 .layers-id {
   flex: 1;
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .layers-cell {
@@ -107,16 +107,16 @@
   background: transparent;
   font: inherit;
   font-size: var(--fs-xs);
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
-button.layers-cell { cursor: pointer; background: var(--raise); }
+button.layers-cell { cursor: pointer; background: var(--color-bg-tertiary); }
 button.layers-cell:hover { outline: 1px solid var(--ring); outline-offset: -1px; }
 .layers-cell.self { background: var(--sunken); }
-.layers-cell.allowed { background: color-mix(in srgb, var(--layer-allowed) 22%, transparent); color: var(--text); }
-.layers-cell.forbidden { background: color-mix(in srgb, var(--layer-forbidden) 45%, transparent); color: var(--text); font-weight: 600; }
-.layers-cell.undrawn { background: color-mix(in srgb, var(--layer-undrawn) 32%, transparent); color: var(--text); }
-.layers-cell.stale { background: transparent; border: 1px dashed var(--text-dim); color: var(--text-faint); }
+.layers-cell.allowed { background: color-mix(in srgb, var(--layer-allowed) 22%, transparent); color: var(--color-text-primary); }
+.layers-cell.forbidden { background: color-mix(in srgb, var(--layer-forbidden) 45%, transparent); color: var(--color-text-primary); font-weight: 600; }
+.layers-cell.undrawn { background: color-mix(in srgb, var(--layer-undrawn) 32%, transparent); color: var(--color-text-primary); }
+.layers-cell.stale { background: transparent; border: 1px dashed var(--color-text-muted); color: var(--text-faint); }
 .layers-cell.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .layers-cycle {
@@ -149,9 +149,9 @@ button.layers-cell:hover { outline: 1px solid var(--ring); outline-offset: -1px;
   font-weight: 500;
 }
 
-.layers-count { font-size: var(--fs-xs); color: var(--text-dim); }
-.layers-close { border: 0; background: transparent; color: var(--text-dim); font-size: var(--fs-lg); cursor: pointer; }
-.layers-reason { margin: var(--sp-2) var(--sp-4) 0; font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere; }
+.layers-count { font-size: var(--fs-xs); color: var(--color-text-muted); }
+.layers-close { border: 0; background: transparent; color: var(--color-text-muted); font-size: var(--fs-lg); cursor: pointer; }
+.layers-reason { margin: var(--sp-2) var(--sp-4) 0; font-size: var(--fs-sm); color: var(--color-text-secondary); overflow-wrap: anywhere; }
 
 .layers-calls ul {
   list-style: none;
@@ -179,7 +179,7 @@ button.layers-cell:hover { outline: 1px solid var(--ring); outline-offset: -1px;
   cursor: pointer;
 }
 
-.layers-calls li button:hover { background: var(--hover); }
-.layers-fn { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); overflow: hidden; text-overflow: ellipsis; }
-.layers-loc { font-size: var(--fs-xs); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layers-calls li button:hover { background: var(--color-bg-elevated); }
+.layers-fn { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; }
+.layers-loc { font-size: var(--fs-xs); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layers-arrow { color: var(--text-faint); }

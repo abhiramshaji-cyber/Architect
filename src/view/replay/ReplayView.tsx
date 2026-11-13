@@ -108,11 +108,11 @@ export default function ReplayView({ theme, show }: ViewProps) {
             : `${plural(steps.length, 'step')}: ${plural(count('commit'), 'commit')}, ${plural(count('code'), 'code change')}, ${plural(count('contract'), 'contract change')}, ${plural(rejected, 'rejected verdict')}`}
         </p>
         <div className="fn-sort" role="group" aria-label="Play">
-          <button className="mode" disabled={at <= 0} onClick={() => go(at - 1)}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={at <= 0} onClick={() => go(at - 1)}>
             Back
           </button>
           <button
-            className={playing ? 'mode active' : 'mode'}
+            className={playing ? 'cyber-btn cyber-btn--sm cyber-btn--filled' : 'cyber-btn cyber-btn--sm cyber-btn--ghost'}
             aria-pressed={playing}
             disabled={steps.length < 2}
             onClick={() => {
@@ -122,7 +122,7 @@ export default function ReplayView({ theme, show }: ViewProps) {
           >
             {playing ? 'Pause' : 'Play'}
           </button>
-          <button className="mode" disabled={at >= last} onClick={() => go(at + 1)}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={at >= last} onClick={() => go(at + 1)}>
             Next
           </button>
         </div>

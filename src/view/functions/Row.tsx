@@ -68,7 +68,7 @@ export default memo(function Row({ row, at, change, step, onOpen, onScope, onRel
           )}
           <span className="fn-foot">
             <Facts row={row} at={at} onRelated={onRelated} onFocus={onFocus} />
-            {row.exported && <span className="fn-badge">exported</span>}
+            {row.exported && <span className="cyber-badge cyber-badge--sm cyber-badge--chrome">exported</span>}
           </span>
         </span>
         <span className="fn-lines" aria-label={plural(row.lines, 'line')}>

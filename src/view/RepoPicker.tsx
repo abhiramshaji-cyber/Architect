@@ -286,7 +286,7 @@ export default function RepoPicker() {
         <div className="picker-main">
           <input
             ref={input}
-            className="picker-prompt"
+            className="cyber-input picker-prompt"
             autoFocus
             placeholder={repo ? 'Filter branches' : 'Filter repos'}
             value={picker.query}
@@ -401,15 +401,15 @@ export default function RepoPicker() {
           <p className="picker-prompt-head">
             {prompt.row.branch} - {riskText(prompt.plan.risk)} in {basename(prompt.plan.existing)}:
           </p>
-          <button className="action" onClick={() => void run(prompt.row, 'keep', `Opening ${prompt.row.label}...`)}>
+          <button className="cyber-btn cyber-btn--sm" onClick={() => void run(prompt.row, 'keep', `Opening ${prompt.row.label}...`)}>
             Keep changes &nbsp; pull {prompt.plan.risk.tracking} via rebase --autostash
           </button>
-          <button className="action danger" onClick={() => void run(prompt.row, 'clean', `Wiping ${prompt.row.branch}...`)}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--magenta" onClick={() => void run(prompt.row, 'clean', `Wiping ${prompt.row.branch}...`)}>
             Clean pull &nbsp; DELETE the worktree, recreate from {prompt.plan.risk.tracking}
             {riskText(prompt.plan.risk) === 'nothing local' ? '' : `  [loses ${riskText(prompt.plan.risk)}]`}
           </button>
           <button
-            className="action"
+            className="cyber-btn cyber-btn--sm"
             onClick={() => {
               setPrompt(null)
               setMessage(`Cancelled: ${prompt.row.branch} left as it is`)

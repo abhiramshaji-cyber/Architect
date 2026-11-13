@@ -65,16 +65,16 @@ export default function FilesView() {
                 </span>
               )}
               <div className="files-actions">
-                <button className="primary" onClick={saveFile} disabled={!dirty || fileBusy}>
+                <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={saveFile} disabled={!dirty || fileBusy}>
                   {fileBusy ? 'Saving…' : 'Save'}
                 </button>
-                <button className="ghost" onClick={revertFile} disabled={!dirty}>
+                <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={revertFile} disabled={!dirty}>
                   Revert
                 </button>
-                <button className="ghost" onClick={reloadFile} disabled={fileBusy}>
+                <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={reloadFile} disabled={fileBusy}>
                   Reload
                 </button>
-                <button className="ghost" onClick={closeFile}>
+                <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={closeFile}>
                   Close
                 </button>
               </div>

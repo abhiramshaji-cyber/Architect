@@ -46,7 +46,7 @@
 }
 
 .review-pick:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .review-pick.active {
@@ -57,7 +57,7 @@
 .review-kind,
 .review-root {
   font-size: var(--fs-xs);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .review-what {
@@ -79,7 +79,7 @@
   margin: var(--sp-3) 0 0;
   font-size: var(--fs-sm);
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
 .review-head {
@@ -93,7 +93,7 @@
 .review-error {
   margin: 0;
   font-size: var(--fs-sm);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .review-error {
@@ -101,9 +101,9 @@
 }
 
 .review-file {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-weight: 400;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .review-actions,
@@ -133,7 +133,7 @@
   flex-shrink: 0;
   display: flex;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -144,7 +144,7 @@
 .review-diff {
   flex-shrink: 0;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   overflow: auto;
   max-height: 520px;
 }
@@ -154,33 +154,8 @@
   gap: var(--sp-2);
 }
 
-.review-chip {
-  padding: 1px var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: var(--fs-xs);
-  color: var(--text-dim);
-}
-
-.review-chip.mark-added,
-.review-fn.mark-added .review-chip {
-  border-style: dashed;
-  border-color: var(--ok);
-  color: var(--ok);
-}
-
-.review-chip.mark-removed,
-.review-fn.mark-removed .review-chip {
-  border-color: var(--danger);
-  color: var(--danger);
+.review-chip.mark-removed {
   text-decoration: line-through;
-}
-
-.review-chip.mark-changed,
-.review-chip.mark-touched,
-.review-fn.mark-changed .review-chip {
-  border-color: var(--live);
-  color: var(--live);
 }
 
 .review-functions {
@@ -201,13 +176,13 @@
 
 .review-fn.mark-removed .fn-name {
   text-decoration: line-through;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .review-calls {
   margin-left: auto;
   font-size: var(--fs-xs);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .react-flow__node.mark-added .node {
@@ -255,10 +230,10 @@
 .review-toggle {
   margin-left: auto;
   padding: 2px var(--sp-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-size: var(--fs-xs);
 }
 
@@ -273,7 +248,7 @@
 
 .review-empty h2 {
   margin: 0;
-  color: var(--text);
+  color: var(--color-text-primary);
   font-size: var(--fs-lg);
 }
 

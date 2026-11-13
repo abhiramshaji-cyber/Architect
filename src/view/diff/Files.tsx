@@ -84,7 +84,7 @@ export function Files({
               <span className="diff-file-counts">{counts(file)}</span>
             </button>
             {onStage && (
-              <button className="ghost diff-stage" onClick={() => onStage(file, staged === 'staged')}>
+              <button className="cyber-btn cyber-btn--sm cyber-btn--ghost diff-stage" onClick={() => onStage(file, staged === 'staged')}>
                 {staged === 'staged' ? 'Unstage' : 'Stage'}
               </button>
             )}

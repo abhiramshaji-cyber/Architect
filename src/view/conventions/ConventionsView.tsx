@@ -31,7 +31,7 @@ export default function ConventionsView({ show }: ViewProps) {
           {state === null ? 'Reading…' : state.enabled ? plural(state.measured.length, 'measured convention') : 'Learned conventions are off'}
         </p>
         {state?.enabled && (
-          <button className="ghost" disabled={ai.busy} onClick={suggest}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={ai.busy} onClick={suggest}>
             {ai.busy ? 'Asking the AI…' : 'Suggest with AI'}
           </button>
         )}

@@ -235,7 +235,7 @@ export default function Inspector({ node, onClose, onSelect, onEdit: edit, onDro
               <input
                 id="inspector-id-input"
                 key={`id-${node.label}`}
-                className="inspector-input"
+                className="cyber-input inspector-input"
                 defaultValue={node.label}
                 onKeyDown={blurOnEnter}
                 onBlur={(e) => {
@@ -254,7 +254,7 @@ export default function Inspector({ node, onClose, onSelect, onEdit: edit, onDro
               <input
                 id="inspector-purpose-input"
                 key={`purpose-${node.purpose}`}
-                className="inspector-input"
+                className="cyber-input inspector-input"
                 defaultValue={node.purpose}
                 onKeyDown={blurOnEnter}
                 onBlur={(e) => {
@@ -270,7 +270,7 @@ export default function Inspector({ node, onClose, onSelect, onEdit: edit, onDro
               <textarea
                 id="inspector-owns-input"
                 key={`owns-${owned}-${pass}`}
-                className="inspector-textarea"
+                className="cyber-textarea inspector-textarea"
                 rows={4}
                 defaultValue={owned}
                 onBlur={(e) => {

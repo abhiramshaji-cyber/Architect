@@ -5,6 +5,7 @@ import Canvas from '../Canvas'
 import { flatten, SplitDiff } from '../SplitDiff'
 import Actions from './Actions'
 import Impact from './Impact'
+import { chipClass } from './chip'
 
 const MAX_ROWS = 2000
 
@@ -57,7 +58,7 @@ export default function Detail({ item, theme }: { item: ReviewItem; theme: strin
             <>
               <div className="review-legend">
                 {LEGEND.map((mark) => (
-                  <span key={mark} className={`review-chip mark-${mark}`}>
+                  <span key={mark} className={chipClass(mark)}>
                     {mark}
                   </span>
                 ))}

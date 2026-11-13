@@ -26,7 +26,7 @@ export default function AiView() {
         <div className="ai-card-actions">
           <label className="ai-model">
             Model
-            <select value={model} disabled={busy} onChange={(event) => chooseAi({ ...choice, models: { ...choice.models, [cli.provider]: event.target.value } })}>
+            <select className="cyber-select" value={model} disabled={busy} onChange={(event) => chooseAi({ ...choice, models: { ...choice.models, [cli.provider]: event.target.value } })}>
               {options.map((id) => (
                 <option key={id} value={id}>
                   {id}
@@ -53,11 +53,11 @@ export default function AiView() {
         <p className="fn-count" aria-live="polite">
           {!choice ? 'Checking…' : choice.connected ? `Connected to ${CLI_NAMES[choice.provider]}, ${choice.models[choice.provider]}` : 'No AI connected'}
         </p>
-        <button className="ghost" disabled={busy} onClick={refreshAi}>
+        <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={busy} onClick={refreshAi}>
           {busy ? 'Checking…' : 'Check again'}
         </button>
         {choice?.connected && (
-          <button className="ghost" disabled={busy} onClick={() => chooseAi({ ...choice, connected: false })}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" disabled={busy} onClick={() => chooseAi({ ...choice, connected: false })}>
             Disconnect
           </button>
         )}

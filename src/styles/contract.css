@@ -21,7 +21,7 @@
   flex-shrink: 0;
   width: 360px;
   display: flex;
-  background: var(--bg);
+  background: var(--color-bg-primary);
   border-left: 1px solid var(--line);
 }
 
@@ -70,13 +70,7 @@
   margin: 0;
   font-size: var(--fs-sm);
   font-weight: 600;
-  color: var(--text);
-}
-
-.rail-count {
-  color: var(--text-faint);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
 }
 
 .open-projects {
@@ -85,7 +79,7 @@
 
 .open-projects h3 {
   margin-bottom: var(--sp-3);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   font-weight: 500;
 }
 
@@ -117,9 +111,9 @@
   text-align: left;
   background: transparent;
   border: none;
-  color: var(--text);
+  color: var(--color-text-primary);
   padding: 10px var(--sp-3);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
 }
 
 .project {
@@ -129,7 +123,7 @@
 
 .project:hover,
 .edit-item:hover:not(:disabled) {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .project.active,
@@ -145,7 +139,7 @@
 }
 
 .project-folder {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   font-weight: 500;
 }
@@ -153,7 +147,7 @@
 .project-title,
 .project-unavailable {
   font-size: var(--fs-xs);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .project-unavailable {
@@ -181,12 +175,12 @@
   padding: 1px var(--sp-2);
   border-radius: 999px;
   font-size: var(--fs-xs);
-  color: var(--text-dim);
-  border: 1px solid var(--border);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-default);
 }
 
 .edit-status.handed {
-  color: var(--text);
+  color: var(--color-text-primary);
   border-color: var(--active-border);
 }
 
@@ -217,11 +211,11 @@
   margin: 0;
   max-width: 72ch;
   font-size: var(--fs-md);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .canvas-header .canvas-path {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-faint);
   overflow-wrap: anywhere;
@@ -236,7 +230,7 @@
   font-size: var(--fs-xl);
   font-weight: 600;
   letter-spacing: -0.02em;
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .blank-actions {
@@ -256,7 +250,7 @@
 
 .blank-note {
   font-size: var(--fs-sm);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .drafting-pulse {
@@ -280,14 +274,6 @@
   }
 }
 
-.action {
-  width: 100%;
-}
-
-.action.danger {
-  color: var(--danger);
-}
-
 .edit-bar {
   display: flex;
   align-items: center;
@@ -301,12 +287,12 @@
 .edit-bar-label {
   min-width: 0;
   font-size: var(--fs-sm);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   overflow-wrap: anywhere;
 }
 
 .edit-bar-label strong {
-  color: var(--text);
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
@@ -320,7 +306,7 @@
 .edit-bar-message {
   flex-basis: 100%;
   font-size: var(--fs-sm);
-  color: var(--text-2);
+  color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -338,7 +324,7 @@
 .canvas-area .react-flow {
   flex: 1;
   min-width: 0;
-  background: var(--bg);
+  background: var(--color-bg-primary);
 }
 
 .react-flow__node {
@@ -360,16 +346,16 @@
 .react-flow__controls-button {
   width: 32px;
   height: 32px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  fill: var(--text-dim);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  fill: var(--color-text-muted);
   transition: background-color var(--fast) ease;
 }
 
 .react-flow__controls-button:hover {
-  background: var(--hover);
-  fill: var(--text);
+  background: var(--color-bg-elevated);
+  fill: var(--color-text-primary);
 }
 
 .node {
@@ -380,10 +366,10 @@
   overflow: hidden;
   background: var(--node-bg);
   background-image: linear-gradient(to right, var(--aged, transparent) 3px, transparent 3px);
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border-default);
   border-radius: 10px;
   padding: 9px 12px 10px;
-  color: var(--text);
+  color: var(--color-text-primary);
   box-shadow: 0 1px 2px var(--shadow);
   transition:
     border-color var(--fast) ease,
@@ -430,7 +416,7 @@
 }
 
 .node-entry .node-role {
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .node-middle .node-role {
@@ -442,7 +428,7 @@
   pointer-events: all;
   width: 9px;
   height: 9px;
-  background: var(--panel);
+  background: var(--color-bg-secondary);
   border: 1.5px solid var(--accent);
 }
 
@@ -465,8 +451,8 @@
   max-width: 440px;
   max-height: 46%;
   overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px var(--shadow);
   font-size: var(--fs-xs);
@@ -477,12 +463,12 @@
   gap: var(--sp-3);
   flex-wrap: wrap;
   padding: var(--sp-2) var(--sp-3);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
   cursor: pointer;
 }
 
 .owns-count.warn {
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .owns-count.bad {
@@ -493,14 +479,14 @@
 .owns-lists {
   margin: 0;
   padding: 0 var(--sp-3) var(--sp-3);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .owns-lists h4 {
   margin: var(--sp-3) 0 var(--sp-1);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--text-2);
+  color: var(--color-text-secondary);
 }
 
 .owns-lists ul {
@@ -510,11 +496,11 @@
 
 .owns-lists li {
   margin: 2px 0;
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .owns-lists code {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
 }
 
 .inspector {
@@ -523,7 +509,7 @@
   width: 640px;
   z-index: 10;
   overflow-y: auto;
-  background: var(--panel);
+  background: var(--color-bg-secondary);
   border-left: 1px solid var(--line);
   padding: var(--sp-5) var(--sp-5) var(--sp-6);
   box-shadow: -16px 0 40px var(--shadow);
@@ -541,7 +527,7 @@
 
 .inspector-grip:hover,
 body.resizing .inspector-grip {
-  background: var(--border);
+  background: var(--color-border-default);
 }
 
 .inspector-head {
@@ -567,7 +553,7 @@ body.resizing .inspector-grip {
 
 .inspector-status {
   font-size: var(--fs-xs);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .inspector-close {
@@ -583,14 +569,14 @@ body.resizing .inspector-grip {
   margin: 0 0 var(--sp-2);
   font-size: var(--fs-xs);
   font-weight: 500;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .inspector-purpose {
   margin: 0;
   font-size: var(--fs-md);
   line-height: 1.6;
-  color: var(--text);
+  color: var(--color-text-primary);
   overflow-wrap: anywhere;
   user-select: text;
 }
@@ -602,9 +588,9 @@ body.resizing .inspector-grip {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--text);
+  color: var(--color-text-primary);
   overflow-wrap: anywhere;
   user-select: text;
 }
@@ -617,14 +603,11 @@ body.resizing .inspector-grip {
 
 .inspector-input,
 .inspector-textarea {
-  width: 100%;
   line-height: 1.5;
 }
 
 .inspector-textarea {
   min-height: 96px;
-  resize: vertical;
-  font-family: var(--mono);
   font-size: var(--fs-sm);
   white-space: pre;
   overflow-wrap: normal;
@@ -638,7 +621,7 @@ body.resizing .inspector-grip {
   font-size: var(--fs-sm);
   color: var(--danger);
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
 }
 
@@ -688,7 +671,7 @@ body.resizing .inspector-grip {
 
 .history-sha {
   flex: none;
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
 
@@ -698,7 +681,7 @@ body.resizing .inspector-grip {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .history-ago {
@@ -709,7 +692,7 @@ body.resizing .inspector-grip {
 .history-commit ul {
   margin-left: var(--sp-1);
   padding-left: var(--sp-3);
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--color-border-default);
 }
 
 .history-commit.pending ul {
@@ -730,17 +713,17 @@ body.resizing .inspector-grip {
   text-align: left;
   background: transparent;
   border: none;
-  border-radius: var(--radius);
-  color: var(--text);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
 }
 
 .history-item:hover:not(:disabled) {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .history-item:disabled {
   cursor: default;
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .history-source {

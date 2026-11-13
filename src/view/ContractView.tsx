@@ -118,7 +118,7 @@ export default function ContractView({ theme, show }: ViewProps) {
                 <div className="redraw-banner" role="status">
                   <span>{drafting ? 'Redrawing as a flow chart' : 'This contract only lists folders.'}</span>
                   {!drafting && (
-                    <button onClick={draftContract} disabled={busy}>
+                    <button className="cyber-btn cyber-btn--sm" onClick={draftContract} disabled={busy}>
                       Redraw as a flow chart
                     </button>
                   )}
@@ -190,10 +190,10 @@ export default function ContractView({ theme, show }: ViewProps) {
         <h2>No architect.md</h2>
 
         <div className="blank-actions">
-          <button className="primary" onClick={createContract} disabled={busy}>
+          <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={createContract} disabled={busy}>
             Create architect.md
           </button>
-          <button onClick={draftContract} disabled={busy}>
+          <button className="cyber-btn cyber-btn--sm" onClick={draftContract} disabled={busy}>
             Draft with AI
           </button>
         </div>

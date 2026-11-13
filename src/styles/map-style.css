@@ -25,7 +25,7 @@
   margin: 0 0 var(--sp-1);
   font-size: var(--fs-sm);
   font-weight: 600;
-  color: var(--text);
+  color: var(--color-text-primary);
 }
 
 .map-style-score {
@@ -34,7 +34,7 @@
 
 .map-style-rules {
   margin: 0 0 var(--sp-1);
-  color: var(--text-dim);
+  color: var(--color-text-muted);
 }
 
 .map-style ul {
@@ -52,18 +52,18 @@
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--text-2);
+  color: var(--color-text-secondary);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .map-style-fail:hover {
-  background: var(--hover);
+  background: var(--color-bg-elevated);
 }
 
 .map-style-fail code {
-  font-family: var(--mono);
-  color: var(--text);
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
   overflow-wrap: anywhere;
 }

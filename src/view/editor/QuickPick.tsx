@@ -47,11 +47,11 @@ export default function QuickPick<T extends PickItem>({ placeholder, items, onPi
   }
 
   return (
-    <div className="palette-backdrop" onMouseDown={onClose}>
-      <div className="palette" role="dialog" aria-label={placeholder} onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
+    <div className="cyber-modal cyber-modal--open palette-backdrop" onMouseDown={onClose}>
+      <div className="cyber-modal__dialog palette" role="dialog" aria-label={placeholder} onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
         <input
           ref={input}
-          className="palette-input"
+          className="cyber-input"
           placeholder={placeholder}
           aria-label={placeholder}
           value={query}

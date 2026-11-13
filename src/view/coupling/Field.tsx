@@ -14,7 +14,7 @@ export default function Field({ label, value, min, max, onValue }: FieldProps) {
   return (
     <label className="cp-field">
       {label}
-      <input
+      <input className="cyber-input"
         type="number"
         min={min}
         max={max}

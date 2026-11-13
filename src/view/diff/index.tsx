@@ -144,7 +144,7 @@ export default function DiffView(_props: ViewProps) {
         {diff?.ok && diff.value.oversize && (
           <div className="empty-state">
             <p>Large diff, {Math.round(diff.value.bytes / 1024)} KB</p>
-            <button className="primary" onClick={() => load(true)}>
+            <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={() => load(true)}>
               Load anyway
             </button>
           </div>
@@ -156,7 +156,7 @@ export default function DiffView(_props: ViewProps) {
           <>
             <SplitDiff entries={entries} shown={shown} />
             {entries.length > shown && (
-              <button className="ghost diff-more" onClick={() => setShown(shown + ROW_PAGE)}>
+              <button className="cyber-btn cyber-btn--sm cyber-btn--ghost diff-more" onClick={() => setShown(shown + ROW_PAGE)}>
                 Show {Math.min(ROW_PAGE, entries.length - shown)} more
               </button>
             )}

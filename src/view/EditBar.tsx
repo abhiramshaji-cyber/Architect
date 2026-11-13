@@ -13,21 +13,21 @@ export default function EditBar({ onAddComponent }: { onAddComponent: () => void
       <div className="edit-bar-actions">
         {draft.status === 'draft' && (
           <>
-            <button className="ghost" onClick={onAddComponent} disabled={busy}>
+            <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={onAddComponent} disabled={busy}>
               Add component
             </button>
-            <button className="primary" onClick={saveEdit} disabled={busy}>
+            <button className="cyber-btn cyber-btn--sm cyber-btn--filled" onClick={saveEdit} disabled={busy}>
               Save
             </button>
-            <button onClick={handEdit} disabled={busy}>
+            <button className="cyber-btn cyber-btn--sm" onClick={handEdit} disabled={busy}>
               Hand to Claude
             </button>
           </>
         )}
-        <button className="ghost" onClick={closeEdit} disabled={busy}>
+        <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={closeEdit} disabled={busy}>
           Close
         </button>
-        <button className="ghost" onClick={removeEdit} disabled={busy}>
+        <button className="cyber-btn cyber-btn--sm cyber-btn--ghost" onClick={removeEdit} disabled={busy}>
           Delete
         </button>
       </div>

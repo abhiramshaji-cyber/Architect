@@ -6,9 +6,21 @@ import { useProject } from '../model/store'
 import type { PtyEvent } from '../../shared/types'
 import type { ViewProps } from '../shell/views'
 
-const DARK = { background: '#0b0b0c', foreground: '#e4e4e4', cursor: '#e4e4e4', cursorAccent: '#0b0b0c', selectionBackground: '#3a3a3d' }
-const LIGHT = { background: '#fafafa', foreground: '#1a1a1a', cursor: '#1a1a1a', cursorAccent: '#fafafa', selectionBackground: '#d6d6d6' }
-const FONT = "'Geist Mono Variable', 'SF Mono', ui-monospace, monospace"
+function palette() {
+  const style = getComputedStyle(document.documentElement)
+  const read = (name: string) => style.getPropertyValue(name).trim()
+  return {
+    background: read('--code-bg'),
+    foreground: read('--color-text-primary'),
+    cursor: read('--cyber-cyan-500'),
+    cursorAccent: read('--code-bg'),
+    selectionBackground: read('--cyber-cyan-900'),
+    cyan: read('--cyber-cyan-500'),
+    magenta: read('--cyber-magenta-500'),
+    yellow: read('--cyber-yellow-500'),
+    green: read('--cyber-green-500')
+  }
+}
 
 export function latchedRoot(held: string | null, current: string | null): string | null {
   return held ?? current
@@ -34,7 +46,12 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
     setExited(null)
     setError(null)
 
-    const term = new Terminal({ fontSize: 13, lineHeight: 1.35, fontFamily: FONT, cursorBlink: true })
+    const term = new Terminal({
+      fontSize: 13,
+      lineHeight: 1.35,
+      fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono'),
+      cursorBlink: true
+    })
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(mount)
@@ -98,7 +115,7 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
   }, [bound, tmux])
 
   useEffect(() => {
-    if (terminal.current) terminal.current.options.theme = theme === 'light' ? LIGHT : DARK
+    if (terminal.current) terminal.current.options.theme = palette()
   }, [theme])
 
   return (
@@ -114,11 +131,7 @@ export default function TerminalView({ theme, tmux = true }: ViewProps & { tmux?
       ) : (
         <>
           {error && <div className="empty-state">{error}</div>}
-          <div
-            ref={host}
-            className="terminal-host"
-            style={{ background: theme === 'light' ? LIGHT.background : DARK.background }}
-          />
+          <div ref={host} className="terminal-host" />
         </>
       )}
     </>
