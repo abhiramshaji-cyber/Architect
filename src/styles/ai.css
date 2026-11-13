@@ -1,0 +1,90 @@
+.ai-tag {
+  display: inline-block;
+  margin-right: 2px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-decoration: none;
+  color: var(--age);
+  border: 1px solid var(--age);
+  border-radius: 4px;
+  vertical-align: 1px;
+}
+
+.ai-status {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-2) var(--sp-6);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.ai-status.off {
+  color: var(--danger);
+}
+
+.ai-status span {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-card {
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.ai-card.in-use {
+  border-color: var(--active-border);
+  background: var(--raise);
+}
+
+.ai-card-head {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+
+.ai-card-head h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+
+.ai-login {
+  font-size: var(--fs-xs);
+  color: var(--danger);
+}
+
+.ai-login.ready {
+  color: var(--ok);
+}
+
+.ai-card-actions {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  margin-top: var(--sp-3);
+}
+
+.ai-model {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  color: var(--text-2);
+}
+
+.ai-model select {
+  height: var(--control);
+  padding: 0 var(--sp-2);
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}

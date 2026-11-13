@@ -3,7 +3,7 @@ import path from 'node:path'
 import { readSettings, saveSettings } from '../../shared/settings'
 import type { Architecture, CodeMap, Convention, Conventions, DraftResult } from '../../shared/types'
 import { suggestConventions } from '../draft/conventions'
-import type { ClaudeRun } from '../draft/draft'
+import type { AiRun } from '../draft/draft'
 import { effective } from '../rules/audit'
 import { type SourceFacts, sourcesIn } from '../rules/facts'
 import { ruleLine } from '../rules/syntax'
@@ -53,7 +53,7 @@ export function switchConventions(dir: string, enabled: boolean, load: () => Pro
   return conventionsOf(dir, load)
 }
 
-export async function suggestedConventions(dir: string, load: () => Promise<Project>, run?: ClaudeRun): Promise<DraftResult<Convention[]>> {
+export async function suggestedConventions(dir: string, load: () => Promise<Project>, run: AiRun): Promise<DraftResult<Convention[]>> {
   ensureOn(dir)
   const { root, map, architecture } = await load()
   const sources = sourcesIn(root, map)
@@ -66,7 +66,7 @@ export async function suggestedConventions(dir: string, load: () => Promise<Proj
   const result = await suggestConventions(root, map, known, run, ask.signal).finally(() => {
     if (asking.get(root) === ask) asking.delete(root)
   })
-  if (ask.signal.aborted) throw new Error('the request for suggestions was stopped before Claude Code replied')
+  if (ask.signal.aborted) throw new Error('the request for suggestions was stopped before the AI replied')
   return result.ok ? { ok: true, value: weighed(architecture, sources, result.value) } : result
 }
 

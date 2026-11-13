@@ -1,21 +1,22 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { CodeMap, FileEntry } from '../../shared/types'
+import type { CodeMap } from '../../shared/types'
+import type { AiRun } from '../ai'
 
 export type DescriptionCache = Record<string, string>
 
-const MODEL = 'claude-sonnet-5'
-const ENDPOINT = 'https://api.anthropic.com/v1/messages'
-const API_VERSION = '2023-06-01'
-const CONCURRENCY = 6
+const CONCURRENCY = 3
 const SOURCE_LINES = 80
 const SOURCE_CHARS = 2400
 const ASKS_PER_REQUEST = 40
+const RETRY_MS = 5 * 60 * 1000
+const TIMEOUT_MS = 4 * 60 * 1000
 
-type Ask = { key: string; hash: string; source: string }
+type Ask = { hash: string; file: string; source: string }
 
-type Job = { file: FileEntry; asks: Ask[] }
+const written = new Map<string, string>()
+const asked = new Map<string, number>()
 
 function hashOf(source: string) {
   return createHash('sha256').update(source).digest('hex')
@@ -30,20 +31,18 @@ function fnKey(name: string, line: number) {
   return `${name}:${line}`
 }
 
-function prompt(file: FileEntry, asks: Ask[]) {
-  const blocks = asks.map((ask) => `<function key="${ask.key}">\n${ask.source}\n</function>`).join('\n\n')
+export function prompt(asks: Ask[]) {
+  const blocks = asks.map((ask, at) => `<function key="f${at + 1}" file="${ask.file}">\n${ask.source}\n</function>`).join('\n\n')
   return [
-    `These functions come from ${file.path}.`,
-    '',
     blocks,
     '',
-    'For each function write one plain English sentence of about 12 words saying what it does for someone using this code.',
-    'Do not restate the name, the signature or the types. No jargon, no markdown.',
+    'For each function above write one plain English sentence of about 12 words saying what it does for someone using this code.',
+    'Do not restate the name, the signature or the types. No jargon, no markdown. Run no commands, everything you need is above.',
     'Reply with only a JSON object mapping each key above to its sentence, and nothing else.',
   ].join('\n')
 }
 
-function parseSentences(text: string, asks: Ask[]): Map<string, string> {
+export function parseSentences(text: string, asks: Ask[]): Map<string, string> {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   const out = new Map<string, string>()
@@ -57,7 +56,7 @@ function parseSentences(text: string, asks: Ask[]): Map<string, string> {
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return out
 
-  const wanted = new Map(asks.map((ask) => [ask.key, ask.hash]))
+  const wanted = new Map(asks.map((ask, at) => [`f${at + 1}`, ask.hash]))
   for (const [key, value] of Object.entries(parsed)) {
     const hash = wanted.get(key)
     if (!hash || typeof value !== 'string') continue
@@ -67,104 +66,66 @@ function parseSentences(text: string, asks: Ask[]): Map<string, string> {
   return out
 }
 
-export async function ask(apiKey: string, question: string, maxTokens: number, signal?: AbortSignal): Promise<string> {
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    signal,
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': API_VERSION,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: question }],
-    }),
-  })
-  if (!res.ok) return ''
-
-  const body = (await res.json()) as unknown
-  if ((body as { stop_reason?: unknown }).stop_reason === 'max_tokens') return ''
-
-  const content = (body as { content?: unknown }).content
-  if (!Array.isArray(content)) return ''
-
-  return content
-    .map((part) => (typeof part === 'object' && part !== null ? (part as { text?: unknown }).text : null))
-    .filter((t): t is string => typeof t === 'string')
-    .join('')
-}
-
-async function requestFile(apiKey: string, job: Job): Promise<Map<string, string>> {
-  const text = await ask(apiKey, prompt(job.file, job.asks), Math.min(4096, 200 + job.asks.length * 48))
-  return parseSentences(text, job.asks)
-}
-
-async function run(apiKey: string, jobs: Job[], cache: DescriptionCache) {
+async function fill(run: AiRun, root: string, asks: Ask[], filled?: () => void) {
+  const jobs = Array.from({ length: Math.ceil(asks.length / ASKS_PER_REQUEST) }, (_, at) => asks.slice(at * ASKS_PER_REQUEST, (at + 1) * ASKS_PER_REQUEST))
   let cursor = 0
+  let stopped = false
+  let gained = false
 
   const worker = async () => {
-    while (cursor < jobs.length) {
-      const job = jobs[cursor++]
-      if (!job) return
-      try {
-        for (const [hash, sentence] of await requestFile(apiKey, job)) cache[hash] = sentence
-      } catch {
-        continue
+    while (!stopped && cursor < jobs.length) {
+      const job = jobs[cursor++] ?? []
+      const out = await Promise.resolve().then(() => run(prompt(job), root, TIMEOUT_MS)).catch(() => null)
+      if (out?.code !== 0) {
+        stopped = true
+        if (out && typeof out.code === 'string' && out.code !== 'timeout') for (const ask of asks) if (!written.has(ask.hash)) asked.delete(ask.hash)
+        return
+      }
+      for (const [hash, sentence] of parseSentences(out.stdout, job)) {
+        written.set(hash, sentence)
+        gained = true
       }
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker))
+  if (gained) filled?.()
 }
 
-export async function describe(
-  map: CodeMap,
-  root: string,
-  cache: DescriptionCache = {},
-): Promise<{ map: CodeMap; cache: DescriptionCache }> {
+export function describe(map: CodeMap, root: string, cache: DescriptionCache = {}, run?: AiRun, filled?: () => void): { map: CodeMap; cache: DescriptionCache } {
   const next: DescriptionCache = {}
   const hashes = new Map<string, string>()
-  const jobs: Job[] = []
+  const asks: Ask[] = []
+  const now = Date.now()
 
-  for (const folder of map.folders) {
-    for (const file of folder.files) {
-      const missing = file.functions.filter((fn) => fn.description === '')
-      if (!missing.length) continue
+  for (const file of map.folders.flatMap((folder) => folder.files)) {
+    const missing = file.functions.filter((fn) => fn.description === '')
+    if (!missing.length) continue
 
-      let lines: string[]
-      try {
-        lines = fs.readFileSync(path.join(root, file.path), 'utf8').split('\n')
-      } catch {
-        continue
-      }
+    let lines: string[]
+    try {
+      lines = fs.readFileSync(path.join(root, file.path), 'utf8').split('\n')
+    } catch {
+      continue
+    }
 
-      const asks: Ask[] = []
-      for (const fn of missing) {
-        const source = sliceSource(lines, fn.line)
-        if (!source.trim()) continue
+    for (const fn of missing) {
+      const source = sliceSource(lines, fn.line)
+      if (!source.trim()) continue
 
-        const hash = hashOf(`${file.path}\0${fn.name}\0${source}`)
-        hashes.set(`${file.path}\0${fnKey(fn.name, fn.line)}`, hash)
+      const hash = hashOf(`${file.path}\0${fn.name}\0${source}`)
+      hashes.set(`${file.path}\0${fnKey(fn.name, fn.line)}`, hash)
 
-        const cached = cache[hash]
-        if (cached !== undefined) {
-          next[hash] = cached
-          continue
-        }
-        if (asks.some((a) => a.hash === hash)) continue
-        asks.push({ key: fnKey(fn.name, fn.line), hash, source })
-      }
+      const known = cache[hash] ?? written.get(hash)
+      if (known !== undefined) next[hash] = known
+      if (known !== undefined || !run || now - (asked.get(hash) ?? -Infinity) < RETRY_MS) continue
 
-      for (let at = 0; at < asks.length; at += ASKS_PER_REQUEST) {
-        jobs.push({ file, asks: asks.slice(at, at + ASKS_PER_REQUEST) })
-      }
+      asked.set(hash, now)
+      asks.push({ hash, file: file.path, source })
     }
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (apiKey && jobs.length) await run(apiKey, jobs, next)
+  if (run && asks.length) void fill(run, root, asks, filled)
 
   const described: CodeMap = {
     ...map,

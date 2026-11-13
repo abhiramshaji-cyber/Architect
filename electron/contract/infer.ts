@@ -1,10 +1,9 @@
 import type { Architecture, CodeMap } from '../../shared/types'
-import { ask } from '../scan/describe'
+import type { AiRun } from '../ai'
 import { canonical, ownership } from './graph'
 
 const CONFIDENCE = ['certain', 'likely', 'unsure'] as const
 const DESCRIPTIONS = 12
-const MAX_TOKENS = 400
 const TIMEOUT_MS = 30_000
 
 export type Confidence = (typeof CONFIDENCE)[number]
@@ -129,23 +128,18 @@ export function judgementOf(text: string, choices: Choice[]): Judgement | null {
   return { component, confidence: confidence as Confidence, why: typeof why === 'string' ? why.trim() : '' }
 }
 
-export const anthropic: Judge = async (question) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return null
-
-  try {
-    const text = await ask(apiKey, promptFor(question), MAX_TOKENS, AbortSignal.timeout(TIMEOUT_MS))
-    return judgementOf(text, question.choices)
-  } catch {
-    return null
+export const judgeWith =
+  (run: AiRun, root: string): Judge =>
+  async (question) => {
+    const out = await run(promptFor(question), root, TIMEOUT_MS)
+    return out.code === 0 ? judgementOf(out.stdout, question.choices) : null
   }
-}
 
 export async function infer(
   path: string,
   architecture: Architecture,
   map: CodeMap,
-  judge: Judge = anthropic,
+  judge: Judge,
 ): Promise<Attribution | null> {
   const asked = question(path, architecture, map)
   if (!asked) return null

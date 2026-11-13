@@ -3,19 +3,19 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe as suite, expect, it, vi } from 'vitest'
 import type { CodeMap } from '../../shared/types'
+import type { AiOutput, AiRun } from '../ai'
 import { describe } from './describe'
 
 let root: string
-const originalFetch = globalThis.fetch
-const originalKey = process.env.ANTHROPIC_API_KEY
-
-const alpha = 'export function alpha() {\n  return 1\n}'
-const beta = 'export function beta() {\n  return 2\n}'
-const gamma = 'export function gamma() {\n  return 3\n}'
+let tag = 0
 
 function write(file: string, content: string) {
   fs.mkdirSync(path.join(root, path.dirname(file)), { recursive: true })
   fs.writeFileSync(path.join(root, file), content)
+}
+
+function fn(name: string, line: number) {
+  return { name, line, endLine: line, description: '', calls: [] }
 }
 
 function map(): CodeMap {
@@ -23,300 +23,122 @@ function map(): CodeMap {
     root,
     scannedAt: 1,
     folders: [
-      {
-        path: '',
-        folders: ['src'],
-        files: [{ path: 'a.ts', functions: [{ name: 'alpha', line: 1, endLine: 1, description: '', calls: [] }] }],
-      },
-      {
-        path: 'src',
-        folders: [],
-        files: [
-          {
-            path: 'src/b.ts',
-            functions: [
-              { name: 'beta', line: 1, endLine: 1, description: '', calls: [] },
-              { name: 'gamma', line: 5, endLine: 5, description: '', calls: [] },
-            ],
-          },
-        ],
-      },
+      { path: '', folders: ['src'], files: [{ path: 'a.ts', functions: [fn('alpha', 1)] }] },
+      { path: 'src', folders: [], files: [{ path: 'src/b.ts', functions: [fn('beta', 1), fn('gamma', 5)] }] },
     ],
   }
 }
 
 function descriptions(result: CodeMap) {
-  return result.folders.flatMap((f) => f.files.flatMap((file) => file.functions.map((fn) => fn.description)))
+  return result.folders.flatMap((f) => f.files.flatMap((file) => file.functions.map((one) => one.description)))
 }
 
-function reply(sentences: Record<string, unknown>) {
-  return {
-    ok: true,
-    json: async () => ({ content: [{ type: 'text', text: JSON.stringify(sentences) }] }),
-  }
+function says(code: AiOutput['code'], reply: (prompt: string) => Record<string, string> = () => ({})) {
+  const prompts: string[] = []
+  const run = vi.fn<AiRun>(async (prompt) => {
+    prompts.push(prompt)
+    return { code, stdout: JSON.stringify(reply(prompt)), stderr: '', cli: 'claude' }
+  })
+  return { run, prompts }
 }
 
-function stub(fn: (...args: unknown[]) => unknown) {
-  const mock = vi.fn(fn)
-  globalThis.fetch = mock as unknown as typeof fetch
-  return mock
+const every = (prompt: string) => Object.fromEntries([...prompt.matchAll(/key="(f\d+)" file="([^"]+)"/g)].map(([, key, file]) => [key, `${file} ${key}.`]))
+
+async function filled(first: (done: () => void) => void) {
+  await new Promise<void>((resolve) => first(resolve))
 }
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'describe-'))
-  write('a.ts', alpha)
-  write('src/b.ts', `${beta}\n\n${gamma}`)
-  process.env.ANTHROPIC_API_KEY = 'test-key'
+  tag++
+  write('a.ts', `export function alpha() {\n  return ${tag}\n}`)
+  write('src/b.ts', `export function beta() {\n  return ${tag}\n}\n\nexport function gamma() {\n  return ${tag}\n}`)
 })
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
-  if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY
-  else process.env.ANTHROPIC_API_KEY = originalKey
   fs.rmSync(root, { recursive: true, force: true })
 })
 
-suite('describe degrades', () => {
-  it('never calls the model without an api key', async () => {
-    delete process.env.ANTHROPIC_API_KEY
-    const fetched = stub(() => {
-      throw new Error('should not be called')
-    })
-
-    const result = await describe(map(), root)
-
-    expect(fetched).not.toHaveBeenCalled()
-    expect(descriptions(result.map)).toEqual(['', '', ''])
-    expect(result.map.folders[1]?.files[0]?.functions[1]?.name).toBe('gamma')
+suite('describe', () => {
+  it('never asks anyone without a run', () => {
+    expect(descriptions(describe(map(), root).map)).toEqual(['', '', ''])
   })
 
-  it('survives a rejected request', async () => {
-    stub(async () => {
-      throw new Error('offline')
-    })
+  it('answers at once and writes the summaries in the background', async () => {
+    const { run, prompts } = says(0, every)
+    let first: CodeMap | null = null
+    await filled((done) => (first = describe(map(), root, {}, run, done).map))
 
-    const result = await describe(map(), root)
+    expect(descriptions(first as unknown as CodeMap)).toEqual(['', '', ''])
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(prompts[0]).toContain('file="a.ts"')
+    expect(prompts[0]).toContain('file="src/b.ts"')
 
-    expect(descriptions(result.map)).toEqual(['', '', ''])
-    expect(result.cache).toEqual({})
+    const next = describe(map(), root, {}, run)
+    expect(descriptions(next.map)).toEqual(['a.ts f1.', 'src/b.ts f2.', 'src/b.ts f3.'])
+    expect(Object.keys(next.cache)).toHaveLength(3)
+    expect(run).toHaveBeenCalledTimes(1)
   })
 
-  it('survives an http error status', async () => {
-    stub(async () => ({ ok: false, status: 500, json: async () => ({}) }))
+  it('splits more than forty functions across requests', async () => {
+    write('many.ts', Array.from({ length: 45 }, (_, at) => `export function f${at}() { return ${tag} }`).join('\n'))
+    const many: CodeMap = { root, scannedAt: 1, folders: [{ path: '', folders: [], files: [{ path: 'many.ts', functions: Array.from({ length: 45 }, (_, at) => fn(`f${at}`, at + 1)) }] }] }
+    const { run } = says(0, every)
+    await filled((done) => describe(many, root, {}, run, done))
 
-    const result = await describe(map(), root)
-
-    expect(descriptions(result.map)).toEqual(['', '', ''])
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(descriptions(describe(many, root, {}, run).map).every((text) => text !== '')).toBe(true)
   })
 
-  it('survives a body that is not the expected shape', async () => {
-    stub(async () => ({ ok: true, json: async () => 'nonsense' }))
-
-    const result = await describe(map(), root)
-
-    expect(descriptions(result.map)).toEqual(['', '', ''])
+  it('keeps only the keys it asked about', async () => {
+    const { run } = says(0, () => ({ f1: '  One.  ', f9: 'Stray.', f2: '' }))
+    await filled((done) => describe(map(), root, {}, run, done))
+    expect(descriptions(describe(map(), root, {}, run).map)).toEqual(['One.', '', ''])
   })
 
-  it('survives text that is not json', async () => {
-    stub(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'sorry, no.' }] }) }))
+  it('takes a cached sentence over asking again', async () => {
+    const { run } = says(0, every)
+    await filled((done) => describe(map(), root, {}, run, done))
+    const cache = Object.fromEntries(Object.keys(describe(map(), root, {}, run).cache).map((hash) => [hash, 'Cached.']))
 
-    const result = await describe(map(), root)
-
-    expect(descriptions(result.map)).toEqual(['', '', ''])
+    const again = says(0, every)
+    expect(descriptions(describe(map(), root, cache, again.run).map)).toEqual(['Cached.', 'Cached.', 'Cached.'])
+    expect(again.run).not.toHaveBeenCalled()
   })
 
-  it('survives a body that fails to decode', async () => {
-    stub(async () => ({
-      ok: true,
-      json: async () => {
-        throw new Error('bad json')
-      },
-    }))
+  it('asks again on the next pass after a cli that is not connected or signed in', async () => {
+    const off = says('not-connected')
+    describe(map(), root, {}, off.run)
+    await vi.waitFor(() => expect(off.run).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    const result = await describe(map(), root)
+    const on = says(0, every)
+    await filled((done) => describe(map(), root, {}, on.run, done))
+    expect(on.run).toHaveBeenCalledTimes(1)
+  })
 
-    expect(descriptions(result.map)).toEqual(['', '', ''])
+  it('backs off after a real failure instead of asking on every pass', async () => {
+    const broken = says(1)
+    describe(map(), root, {}, broken.run)
+    await vi.waitFor(() => expect(broken.run).toHaveBeenCalledTimes(1))
+
+    describe(map(), root, {}, broken.run)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(broken.run).toHaveBeenCalledTimes(1)
   })
 
   it('leaves out files it cannot read', async () => {
     fs.rmSync(path.join(root, 'a.ts'))
-    stub(async () => reply({ 'beta:1': 'Gives back the number two.', 'gamma:5': 'Gives back the number three.' }))
-
-    const result = await describe(map(), root)
-
-    expect(descriptions(result.map)).toEqual(['', 'Gives back the number two.', 'Gives back the number three.'])
-  })
-})
-
-suite('describe validates', () => {
-  it('drops names it never asked about', async () => {
-    stub(async () => reply({ 'delta:9': 'Unrelated.', 'alpha:1': 42, 'beta:1': 'Gives back the number two.' }))
-
-    const result = await describe(map(), root)
-
-    expect(descriptions(result.map)).toEqual(['', 'Gives back the number two.', ''])
-    expect(Object.values(result.cache)).toEqual(['Gives back the number two.'])
-  })
-
-  it('keeps a partial answer', async () => {
-    stub(async () => reply({ 'alpha:1': 'Hands back the number one.' }))
-
-    const result = await describe(map(), root)
-
-    expect(descriptions(result.map)).toEqual(['Hands back the number one.', '', ''])
-  })
-
-  it('keeps descriptions that are already written', async () => {
-    const input = map()
-    const file = input.folders[0]?.files[0]
-    if (file?.functions[0]) file.functions[0].description = 'Already said.'
-    const fetched = stub(async () => reply({ 'beta:1': 'Two.', 'gamma:5': 'Three.' }))
-
-    const result = await describe(input, root)
-
-    expect(descriptions(result.map)).toEqual(['Already said.', 'Two.', 'Three.'])
-    expect(fetched).toHaveBeenCalledTimes(1)
-  })
-})
-
-suite('describe identifies each function', () => {
-  it('asks separately for two functions declared on one line', async () => {
-    write('pair.ts', 'const handlers = { onOpen: () => 1, onClose: () => 2 }\n')
-    const input: CodeMap = {
-      root,
-      scannedAt: 1,
-      folders: [
-        {
-          path: '',
-          folders: [],
-          files: [
-            {
-              path: 'pair.ts',
-              functions: [
-                { name: 'handlers.onOpen', line: 1, endLine: 1, description: '', calls: [] },
-                { name: 'handlers.onClose', line: 1, endLine: 1, description: '', calls: [] },
-              ],
-            },
-          ],
-        },
-      ],
-    }
-
-    const fetched = stub(async () =>
-      reply({ 'handlers.onOpen:1': 'Reports that the socket opened.', 'handlers.onClose:1': 'Reports that the socket closed.' }),
-    )
-
-    const result = await describe(input, root)
-
-    const body = JSON.parse((fetched.mock.calls[0]?.[1] as { body: string }).body)
-    const asked = (body.messages[0].content as string).match(/key="[^"]+"/g)
-    expect(asked).toEqual(['key="handlers.onOpen:1"', 'key="handlers.onClose:1"'])
-    expect(descriptions(result.map)).toEqual(['Reports that the socket opened.', 'Reports that the socket closed.'])
-    expect(Object.keys(result.cache)).toHaveLength(2)
-  })
-})
-
-suite('describe batches and caches', () => {
-  it('sends one request per file', async () => {
-    const fetched = stub(async () => reply({ 'alpha:1': 'One.', 'beta:1': 'Two.', 'gamma:5': 'Three.' }))
-
-    const result = await describe(map(), root)
-
-    expect(fetched).toHaveBeenCalledTimes(2)
-    expect(descriptions(result.map)).toEqual(['One.', 'Two.', 'Three.'])
-
-    const bodies = fetched.mock.calls.map((call) =>
-      JSON.parse((call[1] as { body: string }).body).messages[0].content as string,
-    )
-    expect(bodies.filter((body) => body.includes('a.ts'))).toHaveLength(1)
-    expect(bodies.some((body) => body.includes('return 2') && body.includes('return 3'))).toBe(true)
-  })
-
-  it('splits a large file across several requests', async () => {
-    const lines = Array.from({ length: 200 }, (_, n) => `export function f${n}() { return ${n} }`)
-    write('big.ts', lines.join('\n'))
-
-    const input: CodeMap = {
-      root,
-      scannedAt: 1,
-      folders: [
-        {
-          path: '',
-          folders: [],
-          files: [
-            {
-              path: 'big.ts',
-              functions: lines.map((_, n) => ({ name: `f${n}`, line: n + 1, endLine: n + 1, description: '', calls: [] })),
-            },
-          ],
-        },
-      ],
-    }
-
-    const fetched = stub(async (_url: unknown, init: unknown) => {
-      const body = JSON.parse((init as { body: string }).body)
-      const keys = ((body.messages[0].content as string).match(/key="([^"]+)"/g) ?? []).map((k: string) =>
-        k.slice(5, -1),
-      )
-      return reply(Object.fromEntries(keys.map((k: string) => [k, `Returns ${k}.`])))
-    })
-
-    const result = await describe(input, root)
-
-    expect(fetched.mock.calls.length).toBeGreaterThan(1)
-    expect(descriptions(result.map).filter((d) => d === '')).toEqual([])
-    expect(new Set(descriptions(result.map)).size).toBe(200)
-  })
-
-  it('keeps nothing from a truncated response', async () => {
-    stub(async () => ({
-      ok: true,
-      json: async () => ({
-        stop_reason: 'max_tokens',
-        content: [{ type: 'text', text: '{"alpha:1": "One."}' }],
-      }),
-    }))
-
-    const result = await describe(map(), root)
-
-    expect(descriptions(result.map)).toEqual(['', '', ''])
-    expect(result.cache).toEqual({})
-  })
-
-  it('does not re-describe unchanged source', async () => {
-    const first = stub(async () => reply({ 'alpha:1': 'One.', 'beta:1': 'Two.', 'gamma:5': 'Three.' }))
-    const described = await describe(map(), root)
-    expect(first).toHaveBeenCalledTimes(2)
-
-    const again = stub(() => {
-      throw new Error('should not be called')
-    })
-    const result = await describe(map(), root, described.cache)
-
-    expect(again).not.toHaveBeenCalled()
-    expect(descriptions(result.map)).toEqual(['One.', 'Two.', 'Three.'])
-  })
-
-  it('re-describes a function whose source changed', async () => {
-    stub(async () => reply({ 'alpha:1': 'One.', 'beta:1': 'Two.', 'gamma:5': 'Three.' }))
-    const described = await describe(map(), root)
-
-    write('a.ts', 'export function alpha() {\n  return 99\n}')
-    const again = stub(async () => reply({ 'alpha:1': 'Hands back ninety nine.' }))
-    const result = await describe(map(), root, described.cache)
-
-    expect(again).toHaveBeenCalledTimes(1)
-    expect(descriptions(result.map)).toEqual(['Hands back ninety nine.', 'Two.', 'Three.'])
+    const { run, prompts } = says(0, every)
+    await filled((done) => describe(map(), root, {}, run, done))
+    expect(prompts[0]).not.toContain('file="a.ts"')
   })
 
   it('forgets cache entries no longer in the map', async () => {
-    stub(async () => reply({ 'alpha:1': 'One.', 'beta:1': 'Two.', 'gamma:5': 'Three.' }))
-    const described = await describe(map(), root)
-
+    const { run } = says(0, every)
+    await filled((done) => describe(map(), root, {}, run, done))
     const shrunk = map()
     shrunk.folders = shrunk.folders.slice(0, 1)
-    const result = await describe(shrunk, root, described.cache)
-
-    expect(Object.values(result.cache)).toEqual(['One.'])
+    expect(Object.values(describe(shrunk, root, {}, run).cache)).toEqual(['a.ts f1.'])
   })
 })

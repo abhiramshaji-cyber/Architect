@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-
 import {
   ReactFlow,
   Background,
@@ -32,6 +31,7 @@ import { gotoSymbol, type Located, type SymbolRef } from '../model/goto'
 import { addedIds, liveClass } from '../model/live/recent'
 import { outlineFor } from '../model/outline'
 import { openFile, useProject } from '../model/store'
+import { AiText } from './ai/AiText'
 import { CodeInspector } from './Inspector'
 import GotoPanel from './GotoPanel'
 import Follow from './live/Follow'
@@ -117,7 +117,7 @@ function FileNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
           {shown.map((fn, i) => (
             <div key={`${i}:${fn.name}`} className="code-fn">
               <span className="code-fn-name">{fn.name}</span>
-              {fn.description !== '' && <span className="code-fn-desc">{fn.description}</span>}
+              <AiText className="code-fn-desc" text={fn.description} />
             </div>
           ))}
         </div>
@@ -164,7 +164,7 @@ function FunctionNode({ id, data }: NodeProps<Node<CodeNodeData>>) {
         <GotoButton path={data.path} index={data.index} name={data.name} />
         {data.external && <Open path={data.path} name={baseName(data.path)} />}
       </div>
-      {data.description !== '' && <div className="code-fn-desc code-fn-lead">{data.description}</div>}
+      <AiText as="div" className="code-fn-desc code-fn-lead" text={data.description} />
     </div>
   )
 }

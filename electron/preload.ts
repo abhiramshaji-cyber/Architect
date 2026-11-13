@@ -119,6 +119,8 @@ const architect: ArchitectApi = {
   repoOpen: (repo, branch, choice, pr) => invoke('architect:repo-open', repo, branch, choice, pr),
   review: () => invoke('architect:review'),
   setReview: (enabled) => invoke('architect:set-review', enabled),
+  aiState: () => invoke('architect:ai-state'),
+  chooseAi: (choice) => invoke('architect:choose-ai', choice),
   reviewDetail: (id) => invoke('architect:review-detail', id),
   decide: (id, approved, feedback) => invoke('architect:decide', id, approved, feedback),
   onReview: (fn: (state: ReviewState) => void) => {

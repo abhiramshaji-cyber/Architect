@@ -4,7 +4,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import type { BranchPatch } from '../../shared/types'
-import type { ClaudeOutput } from './draft'
+import type { AiOutput } from './draft'
 import { body, commitMessage, pullRequest, reply, scrub, skillText } from './message'
 
 const roots: string[] = []
@@ -33,11 +33,11 @@ beforeEach(() => {
   process.env.CLAUDE_CONFIG_DIR = tmp('account')
 })
 
-function says(stdout: string, code: ClaudeOutput['code'] = 0) {
+function says(stdout: string, code: AiOutput['code'] = 0) {
   const prompts: string[] = []
-  const run = async (prompt: string): Promise<ClaudeOutput> => {
+  const run = async (prompt: string): Promise<AiOutput> => {
     prompts.push(prompt)
-    return { code, stdout, stderr: '' }
+    return { code, stdout, stderr: '', cli: 'claude' }
   }
   return { run, prompts }
 }
@@ -129,11 +129,11 @@ describe('commitMessage', () => {
   it('reports a missing binary and a kill as their own kinds', async () => {
     expect(await commitMessage('/repo', PATCH, says('', 'missing').run)).toEqual({
       ok: false,
-      error: { kind: 'not-installed' },
+      error: { kind: 'not-installed', cli: 'claude' },
     })
     expect(await commitMessage('/repo', PATCH, says('', 'timeout').run)).toEqual({
       ok: false,
-      error: { kind: 'timed-out' },
+      error: { kind: 'timed-out', cli: 'claude' },
     })
   })
 })

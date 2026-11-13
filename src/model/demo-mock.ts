@@ -365,7 +365,7 @@ export function installMock() {
       throw new Error(`the demo cannot write architect.md in ${root}`)
     },
     async draftContract() {
-      return { ok: false, error: { kind: 'not-installed' } }
+      return { ok: false, error: { kind: 'not-connected' } }
     },
     async closeProject() {},
     async claimRoot() {
@@ -602,31 +602,23 @@ export function installMock() {
       return demoGit(root)
     },
     async draftCommitMessage() {
-      return { ok: false, error: { kind: 'not-installed' } }
+      return { ok: false, error: { kind: 'not-connected' } }
     },
     async draftPullRequest() {
-      return { ok: false, error: { kind: 'not-installed' } }
+      return { ok: false, error: { kind: 'not-connected' } }
     },
     async githubAuth() {
       return { ok: true, value: { kind: 'not-installed' } }
     },
-    async githubRepos() {
-      return demoGithub
-    },
-    async githubBranches() {
-      return demoGithub
-    },
-    async githubRates() {
-      return demoGithub
-    },
-    async githubPulls() {
-      return demoGithub
-    },
-    async githubPullFor() {
-      return demoGithub
-    },
-    async githubCreatePull() {
-      return demoGithub
+    githubRepos: async () => demoGithub,
+    githubBranches: async () => demoGithub,
+    githubRates: async () => demoGithub,
+    githubPulls: async () => demoGithub,
+    githubPullFor: async () => demoGithub,
+    githubCreatePull: async () => demoGithub,
+    aiState: async () => ({ choice: { connected: false, provider: 'claude', models: { claude: 'haiku', codex: 'gpt-6-luna' } }, clis: [], failure: null }),
+    async chooseAi() {
+      throw new Error('the demo cannot connect an AI')
     },
     async githubCompare() {},
     async githubCancelCompare() {},

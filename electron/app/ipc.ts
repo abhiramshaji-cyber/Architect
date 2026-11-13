@@ -12,6 +12,7 @@ import {
   type PtySpec,
   type PullDraft,
 } from '../../shared/types'
+import { aiRun, aiState, chooseAi } from '../ai'
 import { conventionsOf, promoteConvention, suggestedConventions, switchConventions } from '../conventions'
 import { couplingOf } from '../coupling'
 import type { createDaemon } from '../daemon'
@@ -47,6 +48,7 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R |
 }
 
 export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: string) {
+  const ai = aiRun(settingsDir)
   const project = (root: string) => async () => ({
     root,
     map: daemon.codeMap(root) ?? (await daemon.rescan(root)),
@@ -62,12 +64,8 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
   handle('architect:verdicts', (root: string) => daemon.verdicts(root))
   handle('architect:edits', (root: string) => daemon.edits(root))
   handle('architect:edit', (root: string, id: string) => daemon.edit(root, id))
-  handle('architect:create-edit', (root: string, architecture: Architecture) =>
-    daemon.createEdit(root, architecture),
-  )
-  handle('architect:update-edit', (root: string, id: string, architecture: Architecture) =>
-    daemon.updateEdit(root, id, architecture),
-  )
+  handle('architect:create-edit', (root: string, architecture: Architecture) => daemon.createEdit(root, architecture))
+  handle('architect:update-edit', (root: string, id: string, architecture: Architecture) => daemon.updateEdit(root, id, architecture))
   handle('architect:hand-edit', (root: string, id: string) => daemon.handEdit(root, id))
   handle('architect:delete-edit', (root: string, id: string) => daemon.deleteEdit(root, id))
   handle('architect:code-map', (root: string) => daemon.codeMap(root))
@@ -84,7 +82,7 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
   handle('architect:style', (root: string) => daemon.style(root))
   handle('architect:conventions', (root: string) => conventionsOf(settingsDir, project(root)))
   handle('architect:set-conventions', (root: string, enabled: boolean) => switchConventions(settingsDir, enabled === true, project(root)))
-  handle('architect:suggest-conventions', (root: string) => suggestedConventions(settingsDir, project(root)))
+  handle('architect:suggest-conventions', (root: string) => suggestedConventions(settingsDir, project(root), ai))
   handle('architect:promote-convention', (root: string, rule: string) => promoteConvention(settingsDir, root, String(rule)))
   handle('architect:read-source', (root: string, file: string, from: number, length: number) =>
     daemon.readSource(root, file, from, length),
@@ -94,6 +92,12 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
     daemon.writeSource(root, file, text, baseline),
   )
   handle('architect:read-tree', (root: string, dir: string) => daemon.readTree(root, dir))
+  handle('architect:ai-state', () => aiState(settingsDir))
+  handle('architect:choose-ai', async (choice: unknown) => {
+    const state = await chooseAi(settingsDir, choice)
+    for (const { root } of daemon.projects()) void daemon.rescan(root).catch(() => {})
+    return state
+  })
   handle('architect:review', () => daemon.review())
   handle('architect:set-review', (enabled: boolean) => daemon.setReview(enabled === true))
   handle('architect:review-detail', (id: string) => daemon.reviewDetail(id))
@@ -148,13 +152,13 @@ export function wireIpc(daemon: ReturnType<typeof createDaemon>, settingsDir: st
     const staged = await diff.stagedPatch(root)
     if (!staged.ok) return { ok: false, error: { kind: 'git', error: staged.error } }
 
-    return message.commitMessage(root, staged.value)
+    return message.commitMessage(root, staged.value, ai)
   })
   handle('architect:draft-pull-request', async (root: string): Promise<DraftResult<PullDraft>> => {
     const work = await diff.branchPatch(root)
     if (!work.ok) return { ok: false, error: { kind: 'git', error: work.error } }
 
-    return message.pullRequest(root, work.value)
+    return message.pullRequest(root, work.value, ai)
   })
 
   handle('architect:github-auth', () => github.auth())

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
+import AiStatus from './ai/AiStatus'
 import CodeCanvas from './CodeCanvas'
 import { crumbs, parentOf, worldPath } from '../model/codemap'
 import { folderName } from '../model/layout'
 import { loadCodeMap, rescan, useProject } from '../model/store'
 import type { ViewProps } from '../shell/views'
 
-export default function CodeView({ theme }: ViewProps) {
+export default function CodeView({ theme, show }: ViewProps) {
   const { currentRoot, architecture, draft, codeMap, codeBusy, codeError } = useProject()
   const [codePath, setCodePath] = useState('')
 
@@ -54,6 +55,7 @@ export default function CodeView({ theme }: ViewProps) {
           {codeError && <div className="edit-bar-message error">{codeError}</div>}
         </div>
       )}
+      {codeMap && <AiStatus stamp={codeMap} onOpen={() => show('ai')} />}
 
       {codeMap ? (
         <CodeCanvas map={codeMap} path={codeWorld} theme={theme} onEnter={setCodePath} onUp={goUp} />

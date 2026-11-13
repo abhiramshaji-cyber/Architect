@@ -280,7 +280,7 @@ describe("drafting a first contract", () => {
     const root = flowRepo();
     daemon = createDaemon({
       socketPath,
-      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
+      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "", cli: "claude" as const }),
     });
     await daemon.open(root);
 
@@ -301,7 +301,7 @@ describe("drafting a first contract", () => {
 
   it("never drafts on its own when a session touches a project that has no contract", async () => {
     const root = repo();
-    const claude = vi.fn(async () => ({ code: 0 as const, stdout: drafted(root), stderr: "" }));
+    const claude = vi.fn(async () => ({ code: 0 as const, stdout: drafted(root), stderr: "", cli: "claude" as const }));
     daemon = createDaemon({ socketPath, claude, rescanDebounceMs: 0 });
     await daemon.listen();
     const c = await client(socketPath);
@@ -316,7 +316,8 @@ describe("drafting a first contract", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(res.ok).toBe(true);
-    expect(claude).not.toHaveBeenCalled();
+    const asked = claude.mock.calls.map((call) => String((call as unknown[])[0]));
+    expect(asked.filter((prompt) => !prompt.includes("one plain English sentence"))).toEqual([]);
     expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
   });
 
@@ -351,13 +352,13 @@ describe("drafting a first contract", () => {
     const root = repo();
     daemon = createDaemon({
       socketPath,
-      claude: async () => ({ code: "missing", stdout: "", stderr: "" }),
+      claude: async () => ({ code: "missing", stdout: "", stderr: "", cli: "claude" as const }),
     });
     await daemon.open(root);
 
     await expect(daemon.draftContract(root)).resolves.toEqual({
       ok: false,
-      error: { kind: "not-installed" },
+      error: { kind: "not-installed", cli: "claude" },
     });
     expect(fs.existsSync(path.join(root, "architect.md"))).toBe(false);
   });
@@ -370,6 +371,7 @@ describe("drafting a first contract", () => {
         code: 0,
         stdout: "I had a look around.",
         stderr: "",
+        cli: "claude" as const,
       }),
     });
     await daemon.open(root);
@@ -387,7 +389,7 @@ describe("drafting a first contract", () => {
     fs.writeFileSync(path.join(flat, "index.ts"), "export const one = 1\n");
     daemon = createDaemon({
       socketPath,
-      claude: async () => ({ code: 0, stdout: drafted(flat), stderr: "" }),
+      claude: async () => ({ code: 0, stdout: drafted(flat), stderr: "", cli: "claude" as const }),
     });
     await daemon.open(flat);
 
@@ -401,7 +403,7 @@ describe("drafting a first contract", () => {
   it("refuses to draft for a project that already has a contract", async () => {
     daemon = createDaemon({
       socketPath,
-      claude: async () => ({ code: 0, stdout: "", stderr: "" }),
+      claude: async () => ({ code: 0, stdout: "", stderr: "", cli: "claude" as const }),
     });
     writeArchitect(tmpRoot, fixture(component("a")));
     await daemon.open(tmpRoot);
@@ -421,7 +423,7 @@ describe("drafting a first contract", () => {
     );
     daemon = createDaemon({
       socketPath,
-      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "" }),
+      claude: async () => ({ code: 0, stdout: drafted(root), stderr: "", cli: "claude" as const }),
     });
     await daemon.open(root);
     expect(daemon.projects()[0]?.folderShaped).toBe(true);
@@ -440,7 +442,7 @@ describe("drafting a first contract", () => {
       socketPath,
       claude: async () => {
         writeArchitect(root, fixture(component("a")));
-        return { code: 0, stdout: drafted(root), stderr: "" };
+        return { code: 0, stdout: drafted(root), stderr: "", cli: "claude" as const };
       },
     });
     await daemon.open(root);
@@ -866,17 +868,6 @@ describe("edits", () => {
 });
 
 describe("code map storage", () => {
-  const originalKey = process.env.ANTHROPIC_API_KEY;
-
-  beforeEach(() => {
-    delete process.env.ANTHROPIC_API_KEY;
-  });
-
-  afterEach(() => {
-    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = originalKey;
-  });
-
   it("returns the scanned map even when it cannot be persisted", async () => {
     fs.writeFileSync(path.join(tmpRoot, "a.ts"), "export function a() {}\n");
     fs.mkdirSync(path.dirname(socketPath), { recursive: true });
@@ -1018,17 +1009,6 @@ describe("code map storage", () => {
 });
 
 describe("code map migration", () => {
-  const originalKey = process.env.ANTHROPIC_API_KEY;
-
-  beforeEach(() => {
-    delete process.env.ANTHROPIC_API_KEY;
-  });
-
-  afterEach(() => {
-    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = originalKey;
-  });
-
   function writeOldMap(cache: Record<string, string>) {
     fs.mkdirSync(path.join(tmpRoot, ".architect"), { recursive: true });
     fs.writeFileSync(
@@ -1942,8 +1922,6 @@ describe("history sessions", () => {
 });
 
 describe("source watcher", () => {
-  const originalKey = process.env.ANTHROPIC_API_KEY;
-
   const pause = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -1970,15 +1948,6 @@ describe("source watcher", () => {
     await daemon.open(root);
     await pause(200);
   }
-
-  beforeEach(() => {
-    delete process.env.ANTHROPIC_API_KEY;
-  });
-
-  afterEach(() => {
-    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = originalKey;
-  });
 
   it("pushes a code map holding a source file written after the project opened", async () => {
     await watching(tmpRoot);

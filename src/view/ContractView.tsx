@@ -40,12 +40,12 @@ function placeholderId(a: Architecture): string {
 }
 
 function draftNote(failure: DraftFailure): string {
-  if (failure.kind === 'not-installed') return 'Claude Code is not on PATH'
   if (failure.kind === 'nothing-to-draft') return 'No functions to draft from'
-  if (failure.kind === 'timed-out') return 'Claude timed out'
   if (failure.kind === 'unusable') return `Unusable draft: ${failure.detail}`
-  return `Draft failed: ${draftMessage(failure)}`
+  if (failure.kind === 'failed') return `Draft failed: ${draftMessage(failure)}`
+  return draftMessage(failure)
 }
+
 
 export default function ContractView({ theme, show }: ViewProps) {
   const project = useProject()
@@ -195,7 +195,7 @@ export default function ContractView({ theme, show }: ViewProps) {
             Create architect.md
           </button>
           <button onClick={draftContract} disabled={busy}>
-            Draft with Claude
+            Draft with AI
           </button>
         </div>
 

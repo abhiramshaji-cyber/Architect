@@ -1,3 +1,4 @@
+import type { Provider } from '../../shared/settings'
 import type {
   DraftFailure,
   GitFailure,
@@ -135,15 +136,21 @@ export function gitMessage(error: GitFailure): string {
   return `git ${error.args.join(' ')} failed: ${error.stderr}`
 }
 
+export const CLI_NAMES: Record<Provider, string> = { claude: 'Claude Code', codex: 'Codex' }
+
+export const LOGIN_STEPS: Record<Provider, string> = { claude: 'run claude and type /login', codex: 'run codex login' }
+
 export function draftMessage(error: DraftFailure): string {
-  if (error.kind === 'not-installed') return 'Claude Code is not on your PATH, so there is nobody to ask'
+  if (error.kind === 'not-connected') return 'No AI is connected yet. Open AI settings and connect Claude Code or Codex'
+  if (error.kind === 'not-installed') return `${CLI_NAMES[error.cli]} is not installed, so there is nobody to ask. Install it or pick the other one in AI settings`
+  if (error.kind === 'logged-out') return `${CLI_NAMES[error.cli]} is not signed in with a subscription${error.detail ? ` (${error.detail})` : ''}: ${LOGIN_STEPS[error.cli]}`
   if (error.kind === 'nothing-to-draft') return 'There is nothing here to write about yet'
-  if (error.kind === 'timed-out') return 'Claude took too long, so nothing was written'
-  if (error.kind === 'unusable') return `Claude replied with something unusable (${error.detail}), so the fields were left alone`
+  if (error.kind === 'timed-out') return `${CLI_NAMES[error.cli]} took too long, so nothing was written`
+  if (error.kind === 'unusable') return `The AI replied with something unusable (${error.detail}), so the fields were left alone`
   if (error.kind === 'no-skill') return `No ${error.name} instructions were found in .claude, so there is nothing to follow`
   if (error.kind === 'git') return gitMessage(error.error)
 
-  return `claude exited ${error.code}: ${error.stderr}`
+  return `${error.cli ? CLI_NAMES[error.cli] : 'The AI'} exited ${error.code}: ${error.stderr}`
 }
 
 export function openMessage(failure: OpenFailure): string {

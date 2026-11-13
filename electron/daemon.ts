@@ -39,7 +39,8 @@ import {
 } from '../shared/types'
 import { describe } from './scan/describe'
 import { cacheKey, readStoredMap, writeStoredMap } from './scan/cache'
-import { type ClaudeRun, draft, runClaude, skeleton } from './draft/draft'
+import { aiRun, type AiRun } from './ai'
+import { draft, skeleton } from './draft/draft'
 import { scopeOf } from './draft/scope'
 import { createEdit, deleteEdit, handEdit, listEdits, readEdit, updateEdit } from './contract/edits'
 import { apply, check, ownership, parse, serialize } from './contract/graph'
@@ -155,7 +156,7 @@ type ProjectState = {
 type DaemonOptions = {
   socketPath?: string
   rescanDebounceMs?: number
-  claude?: ClaudeRun
+  claude?: AiRun
   reviewTimeouts?: { proposal?: number; edit?: number }
 }
 
@@ -210,7 +211,7 @@ export function createDaemon(options: DaemonOptions = {}) {
   const socketPath = options.socketPath ?? process.env.ARCHITECT_SOCKET ?? SOCKET_PATH
   const cacheDir = path.dirname(socketPath)
   const rescanDebounceMs = options.rescanDebounceMs ?? RESCAN_DEBOUNCE_MS
-  const claude = options.claude ?? runClaude
+  const claude = options.claude ?? aiRun(cacheDir)
 
   const projects = new Map<string, ProjectState>()
   const histories = createJournal((root) => path.join(cacheDir, 'history', `${cacheKey(root)}.json`), historyEntrySchema, HISTORY_LIMIT)
@@ -461,7 +462,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     const seen = Date.now()
     const stored = readStoredMap(cacheDir, root)
     const digests = new Map<string, string>()
-    const described = await describe(await scan(root, digests), root, stored?.cache)
+    const described = describe(await scan(root, digests), root, stored?.cache, claude, () => refill(root))
     for (const change of stored?.map ? changes(root, stored.map, described.map, touched) : []) record(root, 'code', change, seen, digests)
 
     try {
@@ -471,6 +472,11 @@ export function createDaemon(options: DaemonOptions = {}) {
     }
 
     return described.map
+  }
+
+  function refill(root: string) {
+    const state = projects.get(root)
+    if (state) scheduleRescan(state)
   }
 
   function scheduleRescan(state: ProjectState) {
@@ -738,7 +744,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     const redraw = redrawable(state)
     if (state.contract.status !== 'missing' && !redraw) throw new Error(`${root} already has an architect.md`)
 
-    const drafted = await draft(root, await mapOf(root), claude, undefined, await scopeOf(root))
+    const drafted = await draft(root, await mapOf(root), claude, await scopeOf(root))
     if (!drafted.ok) return drafted
 
     if (redraw && redrawable(state)) {
