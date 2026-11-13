@@ -22,7 +22,7 @@ function codeNodes(map: CodeMap | null): Map<string, string> {
   const nodes = new Map<string, string>()
   for (const folder of map?.folders ?? []) {
     if (folder.path !== '') nodes.set(`folder:${folder.path}`, '')
-    for (const file of folder.files) nodes.set(`codefile:${file.path}`, JSON.stringify(file.functions))
+    for (const file of folder.files) nodes.set(`codefile:${file.path}`, JSON.stringify(file.functions.map((fn) => ({ ...fn, description: '' }))))
   }
   return nodes
 }

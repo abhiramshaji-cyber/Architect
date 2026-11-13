@@ -64,6 +64,13 @@ describe('codeDiff', () => {
     })
   })
 
+  it('ignores an AI summary landing on an unchanged function', () => {
+    const before = map({ 'src/a/x.ts': ['one'] })
+    const after = map({ 'src/a/x.ts': ['one'] })
+    after.folders.flatMap((folder) => folder.files)[0]!.functions[0]!.description = 'Does one thing.'
+    expect(isEmpty(codeDiff(before, after))).toBe(true)
+  })
+
   it('marks a touched file changed even when its functions did not move', () => {
     const same = map({ 'src/x.ts': ['one'], 'src/y.ts': ['two'] })
     expect(codeDiff(same, same, ['src/x.ts'])).toEqual({

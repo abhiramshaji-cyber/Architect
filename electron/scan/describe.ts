@@ -74,11 +74,12 @@ async function fill(run: AiRun, root: string, asks: Ask[], filled?: () => void) 
 
   const worker = async () => {
     while (!stopped && cursor < jobs.length) {
-      const job = jobs[cursor++] ?? []
+      const at = cursor++
+      const job = jobs[at] ?? []
       const out = await Promise.resolve().then(() => run(prompt(job), root, TIMEOUT_MS)).catch(() => null)
       if (out?.code !== 0) {
         stopped = true
-        if (out && typeof out.code === 'string' && out.code !== 'timeout') for (const ask of asks) if (!written.has(ask.hash)) asked.delete(ask.hash)
+        if (out && typeof out.code === 'string' && out.code !== 'timeout') for (const ask of [...job, ...jobs.slice(cursor).flat()]) asked.delete(ask.hash)
         return
       }
       for (const [hash, sentence] of parseSentences(out.stdout, job)) {

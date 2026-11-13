@@ -46,7 +46,6 @@ function draftNote(failure: DraftFailure): string {
   return draftMessage(failure)
 }
 
-
 export default function ContractView({ theme, show }: ViewProps) {
   const project = useProject()
   const { currentRoot, architecture, contract, draft, owners, recent, busy, drafting, draftError, folderShaped } = project
