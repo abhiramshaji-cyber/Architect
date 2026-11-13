@@ -15,7 +15,7 @@ Coding agents generate structure faster than anyone reviews it. Architect puts t
 
 ## What you get
 
-Open a project and Architect starts on **Functions**. Every page reads the same parse of the repo, its git history and `architect.md`.
+Open a project and Architect starts on **Functions**. The code pages all read the same parse of the repo, its git history and `architect.md`.
 
 ### Functions
 
@@ -70,7 +70,7 @@ Off by default. Nothing is counted and no model is called until you turn it on. 
 - **Measured** conventions, counted from the parse: a component (or top level folder without `architect.md`) whose files all sit below a limit gets a tighter rule line that would hold them there.
 - **AI suggestions**, only when you click **Suggest with AI**. Claude Code is asked, files the scan did not find are removed from each suggestion, and a suggestion left with none is dropped.
 
-Every card is labelled Measured or AI suggestion, and nothing is added to `architect.md` until you click **Add to Rules**.
+Every card is labelled Measured or AI suggestion, and nothing is added to `architect.md` until you click its add button (**Add to Rules**, or **Add and loosen** when it would relax a limit).
 
 ### The rest
 
