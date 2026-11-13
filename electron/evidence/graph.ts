@@ -34,8 +34,13 @@ export function graphOf(map: CodeMap, file: string, fn: number, depth: number): 
   const files = map.folders.flatMap((folder) => folder.files)
   const offset = new Map<string, number>()
   const nodes: Node[] = []
+  const loops = new Set<number>()
   for (const entry of files) {
     if (!offset.has(entry.path)) offset.set(entry.path, nodes.length)
+    const base = nodes.length
+    entry.functions.forEach((one, at) => {
+      if (offset.get(entry.path) === base && one.calls.some((call) => call.file === entry.path && call.fn === at)) loops.add(base + at)
+    })
     nodes.push(...entry.functions.map((one) => ({ name: one.name, file: entry.path, line: one.line })))
   }
   const indexOf = (site: { file: string; fn: number }) => {
@@ -43,7 +48,7 @@ export function graphOf(map: CodeMap, file: string, fn: number, depth: number): 
     return at === undefined || nodes[at + site.fn]?.file !== site.file ? undefined : at + site.fn
   }
 
-  const out = edgesOf(map)
+  const out = edgesOf(map).map((callees, at) => (loops.has(at) ? [...callees, at] : callees))
   const into = nodes.map((): number[] => [])
   out.forEach((callees, from) => callees.forEach((to) => into[to]?.push(from)))
   const sitesOf: CallSite[][] = files.flatMap((entry) => entry.functions.map((one) => one.sites ?? []))
@@ -81,7 +86,14 @@ export function graphOf(map: CodeMap, file: string, fn: number, depth: number): 
   }
   const up = walk((node) => into[node] ?? [], (node, caller) => [caller, node])
   const down = walk((node) => out[node] ?? [], (node, callee) => [node, callee])
-  const all = [...up, ...down].sort((a, b) => a.level - b.level)
+  const keys = new Set<string>()
+  const fresh = ([from, to]: [number, number]) => {
+    const key = `${from} ${to}`
+    if (keys.has(key)) return false
+    keys.add(key)
+    return true
+  }
+  const all = [...up, ...down].sort((a, b) => a.level - b.level).filter(({ edge }) => fresh(edge))
   const kept = all.slice(0, MAX_EDGES).map((found) => found.edge)
 
   const direct = [...new Set(into[target] ?? [])]
