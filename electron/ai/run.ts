@@ -2,7 +2,7 @@ import path from 'node:path'
 import { type AiFailure, type Provider, readSettings } from '../../shared/settings'
 import type { DraftFailure } from '../../shared/types'
 import { type CliOutput, cliOf } from './cli'
-import { loginOf } from './status'
+import { CLAUDE_SETTINGS, loginOf } from './status'
 
 const TIMEOUT_MS = 5 * 60 * 1000
 const MAX_STDERR = 600
@@ -12,7 +12,7 @@ export type AiOutput = { code: CliOutput['code'] | 'logged-out' | 'not-connected
 export type AiRun = (prompt: string, cwd: string, timeoutMs?: number, signal?: AbortSignal) => Promise<AiOutput>
 
 const ARGS: Record<Provider, (model: string, cwd: string) => string[]> = {
-  claude: (model) => ['--print', '--model', model, '--no-session-persistence', '--strict-mcp-config', '--settings', '{"disableAllHooks":true}'],
+  claude: (model) => ['--print', ...CLAUDE_SETTINGS, '--tools', '', '--model', model, '--no-session-persistence', '--strict-mcp-config'],
   codex: (model, cwd) => ['exec', '--model', model, '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--color', 'never', '--cd', cwd, '-'],
 }
 
