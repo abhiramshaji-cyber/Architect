@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { Commit, VerdictRecord } from '../../../shared/types'
 import { gitMessage } from '../../model/picker'
 
@@ -70,7 +71,7 @@ export function useReplay(root: string | null, days: number): Stored | null {
             commits: [],
             capped: false,
             verdicts: [],
-            error: err instanceof Error ? err.message : String(err),
+            error: errorText(err),
           }),
         )
         .finally(() => {

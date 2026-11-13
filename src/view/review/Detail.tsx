@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { ReviewDetail, ReviewItem } from '../../../shared/types'
 import { describeItem, overlay } from '../../model/review'
 import Canvas from '../Canvas'
@@ -27,7 +28,7 @@ export default function Detail({ item, theme }: { item: ReviewItem; theme: strin
     let live = true
     window.architect.reviewDetail(item.id).then(
       (found) => live && setDetail(found),
-      (err: unknown) => live && setFailure(err instanceof Error ? err.message : String(err)),
+      (err: unknown) => live && setFailure(errorText(err)),
     )
     return () => {
       live = false

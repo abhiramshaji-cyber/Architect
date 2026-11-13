@@ -1,31 +1,14 @@
 import type { BranchPatch, ChangedFile, DiffChanges, GitResult } from '../../../shared/types'
 import { defaultBranch, git, gitInput, parseStatus, succeeds } from '../git'
-import { parseNameStatus, parseNumstat, parseUntracked, type Counted, type Named } from './parse'
+import { parseChanges, parseUntracked } from './parse'
 
 export const LIST = ['diff', '-z', '-M', '-C', '--no-color']
 export const PATCH = ['diff', '-U3', '-M', '-C', '--no-color']
 const STATE = ['status', '--porcelain=v2', '--branch', '--untracked-files=all', '-z']
 
-function merge(named: Named[], counted: Map<string, Counted>): ChangedFile[] {
-  return named.map((entry) => ({
-    ...entry,
-    ...(counted.get(entry.path) ?? {
-      added: null,
-      removed: null,
-      binary: false,
-    }),
-  }))
-}
-
 async function listed(root: string, args: string[]): Promise<GitResult<ChangedFile[]>> {
-  const [named, counted] = await Promise.all([git(root, [...args, '--name-status']), git(root, [...args, '--numstat'])])
-  if (!named.ok) return named
-  if (!counted.ok) return counted
-
-  return {
-    ok: true,
-    value: merge(parseNameStatus(named.value), parseNumstat(counted.value)),
-  }
+  const out = await git(root, [...args, '--raw', '--numstat'])
+  return out.ok ? { ok: true, value: parseChanges(out.value) } : out
 }
 
 function untrackedFiles(paths: string[]): ChangedFile[] {

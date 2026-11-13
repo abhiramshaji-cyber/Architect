@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { errorText } from '../../../shared/text/error'
 import type { Architecture, CodeMap, Layers } from '../../../shared/types'
 
 export type Found = { layers: Layers | null; error: string | null }
@@ -20,7 +21,7 @@ export function useLayers(root: string | null, codeMap: CodeMap | null | undefin
         if (live) setFound({ layers, error: null })
       },
       (err: unknown) => {
-        if (live) setFound((prev) => ({ ...prev, error: err instanceof Error ? err.message : String(err) }))
+        if (live) setFound((prev) => ({ ...prev, error: errorText(err) }))
       },
     )
     return () => {

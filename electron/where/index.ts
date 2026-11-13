@@ -1,11 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { errorText } from '../../shared/text/error'
 import type { Architecture, CodeMap, ContractState, Request, RuleViolation } from '../../shared/types'
 import { ownership } from '../contract/graph'
 import { edgesOf } from '../functions/facts'
 import { proposedFile } from '../rules/proposed'
 import { isTestFile } from '../scan/starts'
-import { homeOf, type ComponentPick, type FolderPick } from './home'
+import { counted, homeOf, type ComponentPick, type FolderPick } from './home'
 import { projectPath, resolveRefs, type Fn, type Resolved } from './refs'
 import { similarOf, type Similar } from './similar'
 import { verbOf, type Verb } from './verb'
@@ -30,8 +31,6 @@ export type Where = {
 }
 
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
-
-const counted = (ref: Resolved) => ref.status === 'function' || ref.status === 'file'
 
 const shown = (refs: Resolved[]): Shown[] => refs.map(({ ref, status, files, matches }) => ({ ref, status, files, matches }))
 
@@ -84,7 +83,7 @@ function fileCheck(ctx: WhereContext, target: string, stub: string): FileCheck {
     const { violations } = proposedFile(ctx.root, ctx.architecture?.rules, ctx.architecture?.scope, target, content)
     return { file, owners: owned, fits: violations.length === 0, violations, stub }
   } catch (err) {
-    return { file, owners: owned, fits: false, violations: [], stub, error: err instanceof Error ? err.message : String(err) }
+    return { file, owners: owned, fits: false, violations: [], stub, error: errorText(err) }
   }
 }
 

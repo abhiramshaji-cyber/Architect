@@ -16,6 +16,9 @@ import type {
   RemoteBranch,
   Worktree,
 } from '../../shared/types'
+import { unquotePath } from './unquote'
+
+export { unquotePath } from './unquote'
 
 const run = promisify(execFile)
 
@@ -77,56 +80,6 @@ export async function git(root: string, args: string[]): Promise<GitResult<strin
   } catch (error) {
     return { ok: false, error: await classify(root, args, error as ExecFailure) }
   }
-}
-
-const ESCAPES: Record<string, string> = {
-  a: '\x07',
-  b: '\b',
-  f: '\f',
-  n: '\n',
-  r: '\r',
-  t: '\t',
-  v: '\v',
-  '\\': '\\',
-  '"': '"',
-}
-
-export function unquotePath(raw: string): string {
-  if (!raw.startsWith('"') || !raw.endsWith('"') || raw.length < 2) return raw
-
-  const body = raw.slice(1, -1)
-  const bytes: number[] = []
-
-  let i = 0
-  while (i < body.length) {
-    const char = body[i] ?? ''
-
-    if (char !== '\\') {
-      bytes.push(...Buffer.from(char, 'utf8'))
-      i += 1
-      continue
-    }
-
-    const next = body[i + 1] ?? ''
-    const mapped = ESCAPES[next]
-    if (mapped !== undefined) {
-      bytes.push(...Buffer.from(mapped, 'utf8'))
-      i += 2
-      continue
-    }
-
-    const octal = body.slice(i + 1, i + 4)
-    if (/^[0-7]{3}$/.test(octal)) {
-      bytes.push(parseInt(octal, 8))
-      i += 4
-      continue
-    }
-
-    bytes.push(...Buffer.from(next, 'utf8'))
-    i += 2
-  }
-
-  return Buffer.from(bytes).toString('utf8')
 }
 
 function headOf(oid: string, name: string): Head {

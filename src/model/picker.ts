@@ -1,4 +1,5 @@
 import type { Provider } from '../../shared/settings'
+import { plural } from '../../shared/text/plural'
 import type {
   DraftFailure,
   GitFailure,
@@ -69,10 +70,6 @@ export function escaped(state: PickerState): PickerState | null {
   return state.stage.kind === 'branches' ? START : null
 }
 
-export function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
-}
-
 export function riskText(risk: OpenRisk): string {
   const parts: string[] = []
   if (risk.dirty > 0) parts.push(plural(risk.dirty, 'uncommitted file'))
@@ -131,7 +128,7 @@ export function gitMessage(error: GitFailure): string {
   if (error.kind === 'auth-failed') return `${error.remote} refused the credentials: gh auth login`
   if (error.kind === 'unreachable') return `${error.remote} cannot be reached from here`
   if (error.kind === 'diverged') return `The branch is ${error.ahead} ahead and ${error.behind} behind, so it cannot fast forward`
-  if (error.kind === 'conflicted') return `${error.files} file${error.files === 1 ? '' : 's'} still has a merge conflict`
+  if (error.kind === 'conflicted') return `${plural(error.files, 'file')} still has a merge conflict`
 
   return `git ${error.args.join(' ')} failed: ${error.stderr}`
 }

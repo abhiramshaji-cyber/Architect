@@ -5,6 +5,7 @@ import path from 'node:path'
 import chokidar from 'chokidar'
 import { folderShaped } from '../shared/folders'
 import { SOCKET_PATH } from '../shared/socket'
+import { errorText } from '../shared/text/error'
 import {
   type Architecture,
   type CodeMap,
@@ -199,10 +200,6 @@ function foldersOnly(root: string, architecture: Architecture): boolean {
 
 function redrawable(state: ProjectState): boolean {
   return state.contract.status === 'ready' && state.architecture !== null && foldersOnly(state.root, state.architecture)
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 function recoverId(value: unknown): string | null {
@@ -806,7 +803,7 @@ export function createDaemon(options: DaemonOptions = {}) {
           try {
             verdict = changeVerdict(cacheDir, root, state.architecture, stale, req)
           } catch (err) {
-            const error = err instanceof Error ? err.message : String(err)
+            const error = errorText(err)
             logVerdict(root, req, { status: 'unknown', reason: error }, stale)
             return { id: req.id, ok: false, error }
           }
@@ -863,7 +860,7 @@ export function createDaemon(options: DaemonOptions = {}) {
         }
         return { id: req.id, ok: true, result: readEdit(root, req.editId) }
       } catch (err) {
-        return { id: req.id, ok: false, error: err instanceof Error ? err.message : String(err) }
+        return { id: req.id, ok: false, error: errorText(err) }
       }
     }
 

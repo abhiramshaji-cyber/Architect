@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
+import { readText } from '../../../shared/disk/read'
 import type { EntryReason } from '../../../shared/types'
 import { configsOf, field, pathOf, pathsOf, valueOf } from './config'
 
@@ -14,16 +15,8 @@ const SIDES = [
   { key: 'renderer', reason: 'renderer', home: 'src/renderer' },
 ] as const
 
-function read(file: string): string | undefined {
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch {
-    return undefined
-  }
-}
-
 function scriptsOf(root: string, html: string, base: string): string[] {
-  const text = (read(path.join(root, html)) ?? '').replace(/<!--[\s\S]*?-->/g, '')
+  const text = (readText(path.join(root, html)) ?? '').replace(/<!--[\s\S]*?-->/g, '')
   return [...text.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi)].flatMap((match) => {
     const src = match[1] ?? ''
     if (/^[a-z]+:|^\/\//i.test(src)) return []
@@ -83,7 +76,7 @@ export function builtIn(root: string): Built[] {
   }
 
   return names.flatMap((name) => {
-    const text = read(path.join(root, name))
+    const text = readText(path.join(root, name))
     if (text === undefined) return []
     const source = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true)
     return configsOf(source).flatMap((config) => {

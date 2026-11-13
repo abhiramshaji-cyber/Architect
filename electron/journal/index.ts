@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { z } from 'zod'
+import { errorText } from '../../shared/text/error'
 
 function persist(target: string, text: string) {
   const temporary = `${target}.${process.pid}.tmp`
@@ -39,7 +40,7 @@ export function createJournal<T>(fileOf: (root: string) => string, schema: z.Zod
     try {
       persist(fileOf(root), JSON.stringify(kept))
     } catch (err) {
-      console.error(`could not persist ${fileOf(root)}:`, err instanceof Error ? err.message : String(err))
+      console.error(`could not persist ${fileOf(root)}:`, errorText(err))
     }
     return kept
   }

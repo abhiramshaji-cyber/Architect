@@ -1,12 +1,11 @@
 import { memo } from 'react'
+import { percent } from '../../../shared/text/percent'
 import type { CoChange, Coupling, CouplingPair } from '../../../shared/types'
 import { plural } from '../functions/Mark'
 
 type PairProps = { pair: CouplingPair; coupling: Coupling; onOpen: (file: string) => void }
 
 const day = (at: number) => new Date(at).toISOString().slice(0, 10)
-
-const percent = (value: number) => `${Math.round(value * 100)}%`
 
 function share(change: CoChange, at: number, unit: string): string {
   const own = change.changes[at] ?? 0

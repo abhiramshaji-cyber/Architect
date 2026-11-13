@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Churn } from '../../../shared/recency'
+import { errorText } from '../../../shared/text/error'
 
 type Read = { root: string; days: number; churn: Churn | null; error: string | null }
 
@@ -11,7 +12,7 @@ export function useChurn(root: string | null, days: number, codeMap: unknown): R
     let live = true
     window.architect.churn(root, days).then(
       (churn) => live && setRead({ root, days, churn, error: null }),
-      (err: unknown) => live && setRead({ root, days, churn: null, error: err instanceof Error ? err.message : String(err) }),
+      (err: unknown) => live && setRead({ root, days, churn: null, error: errorText(err) }),
     )
     return () => {
       live = false

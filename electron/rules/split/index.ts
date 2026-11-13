@@ -1,5 +1,5 @@
-import fs from 'node:fs'
 import path from 'node:path'
+import { readText } from '../../../shared/disk/read'
 import type { Architecture, CodeMap, RuleEntry, SplitSuggestion } from '../../../shared/types'
 import { consideredOf, effective, folderOf } from '../audit'
 import { sourcesIn, type SourceFacts } from '../facts'
@@ -16,12 +16,5 @@ export function splitSuggestions(declared: RuleEntry[] | undefined, sources: Sou
 }
 
 export function splitsIn(root: string, map: CodeMap, architecture: Architecture | null | undefined): SplitSuggestion[] {
-  const read = (file: string) => {
-    try {
-      return fs.readFileSync(path.join(root, file), 'utf8')
-    } catch {
-      return undefined
-    }
-  }
-  return splitSuggestions(architecture?.rules, sourcesIn(root, map, () => []), read, architecture?.scope)
+  return splitSuggestions(architecture?.rules, sourcesIn(root, map, () => []), (file) => readText(path.join(root, file)), architecture?.scope)
 }

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { errorText } from '../../../shared/text/error'
 import {
   MAX_DIFF_BYTES,
   type ChangedFile,
@@ -35,7 +36,7 @@ function pathArgs(file: ChangedFile): GitResult<string[]> {
 }
 
 function unreadable(step: string, file: ChangedFile, error: unknown): GitResult<never> {
-  const stderr = error instanceof Error ? error.message : String(error)
+  const stderr = errorText(error)
   return {
     ok: false,
     error: { kind: 'failed', args: [step, file.path], code: null, stderr },
@@ -178,7 +179,7 @@ export async function textDiff(before: string, after: string): Promise<GitResult
   } catch (error) {
     const code = (error as { code?: unknown }).code
     if (code === 'ENOENT') return { ok: false, error: { kind: 'not-installed' } }
-    const stderr = error instanceof Error ? error.message : String(error)
+    const stderr = errorText(error)
     return { ok: false, error: { kind: 'failed', args, code: typeof code === 'number' ? code : null, stderr } }
   } finally {
     await fs.rm(dir, { recursive: true, force: true })

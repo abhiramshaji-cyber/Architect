@@ -1,4 +1,5 @@
-import type { ChangeStatus } from '../../../shared/types'
+import type { ChangedFile, ChangeStatus } from '../../../shared/types'
+import { parseNumstat } from '../churn/numstat'
 
 const STATUS: Record<string, ChangeStatus> = {
   A: 'added',
@@ -10,21 +11,15 @@ const STATUS: Record<string, ChangeStatus> = {
   U: 'unmerged',
 }
 
-export type Named = { path: string; from: string | null; status: ChangeStatus; similarity: number | null }
+type Named = Pick<ChangedFile, 'path' | 'from' | 'status' | 'similarity'>
 
-export type Counted = { added: number | null; removed: number | null; binary: boolean }
-
-function records(stdout: string): string[] {
-  return stdout.split('\0').filter((field) => field !== '')
-}
-
-export function parseNameStatus(stdout: string): Named[] {
-  const fields = records(stdout)
-  const found: Named[] = []
+export function parseChanges(stdout: string): ChangedFile[] {
+  const fields = stdout.split('\0')
+  const named: Named[] = []
 
   let i = 0
-  while (i < fields.length) {
-    const code = fields[i] ?? ''
+  while (fields[i]?.startsWith(':')) {
+    const code = fields[i]?.split(' ').at(-1) ?? ''
     const letter = code.slice(0, 1)
     const score = Number.parseInt(code.slice(1), 10)
     const paired = letter === 'R' || letter === 'C'
@@ -33,43 +28,15 @@ export function parseNameStatus(stdout: string): Named[] {
     i += paired ? 3 : 2
 
     if (path === '') continue
-    found.push({ path, from, status: STATUS[letter] ?? 'modified', similarity: Number.isFinite(score) ? score : null })
+    named.push({ path, from, status: STATUS[letter] ?? 'modified', similarity: Number.isFinite(score) ? score : null })
   }
 
-  return found
-}
-
-export function parseNumstat(stdout: string): Map<string, Counted> {
-  const fields = records(stdout)
-  const found = new Map<string, Counted>()
-
-  let i = 0
-  while (i < fields.length) {
-    const field = fields[i] ?? ''
-    const tab = field.indexOf('\t')
-    const nextTab = field.indexOf('\t', tab + 1)
-    if (tab === -1 || nextTab === -1) {
-      i += 1
-      continue
-    }
-
-    const added = field.slice(0, tab)
-    const removed = field.slice(tab + 1, nextTab)
-    const inline = field.slice(nextTab + 1)
-    const paired = inline === ''
-    const path = paired ? (fields[i + 2] ?? '') : inline
-    i += paired ? 3 : 1
-
-    if (path === '') continue
-    const binary = added === '-' && removed === '-'
-    found.set(path, {
-      added: binary ? null : Number.parseInt(added, 10) || 0,
-      removed: binary ? null : Number.parseInt(removed, 10) || 0,
-      binary,
-    })
-  }
-
-  return found
+  const counted = new Map(parseNumstat(fields.slice(i).join('\0')).flatMap((commit) => commit.files.map((file) => [file.path, file] as const)))
+  return named.map((entry) => {
+    const file = counted.get(entry.path)
+    const known = file !== undefined && !file.binary
+    return { ...entry, added: known ? file.added : null, removed: known ? file.removed : null, binary: file?.binary ?? false }
+  })
 }
 
 export function parseUntracked(stdout: string): string[] {

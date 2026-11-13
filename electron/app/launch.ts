@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { realPath } from '../../shared/disk/real'
+import { errorText } from '../../shared/text/error'
 import type { IpcResult } from '../../shared/types'
 
 export function launchArgs(argv: string[], defaultApp: boolean): string[] {
@@ -14,22 +16,14 @@ export function folderAt(cwd: string, arg: string): IpcResult<string> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
     if (code === 'ENOENT' || code === 'ENOTDIR') return { ok: false, error: `${target} does not exist` }
-    return { ok: false, error: `${target} could not be read: ${err instanceof Error ? err.message : String(err)}` }
+    return { ok: false, error: `${target} could not be read: ${errorText(err)}` }
   }
 }
 
 export function sameFolder(claimed: Iterable<string>, root: string): string {
-  const real = realOf(root)
-  for (const held of claimed) if (held === root || realOf(held) === real) return held
+  const real = realPath(root)
+  for (const held of claimed) if (held === root || realPath(held) === real) return held
   return root
-}
-
-function realOf(target: string): string {
-  try {
-    return fs.realpathSync.native(target)
-  } catch {
-    return target
-  }
 }
 
 export function sortLaunch(requests: { cwd: string; args: string[] }[]): { folders: string[]; errors: string[] } {
