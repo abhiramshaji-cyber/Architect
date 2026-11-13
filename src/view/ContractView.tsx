@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Architecture, DraftFailure } from '../../shared/types'
 import Canvas from './Canvas'
+import ChatPanel from './chat/ChatPanel'
+import FitTo from './chat/FitTo'
+import { shape } from './chat/shape'
+import { useContractView } from './chat/useContractView'
 import EditBar from './EditBar'
 import EditList from './EditList'
 import Icon from './Icon'
@@ -53,6 +57,8 @@ export default function ContractView({ theme, show }: ViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const waiting = useReview().items.filter((item) => item.root === currentRoot && item.kind === 'proposal').length
   const [rail, setRail] = useState(() => ({ root: currentRoot, open: railOpen(currentRoot) }))
+  const [view, setView] = useContractView(currentRoot)
+  const shaped = useMemo(() => (!draft && architecture ? shape(architecture, view) : null), [draft, architecture, view])
 
   if (rail.root !== currentRoot) setRail({ root: currentRoot, open: railOpen(currentRoot) })
 
@@ -136,7 +142,9 @@ export default function ContractView({ theme, show }: ViewProps) {
 
             <Canvas
               key={draft ? `${currentRoot}:${draft.id}:${draft.status}` : currentRoot}
-              architecture={shown}
+              architecture={shaped?.architecture ?? shown}
+              tone={shaped?.tone}
+              sideways={shaped?.sideways}
               ownership={draft ? null : owners}
               changes={draft ? undefined : recency?.components}
               recent={draft ? {} : recent}
@@ -144,7 +152,9 @@ export default function ContractView({ theme, show }: ViewProps) {
               selectedId={selectedId}
               onSelect={setSelectedId}
               onEdit={draft && draft.status === 'draft' ? edit : undefined}
-            />
+            >
+              <FitTo ids={shaped?.fit ?? []} stamp={JSON.stringify(view)} />
+            </Canvas>
           </>
         )}
       </div>
@@ -161,6 +171,7 @@ export default function ContractView({ theme, show }: ViewProps) {
         </button>
         {rail.open && (
           <div className="rail-body">
+            <ChatPanel key={currentRoot} root={currentRoot} architecture={architecture} view={view} onView={setView} onOpenAi={() => show('ai')} />
             <HistoryPanel onPick={pick} />
             <EditList />
           </div>

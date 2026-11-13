@@ -1,6 +1,7 @@
 @import './styles/tokens.css';
 @import './styles/shell.css';
 @import './styles/contract.css';
+@import './styles/chat.css';
 @import './styles/code.css';
 @import './styles/git.css';
 @import './styles/functions.css';
