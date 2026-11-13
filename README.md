@@ -11,7 +11,29 @@ Coding agents generate structure faster than anyone reviews it. Architect puts t
 
 </div>
 
+![Architect showing its own repo on the Map page](docs/screenshots/map.png)
+
 ---
+
+## Screenshots
+
+Architect open on its own repo. The picture at the top is the Map: the whole repo as tiles sized by lines and coloured by importance.
+
+![Functions page](docs/screenshots/functions.png)
+
+Functions: every function ranked by importance, with its signature, callers, callees and file.
+
+![Layers page](docs/screenshots/layers.png)
+
+Layers: which component calls which, with one cell opened to list the calls behind it.
+
+![Flow page](docs/screenshots/flow.png)
+
+Flow: the calls made from one starting point, drawn across the components that own them.
+
+![Hotspots page](docs/screenshots/hotspots.png)
+
+Hotspots: files plotted by size against recent commits, the ones worth a look first in yellow.
 
 ## What you get
 
