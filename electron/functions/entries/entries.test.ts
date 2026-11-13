@@ -140,16 +140,50 @@ describe('entriesIn', () => {
     ).toEqual({ 'index.js': ['main'], 'bin/x.js': ['bin'] })
     expect(entriesOf({})).toEqual({})
   })
+
+  it('maps exports patterns and compiled targets back to every matching source', () => {
+    const exports = { '.': './dist/index.js', './plugins/*': { types: './dist/plugins/*.d.ts', default: './dist/plugins/*.js' } }
+    const files = {
+      'package.json': JSON.stringify({ exports }),
+      'tsconfig.json': JSON.stringify({ compilerOptions: { outDir: 'dist', rootDir: 'src' } }),
+      'src/index.ts': '',
+      'src/plugins/a.ts': '',
+      'src/plugins/deep/b.ts': '',
+      'src/other.ts': '',
+    }
+    expect(entriesOf(files)).toEqual({ 'src/index.ts': ['exports'], 'src/plugins/a.ts': ['exports'], 'src/plugins/deep/b.ts': ['exports'] })
+  })
 })
 
 describe('declaredIn', () => {
   it('reads main and every bin, dropping a leading ./ and anything outside the package', () => {
     expect(declaredIn({ main: './src/index.ts', bin: { a: 'cli/a.js', b: './cli/b.js', c: '../up.js' } })).toEqual([
-      { reason: 'main', file: 'src/index.ts' },
+      { reason: 'main', file: 'src/index.ts', subpath: '.' },
       { reason: 'bin', file: 'cli/a.js' },
       { reason: 'bin', file: 'cli/b.js' },
     ])
     expect(declaredIn({ bin: 'run.js' })).toEqual([{ reason: 'bin', file: 'run.js' }])
+  })
+
+  it('reads every exports condition and subpath and the module field, each under its own reason', () => {
+    const exports = { '.': { import: './dist/index.mjs', require: ['./dist/index.cjs'] }, './sub/*': './dist/sub/*.js', './x': null }
+    expect(declaredIn({ exports, module: './dist/index.mjs' })).toEqual([
+      { reason: 'exports', file: 'dist/index.mjs', subpath: '.' },
+      { reason: 'exports', file: 'dist/index.cjs', subpath: '.' },
+      { reason: 'exports', file: 'dist/sub/*.js', subpath: './sub/*' },
+      { reason: 'module', file: 'dist/index.mjs', subpath: '.' },
+    ])
+    expect(declaredIn({ exports: { './*': './src/*.ts', './internal/*': null } }).filter((one) => one.excluded)).toEqual([
+      { reason: 'exports', file: 'src/internal/*.ts', subpath: './internal/*', excluded: true },
+    ])
+    expect(entriesOf({ 'package.json': JSON.stringify({ exports: { './*': './src/*.ts', './internal/*': null } }), 'src/a.ts': '', 'src/internal/b.ts': '' })).toEqual({
+      'src/a.ts': ['exports'],
+    })
+    const exact = { './*': './src/*.ts', './internal/*': null, './internal/public': './src/internal/public.ts' }
+    expect(entriesOf({ 'package.json': JSON.stringify({ exports: exact }), 'src/internal/public.ts': '', 'src/internal/secret.ts': '' })).toEqual({
+      'src/internal/public.ts': ['exports'],
+    })
+    expect(declaredIn({ exports: './lib.js' })).toEqual([{ reason: 'exports', file: 'lib.js', subpath: '.' }])
   })
 
   it('ignores a missing or malformed manifest', () => {

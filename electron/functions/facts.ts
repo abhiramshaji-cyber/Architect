@@ -1,6 +1,7 @@
 import { isTestFile } from '../scan/starts'
-import type { CodeMap, Entry, EntryReason, FileEntry, FunctionFacts } from '../../shared/types'
+import type { CodeMap, Entry, EntryReason, FileEntry, FunctionFacts, Untraced } from '../../shared/types'
 import type { EntryFiles } from './entries'
+import { within } from './scope'
 
 export const REASONS: EntryReason[] = [
   'mcpTool',
@@ -13,10 +14,14 @@ export const REASONS: EntryReason[] = [
   'page',
   'bin',
   'main',
+  'exports',
+  'module',
   'script',
 ]
 
 const HANDLERS = new Set<string>(['mcpTool', 'ipcHandler', 'bridge', 'cliCommand'])
+
+const LIBRARY = new Set<EntryReason>(['main', 'exports', 'module'])
 
 export function edgesOf(map: CodeMap): number[][] {
   const files = map.folders.flatMap((folder) => folder.files)
@@ -53,7 +58,7 @@ function claimsOf(file: FileEntry, reasons: EntryReason[]): { reason: EntryReaso
     ...starts.filter((start) => start.kind === 'exports').flatMap((start) => start.calls),
   ]
   const opened = reasons.flatMap((reason) =>
-    [...loaded, ...(reason === 'main' ? api : [])].map((call) => ({ ...call, reason })),
+    [...loaded, ...(LIBRARY.has(reason) ? api : [])].map((call) => ({ ...call, reason })),
   )
   return [...handlers, ...opened].map(({ reason, file: target, fn }) => ({ reason, file: target, fn }))
 }
@@ -75,17 +80,54 @@ export function entriesOf(map: CodeMap, entries: EntryFiles): Map<string, Entry>
   return best
 }
 
+const UNPARSED = /\.(vue|svelte|astro|mdx)$/
+
+function packageOf(file: string, packages: string[]): string {
+  return packages.filter((dir) => within(file, dir)).reduce((deepest, dir) => (dir.length > deepest.length ? dir : deepest), '')
+}
+
+function untracedOf(files: FileEntry[], entries: EntryFiles): Map<string, Untraced> {
+  const marks = new Map<string, Untraced>()
+  for (const file of files.filter((one) => isTestFile(one.path))) {
+    file.functions.forEach((_, at) => marks.set(`${file.path}\0${at}`, 'test'))
+  }
+  const live = files.filter((one) => !isTestFile(one.path))
+  const imported = new Set(live.flatMap((file) => (file.imports ?? []).filter((to) => !file.typeImports?.includes(to))))
+  const packages = entries.packages ?? ['']
+  const computed = new Set(live.filter((file) => file.computed).map((file) => packageOf(file.path, packages)))
+  const unparsed = new Set(files.filter((file) => UNPARSED.test(file.path)).map((file) => packageOf(file.path, packages)))
+  for (const file of live) {
+    const orphan = !imported.has(file.path) && !entries.has(file.path)
+    const home = packageOf(file.path, packages)
+    const reason = computed.has(home) ? 'computed' : unparsed.has(home) ? 'unparsed' : orphan ? 'orphan' : null
+    file.functions.forEach((fn, at) => {
+      if (fn.exported && reason !== null) marks.set(`${file.path}\0${at}`, reason)
+    })
+    if (entries.opaque?.includes(packageOf(file.path, entries.packages ?? ['']))) {
+      file.functions.forEach((fn, at) => {
+        if (fn.exported) marks.set(`${file.path}\0${at}`, 'export')
+      })
+    }
+    for (const { kind, calls } of file.starts ?? []) {
+      if (kind !== 'value' && kind !== 'load') continue
+      for (const call of calls) if (marks.get(`${call.file}\0${call.fn}`) !== 'value') marks.set(`${call.file}\0${call.fn}`, kind)
+    }
+  }
+  return marks
+}
+
 export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map)): FunctionFacts[] {
   const files = map.folders.flatMap((folder) => folder.files)
   const claimed = entriesOf(map, entries)
+  const untraced = untracedOf(files, entries)
   const callers = new Array<number>(edges.length).fill(0)
   for (const out of edges) for (const to of out) callers[to] = (callers[to] ?? 0) + 1
 
   let at = 0
   return files.flatMap((file) =>
-    file.functions.map((fn, index) => {
+    file.functions.map((fn, index): FunctionFacts => {
       const self = at++
-      return {
+      const fact: FunctionFacts = {
         file: file.path,
         name: fn.name,
         line: fn.line,
@@ -94,7 +136,10 @@ export function factsOf(map: CodeMap, entries: EntryFiles, edges = edgesOf(map))
         fanOut: edges[self]?.length ?? 0,
         exported: fn.exported === true,
         entry: claimed.get(`${file.path}\0${index}`) ?? null,
+        untraced: untraced.get(`${file.path}\0${index}`) ?? null,
       }
+      if (fn.twin) fact.twin = true
+      return fact
     }),
   )
 }

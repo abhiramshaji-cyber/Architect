@@ -11,6 +11,7 @@ const row = (name: string, file = 'a.ts', line = 1): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
 })
 

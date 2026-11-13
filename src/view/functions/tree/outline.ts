@@ -6,6 +6,8 @@ import { sizesOf, talliesOf, type Tally } from './buckets/counts'
 export const PROJECT = 'project'
 export const UNREACHED = 'unreached'
 export const UNREACHED_TITLE = 'Not reached from a starting point'
+export const UNKNOWN = 'unknown'
+export const UNKNOWN_TITLE = 'Reach unknown'
 
 export const REASON: Record<EntryReason, string> = {
   mcpTool: 'MCP tool',
@@ -18,6 +20,8 @@ export const REASON: Record<EntryReason, string> = {
   page: 'Page script',
   bin: 'package.json bin',
   main: 'package.json main',
+  exports: 'package.json exports',
+  module: 'package.json module',
   script: 'package.json script',
 }
 
@@ -53,7 +57,7 @@ function bucketed(
     if (row) return { id, name: row.name, size, file: row.file, component: owners[row.file] }
     const group = groups.get(id)
     if (group) return { id, name: REASON[group.reason], size, file: group.file, component: owners[group.file] }
-    return { id, name: id === UNREACHED ? UNREACHED_TITLE : id, size }
+    return { id, name: id === UNREACHED ? UNREACHED_TITLE : id === UNKNOWN ? UNKNOWN_TITLE : id, size }
   }
 
   const made = new Map<string, Made>()
@@ -78,17 +82,19 @@ export function outlineOf(shape: Shape): Outline {
   const groups = new Map(tree.groups.map((group) => [groupIdOf(group), group]))
   const grouped = new Set(tree.groups.flatMap((group) => group.members))
   const loose = tree.starts.filter((at) => !grouped.has(at)).map(idOf)
-  adopt(PROJECT, [...groups.keys(), ...loose, ...(tree.unreached.length > 0 ? [UNREACHED] : [])])
+  const buckets = [[UNKNOWN, tree.unknown], [UNREACHED, tree.unreached]] as const
+  const filled = buckets.filter(([, members]) => members.length > 0)
+  adopt(PROJECT, [...groups.keys(), ...loose, ...filled.map(([id]) => id)])
   for (const [id, group] of groups) adopt(id, group.members.map(idOf))
-  if (tree.unreached.length > 0) adopt(UNREACHED, tree.unreached.map(idOf))
+  for (const [id, members] of filled) adopt(id, members.map(idOf))
   tree.children.forEach((children, at) => {
     if (children.length > 0) adopt(idOf(at), children.map(idOf))
   })
   const starts = new Set(tree.starts.map(idOf))
-  const buckets = bucketed(kids, adopt, shape, groups)
+  const made = bucketed(kids, adopt, shape, groups)
   const links = new Map(shape.rows.map((_, at) => [idOf(at), (shape.calls[at] ?? []).map(idOf)]))
-  const tallies = talliesOf(kids, PROJECT, [...buckets.keys(), ...groups.keys(), UNREACHED], links, starts)
-  return { kids, up, starts, groups, buckets, tallies }
+  const tallies = talliesOf(kids, PROJECT, [...made.keys(), ...groups.keys(), UNKNOWN, UNREACHED], links, starts)
+  return { kids, up, starts, groups, buckets: made, tallies }
 }
 
 export function lineageOf(outline: Outline, id: string | null): Set<string> {
@@ -116,7 +122,7 @@ export function forcedOf(outline: Outline, hits: Set<string> | null): Set<string
 }
 
 export function isOpen(outline: Outline, id: string, overrides: Map<string, boolean>, forced: Set<string>): boolean {
-  const alone = id === UNREACHED && outline.kids.get(PROJECT)?.length === 1
+  const alone = (id === UNREACHED || id === UNKNOWN) && outline.kids.get(PROJECT)?.length === 1
   return overrides.get(id) ?? (forced.has(id) || id === PROJECT || alone || outline.starts.has(id))
 }
 

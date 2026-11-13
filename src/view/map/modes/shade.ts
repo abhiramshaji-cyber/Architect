@@ -10,6 +10,7 @@ export type Sessions = Map<string, { session: string; at: number }[]>
 export type Facts = {
   rows: FunctionRow[]
   unreached: Set<number>
+  unknown: Set<number>
   churn: Churn | null
   sessions: Sessions
   recorded: number

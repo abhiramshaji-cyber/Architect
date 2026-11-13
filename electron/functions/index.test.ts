@@ -19,7 +19,7 @@ describe('functionsOf', () => {
     expect(functionsOf(mapOf([]), new Map())).toEqual({
       rows: [],
       calls: [],
-      tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
+      tree: { starts: [], groups: [], unknown: [], unreached: [], children: [], also: [] },
       scope: '',
       folders: [],
       owners: {},
@@ -34,6 +34,7 @@ describe('functionsOf', () => {
         fanOut: 0,
         exported: false,
         entry: null,
+        untraced: null,
         importance: 3,
       },
     ])
@@ -163,7 +164,7 @@ describe('functionsOf in a folder', () => {
 
   it('roots the tree at uncalled functions in the folder with no unreached bucket for them', () => {
     const { tree } = functionsOf(map, new Map(), 'app/core')
-    expect(tree).toEqual({ starts: [0], groups: [], unreached: [], children: [[1], []], also: [0, 0] })
+    expect(tree).toEqual({ starts: [0], groups: [], unknown: [], unreached: [], children: [[1], []], also: [0, 0] })
   })
 
   it('puts real starting points first, then the other uncalled functions', () => {
@@ -228,7 +229,7 @@ describe('functionsOf in a folder', () => {
     expect(functionsOf(map, new Map(), 'empty')).toEqual({
       rows: [],
       calls: [],
-      tree: { starts: [], groups: [], unreached: [], children: [], also: [] },
+      tree: { starts: [], groups: [], unknown: [], unreached: [], children: [], also: [] },
       scope: 'empty',
       folders: [],
       owners: {},

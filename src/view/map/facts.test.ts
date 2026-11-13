@@ -13,6 +13,7 @@ const row = (over: Partial<FunctionRow>): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
   ...over,
 })
@@ -26,6 +27,7 @@ const rows = [
 const facts: Facts = {
   rows,
   unreached: new Set([2]),
+  unknown: new Set(),
   churn: {
     days: 90,
     files: { 'a/one.ts': { commits: 4, added: 10, removed: 2 } },

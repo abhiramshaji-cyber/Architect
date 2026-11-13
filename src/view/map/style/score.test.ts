@@ -12,6 +12,7 @@ const row = (file: string): FunctionRow => ({
   fanOut: 0,
   exported: false,
   entry: null,
+  untraced: null,
   importance: 1,
 })
 

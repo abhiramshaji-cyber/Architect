@@ -57,7 +57,9 @@ function functionLines(at: number, node: MapNode, facts: Facts): Line[] {
         ? `starting point, ${row.entry.reason} in ${row.entry.file}`
         : facts.unreached.has(at)
           ? 'unreached'
-          : 'yes',
+          : facts.unknown.has(at)
+            ? 'unknown'
+            : 'yes',
     ],
   ]
   if (facts.churn) lines.push(['churn', `${churnOf(row, facts.churn)} commits in ${facts.churn.days} days`])

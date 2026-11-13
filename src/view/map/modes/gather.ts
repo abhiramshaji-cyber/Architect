@@ -2,9 +2,9 @@ import type { Churn } from '../../../../shared/recency'
 import type { FunctionList, FunctionTree, HistoryEntry, StyleFile } from '../../../../shared/types'
 import type { Facts, Sessions } from './shade'
 
-export function unreachedOf(tree: FunctionTree): Set<number> {
+export function unreachedOf(tree: FunctionTree, roots = tree.unreached): Set<number> {
   const found = new Set<number>()
-  const stack = [...tree.unreached]
+  const stack = [...roots]
   while (stack.length > 0) {
     const at = stack.pop() as number
     if (found.has(at)) continue
@@ -42,6 +42,7 @@ export function gather(
   return {
     rows: list.rows,
     unreached: unreachedOf(list.tree),
+    unknown: unreachedOf(list.tree, list.tree.unknown),
     churn,
     sessions: sessionsOf(history),
     recorded: history.filter((entry) => entry.source === 'code').length,
