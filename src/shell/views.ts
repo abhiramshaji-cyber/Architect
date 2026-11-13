@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import CodeView from '../view/CodeView'
 import ContractView from '../view/ContractView'
+import ConventionsView from '../view/conventions/ConventionsView'
 import CouplingView from '../view/coupling/CouplingView'
 import DiffView from '../view/diff'
 import FilesView from '../view/FilesView'
@@ -9,11 +10,12 @@ import LayersView from '../view/layers/LayersView'
 import FunctionsView from '../view/functions/FunctionsView'
 import MapView from '../view/map/MapView'
 import HotspotsView from '../view/hotspots/HotspotsView'
+import ReplayView from '../view/replay/ReplayView'
 import RepoPicker from '../view/RepoPicker'
 import ReviewView from '../view/review/ReviewView'
 import TerminalView, { PlainShell } from '../view/TerminalView'
 
-export type ViewId = 'functions' | 'map' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'coupling' | 'terminal' | 'shell' | 'repos'
+export type ViewId = 'functions' | 'map' | 'layers' | 'flow' | 'contract' | 'code' | 'diff' | 'review' | 'files' | 'hotspots' | 'coupling' | 'conventions' | 'replay' | 'terminal' | 'shell' | 'repos'
 export type ViewProps = { theme: string; show: (view: ViewId) => void }
 
 export const views: Record<ViewId, { label: string; component: ComponentType<ViewProps> }> = {
@@ -28,6 +30,8 @@ export const views: Record<ViewId, { label: string; component: ComponentType<Vie
   files: { label: 'Files', component: FilesView },
   hotspots: { label: 'Hotspots', component: HotspotsView },
   coupling: { label: 'Coupling', component: CouplingView },
+  conventions: { label: 'Conventions', component: ConventionsView },
+  replay: { label: 'Replay', component: ReplayView },
   terminal: { label: 'Terminal', component: TerminalView },
   shell: { label: 'Shell', component: PlainShell },
   repos: { label: 'Repos', component: RepoPicker },

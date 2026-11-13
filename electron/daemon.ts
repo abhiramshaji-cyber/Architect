@@ -17,6 +17,7 @@ import {
   type FunctionList,
   type Recency,
   type HistoryEntry,
+  HISTORY_LIMIT,
   historyEntrySchema,
   type VerdictRecord,
   verdictRecordSchema,
@@ -61,7 +62,6 @@ import { impactFor, impactSchema, type Impact } from './impact'
 import { changeVerdict } from './verdict'
 import { watchContract } from './watch/contract'
 
-const HISTORY_LIMIT = 200
 
 const MAX_SOURCE_LINES = 400
 

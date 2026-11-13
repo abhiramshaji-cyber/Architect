@@ -4,6 +4,7 @@ import type { SplitSuggestion } from './rules/split'
 
 export * from './rules/rules'
 export * from './rules/split'
+export * from './rules/conventions'
 
 export type Component = {
   id: string
@@ -130,6 +131,8 @@ export const verdictRecordSchema = z.object({
 export type VerdictRecord = z.infer<typeof verdictRecordSchema>
 
 export type Decision = { status: 'approved' } | { status: 'rejected'; reason: string } | { status: 'pending'; id: string }
+
+export const HISTORY_LIMIT = 200
 
 export const PROPOSAL_TIMEOUT_MS = 5 * 60 * 1000
 
@@ -549,7 +552,7 @@ export type PtyEvent =
   | { type: 'data'; id: string; chunk: string }
   | { type: 'exit'; id: string; exitCode: number; signal?: number }
 
-export type ArchitectApi = {
+export type ArchitectApi = import('./rules/conventions').ConventionsApi & {
   projects(): Promise<ProjectSummary[]>
   open(root: string): Promise<OpenedProject>
   closeProject(root: string): Promise<void>
@@ -597,7 +600,7 @@ export type ArchitectApi = {
   gitRemoteBranches(root: string): Promise<GitResult<RemoteBranch[]>>
   gitFetch(root: string): Promise<GitResult<{ remote: string }>>
   gitDistance(root: string): Promise<GitResult<BaseDistance>>
-  gitCommits(root: string, since: number): Promise<GitResult<Commit[]>>
+  gitCommits(root: string, since: number, limit?: number): Promise<GitResult<Commit[]>>
   gitChanges(root: string): Promise<GitResult<DiffChanges>>
   gitFileDiff(root: string, section: DiffSection, file: ChangedFile, full?: boolean): Promise<GitResult<FileDiff>>
   gitStageFile(root: string, file: ChangedFile): Promise<GitResult<{ path: string }>>
