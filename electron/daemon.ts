@@ -59,7 +59,8 @@ import { createJournal } from './journal'
 import { styleIn } from './rules/style'
 import { hasAgents, writeAgents } from './agents/write'
 import { answerWhere } from './where'
-import { impactFor, impactSchema, type Impact } from './impact'
+import { impactFor, impactSchema, scanOf, type Impact } from './impact'
+import { cutFor, cutSchema, type Cut } from './cut'
 import { changeVerdict } from './verdict'
 import { watchContract } from './watch/contract'
 
@@ -215,7 +216,7 @@ export function createDaemon(options: DaemonOptions = {}) {
 
   const projects = new Map<string, ProjectState>()
   const histories = createJournal((root) => path.join(cacheDir, 'history', `${cacheKey(root)}.json`), historyEntrySchema, HISTORY_LIMIT)
-  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema.extend({ impact: impactSchema.optional().catch(undefined) }), HISTORY_LIMIT)
+  const verdicts = createJournal((root) => path.join(cacheDir, 'verdicts', `${cacheKey(root)}.json`), verdictRecordSchema.extend({ impact: impactSchema.optional().catch(undefined), cut: cutSchema.optional().catch(undefined) }), HISTORY_LIMIT)
   let changeListener: ((root: string, architecture: Architecture) => void) | null = null
   let historyListener: ((entry: HistoryEntry) => void) | null = null
   let projectsListener: ((p: ProjectSummary[]) => void) | null = null
@@ -757,7 +758,7 @@ export function createDaemon(options: DaemonOptions = {}) {
     return drafted
   }
 
-  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null, impact?: Impact, at = Date.now()) {
+  function logVerdict(root: string, req: Extract<Request, { op: 'check_change' }>, verdict: Verdict, stale: string | null, extra: { impact?: Impact; cut?: Cut } = {}, at = Date.now()) {
     verdicts.append(root, {
       id: randomUUID(),
       root,
@@ -766,7 +767,7 @@ export function createDaemon(options: DaemonOptions = {}) {
       ...(req.to === undefined ? {} : { to: req.to }),
       ...(req.file === undefined ? {} : { file: req.file }),
       verdict,
-      ...(impact ? { impact } : {}),
+      ...extra,
       ...(stale === null ? {} : { stale: true as const }),
       ...(req.session ? { session: req.session } : {}),
     })
@@ -807,9 +808,12 @@ export function createDaemon(options: DaemonOptions = {}) {
             return { id: req.id, ok: false, error }
           }
           const at = Date.now()
-          const impact = await impactFor(req, root, state.architecture, stale, readStoredMap(cacheDir, root)?.map ?? null)
-          logVerdict(root, req, verdict, stale, impact, at)
-          return { id: req.id, ok: true, result: { ...verdict, impact } }
+          const [impact, cut] = await Promise.all([
+            impactFor(req, root, state.architecture, stale, readStoredMap(cacheDir, root)?.map ?? null),
+            verdict.status === 'cycle' && req.from && req.to ? cutFor(state.architecture, () => scanOf(root, readStoredMap(cacheDir, root)?.map ?? null), root, req.from, req.to) : undefined,
+          ])
+          logVerdict(root, req, verdict, stale, { impact, ...(cut ? { cut } : {}) }, at)
+          return { id: req.id, ok: true, result: { ...verdict, impact, ...(cut ? { cut } : {}) } }
         }
 
         if (req.op === 'propose_change') {
@@ -818,7 +822,9 @@ export function createDaemon(options: DaemonOptions = {}) {
           const decided = review.enabled()
             ? await reviewChange(root, req.proposal, req.rationale, closed.signal)
             : proposeChange(root, req.proposal)
-          return { id: req.id, ok: true, result: decided }
+          const { architecture, contract } = loadProject(root)
+          const cut = decided.status === 'rejected' && req.proposal.kind === 'edge' && architecture && contract.status === 'ready' && check(architecture, req.proposal.from, req.proposal.to).status === 'cycle' ? await cutFor(architecture, () => scanOf(root, readStoredMap(cacheDir, root)?.map ?? null), root, req.proposal.from, req.proposal.to) : undefined
+          return { id: req.id, ok: true, result: cut ? { ...decided, cut } : decided }
         }
 
         if (req.op === 'await_proposal') return { id: req.id, ok: true, result: await review.resume(req.proposalId, closed.signal) }

@@ -729,6 +729,40 @@ describe("applying proposals", () => {
     expect(contract()).toBe(before);
   });
 
+  it("returns the cheapest edge to cut with a cycle rejection, from both propose_change and check_change", async () => {
+    writeArchitect(
+      tmpRoot,
+      fixture(component("api") + component("db")).replace(`${h2} Forbidden`, `- api -> db\n\n${h2} Forbidden`),
+    );
+    fs.mkdirSync(path.join(tmpRoot, "api"), { recursive: true });
+    fs.mkdirSync(path.join(tmpRoot, "db"), { recursive: true });
+    fs.writeFileSync(path.join(tmpRoot, "db", "store.ts"), "export function load() {\n  return 1\n}\n");
+    fs.writeFileSync(path.join(tmpRoot, "api", "route.ts"), "import { load } from '../db/store'\n\nexport function route() {\n  return load()\n}\n");
+    daemon = createDaemon({ socketPath });
+    await daemon.listen();
+
+    const decision = (await propose({ kind: "edge", from: "db", to: "api" })) as Decision & { cut?: unknown };
+    expect(decision).toMatchObject({
+      status: "rejected",
+      cut: { path: ["db", "api", "db"], cheapest: { from: "api", to: "db", calls: 1, listed: [{ caller: "api/route.ts:3 route", site: "api/route.ts:4", callee: "db/store.ts:1 load" }] } },
+    });
+
+    const c = await client(socketPath);
+    const res = await c.request({ op: "check_change", cwd: tmpRoot, from: "db", to: "api" });
+    c.close();
+    expect(res.ok && res.result).toMatchObject({ status: "cycle", cut: { cheapest: { from: "api", to: "db", calls: 1 } } });
+    expect(daemon.verdicts(tmpRoot)[0]).toMatchObject({ verdict: { status: "cycle" }, cut: { cheapest: { from: "api", to: "db" } } });
+
+    const plain = (await propose({ kind: "edge", from: "api", to: "ghost" })) as Decision & { cut?: unknown };
+    expect(plain.cut).toBeUndefined();
+
+    writeArchitect(tmpRoot, contract().replace(`${h2} Dependencies\n`, `${h2} Dependencies\n\n- api ->\n`));
+    await vi.waitFor(() => expect(daemon.projects()[0]?.contract.status).toBe("invalid"), { timeout: 5000 });
+    const broken = (await propose({ kind: "edge", from: "db", to: "api" })) as Decision & { cut?: unknown };
+    expect(broken.status).toBe("rejected");
+    expect(broken.cut).toBeUndefined();
+  });
+
   it("rejects an edge the contract forbids", async () => {
     writeArchitect(
       tmpRoot,
