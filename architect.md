@@ -77,6 +77,10 @@ owns: `electron/agents/**`
 Answers where a new function belongs, from the functions it will call and the functions or files that will call it, each named by function, file or file:name. The component is the one owning the most of those neighbours among the components whose calls to and from the new function the drawing allows, the folder is where most of its neighbours live along with whether a new file there still fits the files rule, the naming word is the leading word most function names in that folder start with, and the closest function is the one sharing the most callees, then callers. A proposed file is checked against the Rules with a stub of the function. Every part carries its counts and file:line evidence, a tie or a reference that matches nothing or several files is reported rather than picked, and a project with no `architect.md` is answered by folder only. Fully deterministic, no model calls.
 owns: `electron/where/**`
 
+### evidence
+Answers the evidence tool with GitHub ready markdown for one function or line range: a permalink to those lines at HEAD built from the github.com origin remote, given only when HEAD is on an origin branch and the file is committed and unchanged, otherwise a one line reason; a numbered excerpt with the caller's notes at the end of their lines; a mermaid flowchart of callers and callees to a given depth, each with its file:line; and every call site. Call data comes from the scan. Fully deterministic, no model calls.
+owns: `electron/evidence/**`
+
 ### verdict
 Answers check_change for a dependency or a proposed file: the drawn verdict for the edge, softened to unknown when architect.md no longer parses, and the Rules check of the proposed file, the edge answering first when both are given.
 owns: `electron/verdict/**`
@@ -128,6 +132,11 @@ owns: `lsp/**`
 - cli -> agents
 - daemon -> agents
 - daemon -> where
+- daemon -> evidence
+- evidence -> types
+- evidence -> git
+- evidence -> functions
+- evidence -> where
 - daemon -> impact
 - daemon -> cut
 - cut -> types
