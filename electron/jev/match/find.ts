@@ -1,11 +1,12 @@
 import path from 'node:path'
 import { POSSIBLE, type BehaviorMatch, type JevRun, type SameBehavior } from '../../../shared/jev/types'
 import type { Architecture, CodeMap } from '../../../shared/types'
+import { ownership } from '../../contract/graph'
 import { edgesOf } from '../../functions/facts'
 import type { Resolved } from '../../where/refs'
 import { similarOf } from '../../where/similar'
 import type { Entry, Store } from '../classify/cache'
-import { questionsOf, type QuestionSet } from '../classify/questions'
+import { QUESTIONS } from '../classify/questions'
 import { vectorOf, type Ask } from '../classify/run'
 import { targetsOf, type Target } from '../classify/targets'
 import { confirmAll } from './confirm'
@@ -35,10 +36,10 @@ function structuralOf(targets: Target[], map: CodeMap, subject: Target): Set<num
   return new Set(similar.matches.flatMap((match) => byPlace.get(match.at) ?? []))
 }
 
-async function entryOf(subject: Target, index: Map<string, Entry>, input: Finding, set: QuestionSet): Promise<Entry> {
+async function entryOf(subject: Target, index: Map<string, Entry>, input: Finding): Promise<Entry> {
   const known = index.get(subject.key)
   if (known) return known
-  const reply = await input.ask(subject.state, set.questions, input.signal)
+  const reply = await input.ask(subject.state, QUESTIONS.questions, input.signal)
   const entry = { key: subject.key, model: reply.model, at: Date.now(), vector: vectorOf(reply) }
   input.store.addEntry(entry)
   return entry
@@ -51,12 +52,15 @@ function ioOf(a: Target, b: Target): string {
   return `${inputs}, ${output}: ${a.name}${a.signature || '()'} vs ${b.name}${b.signature || '()'}`
 }
 
-export function responsibilityOf(entry: Entry | undefined): string | null {
-  const ranked = Object.entries(entry?.vector.responsibility ?? {}).sort((x, y) => y[1] - x[1])
-  return ranked[0] && ranked[0][1] > 0 ? ranked[0][0] : null
+function componentsOf(targets: Target[], architecture: Architecture | null): (file: string) => string | null {
+  if (!architecture) return () => null
+  const { owned, multi } = ownership([...new Set(targets.map((target) => target.file))], architecture.components)
+  const owners = new Map([...owned.map((entry) => [entry.path, entry.owner] as const), ...multi.map((entry) => [entry.path, entry.owners.join(', ')] as const)])
+  return (file) => owners.get(file) ?? null
 }
 
 function waiting(run: JevRun | null | undefined, others: number): string {
+  if (run?.status === 'queued') return `Jev is indexing another open project first; this one is queued and none of its other ${others} functions is classified yet. Ask again in a moment.`
   if (run?.status === 'running') return `Jev is indexing this project: ${run.done} of ${run.total} functions classified so far, none of the other ${others} yet. Ask again in a moment.`
   return `none of the other ${others} functions is classified yet${run?.error ? ` (the last index run stopped: ${run.error})` : ''}; the Jev index starts on its own while Jev is on`
 }
@@ -64,8 +68,7 @@ function waiting(run: JevRun | null | undefined, others: number): string {
 const ordered = (a: BehaviorMatch, b: BehaviorMatch) => Number(a.via !== null) - Number(b.via !== null) || b.probability - a.probability || a.file.localeCompare(b.file) || a.line - b.line
 
 export async function findSame(input: Finding): Promise<SameBehavior> {
-  const set = questionsOf(input.architecture)
-  const targets = targetsOf(input.root, input.map, set.version)
+  const targets = targetsOf(input.root, input.map, QUESTIONS.version)
   const subject = subjectOf(targets, input.root, input.file, input.symbol)
   if (typeof subject === 'string') return { status: 'unknown', reason: subject }
 
@@ -76,7 +79,8 @@ export async function findSame(input: Finding): Promise<SameBehavior> {
     return entry ? [{ at: target.at, entry }] : []
   })
   if (indexed.length === 0) return { status: 'unindexed', reason: waiting(input.run, others.length) }
-  const entry = await entryOf(subject, index, input, set)
+  const entry = await entryOf(subject, index, input)
+  const componentOf = componentsOf(targets, input.architecture)
 
   const structural = structuralOf(targets, input.map, subject)
   const picked = [...structural, ...standoutsOf(entry, indexed).map((item) => item.at).filter((i) => !structural.has(i))].flatMap((i) => targets[i] ?? [])
@@ -89,7 +93,7 @@ export async function findSame(input: Finding): Promise<SameBehavior> {
     const other = targets[member.at]
     if (!other) return []
     const via = member.via === null ? null : (targets[member.via]?.name ?? null)
-    return [{ name: other.name, file: other.file, line: other.line, probability: member.probability, structural: structural.has(member.at), io: ioOf(subject, other), responsibility: responsibilityOf(index.get(other.key)), via }]
+    return [{ name: other.name, file: other.file, line: other.line, probability: member.probability, structural: structural.has(member.at), io: ioOf(subject, other), responsibility: componentOf(other.file), via }]
   }
 
   const notes = [
@@ -102,7 +106,7 @@ export async function findSame(input: Finding): Promise<SameBehavior> {
     name: subject.name,
     file: subject.file,
     line: subject.line,
-    responsibility: responsibilityOf(entry),
+    responsibility: componentOf(subject.file),
     matches: group.flatMap(shown).sort(ordered),
     possible: possible.flatMap(shown).sort(ordered),
     candidates: checked.length,

@@ -35,7 +35,8 @@ export function wireJevIpc(jev: Jev): void {
   handle('architect:jev-set-key', (key) => jev.setKey(key))
   handle('architect:jev-remove-key', () => jev.removeKey())
   handle('architect:jev-set', (on, at) => jev.setEnabled(on === true, root(at)))
-  handle('architect:jev-index', (at) => jev.index(text(at)))
+  handle('architect:jev-index', (at) => jev.retry(root(at)))
+  handle('architect:jev-budget', (tokens) => jev.setBudget(tokens))
   handle('architect:jev-cancel', (at) => jev.cancel(text(at)))
   handle('architect:jev-same', (at, file, symbol) => jev.same(text(at), text(file), text(symbol)))
 }

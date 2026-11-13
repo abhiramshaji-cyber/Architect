@@ -41,7 +41,7 @@ function setup(fetch: typeof globalThis.fetch, home = temp()) {
   const root = temp({ 'a.ts': 'export function load(id: string) {\n  return id\n}\n\nexport function fetchIt(id: string) {\n  return id\n}\n' })
   const progress: JevProgress[] = []
   const load = vi.fn(async (at: string) => ({ map: await scan(at), architecture: null }))
-  const options: JevOptions = { dir: path.join(home, 'jev'), settings: path.join(home, 'settings.json'), crypt, load, projects: () => [root], onProgress: (event) => progress.push(event), fetch }
+  const options: JevOptions = { dir: path.join(home, 'jev'), settings: path.join(home, 'settings.json'), crypt, load, windows: () => [root], onProgress: (event) => progress.push(event), fetch }
   return { jev: createJev(options), root, home, progress, load, options }
 }
 
@@ -53,7 +53,7 @@ describe('off path', () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
     const { jev, root, load, options } = setup(fetch)
 
-    expect(jev.state(root)).toEqual({ enabled: false, key: { set: false }, encryption: true, run: null, usage: { indexed: 0, total: 0, tokens: 0, requests: 0, cost: 0 } })
+    expect(jev.state(root)).toEqual({ enabled: false, key: { set: false }, encryption: true, paused: null, budget: { limit: null, tokens: 0, cost: 0 }, run: null, usage: { indexed: 0, total: 0, tokens: 0, requests: 0, cost: 0 } })
     jev.indexOpen()
     expect(jev.index(root).run).toBeNull()
     expect(await jev.same(root, 'a.ts', 'load')).toEqual({ status: 'disabled', reason: DISABLED })
@@ -66,7 +66,7 @@ describe('off path', () => {
 
     jev.removeKey()
     fs.writeFileSync(options.settings, JSON.stringify({ jev: true }))
-    jev.indexOpen(true)
+    jev.indexOpen()
     expect(jev.state().enabled).toBe(true)
     expect(jev.index(root).run).toBeNull()
     expect(await jev.similarBehavior(root, 'a.ts', 'load')).toBe(DISABLED)
@@ -109,7 +109,7 @@ describe('auto index', () => {
     await vi.waitFor(() => expect(first.progress.at(-1)?.run.status).toBe('done'))
 
     const fetch = replying(50)
-    const launched = createJev({ ...first.options, fetch, projects: () => [first.root], onProgress: (event) => first.progress.push(event) })
+    const launched = createJev({ ...first.options, fetch, windows: () => [first.root], onProgress: (event) => first.progress.push(event) })
     first.progress.length = 0
     launched.indexOpen()
     await vi.waitFor(() => expect(first.progress.at(-1)?.run).toMatchObject({ status: 'done', done: 2, sent: 0 }))
@@ -120,7 +120,7 @@ describe('auto index', () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => new Promise<Response>(() => {}))
     const { jev, root, load, options } = setup(fetch)
     jev.setKey(KEY)
-    const quiet = createJev({ ...options, projects: () => [] })
+    const quiet = createJev({ ...options, windows: () => [] })
     quiet.setEnabled(true)
     const found = await quiet.same(root, 'a.ts', 'load')
     expect(found).toEqual({ status: 'unindexed', reason: 'Jev is indexing this project: 0 of 2 functions classified so far, none of the other 1 yet. Ask again in a moment.' })
@@ -146,8 +146,10 @@ describe('usage', () => {
       enabled: true,
       key: { set: true },
       root,
+      paused: null,
       index: { status: 'done', indexed: 2, total: 2, failed: 0 },
       usage: { tokens: 2_000_000, requests: 2, cost: 2 * PRICE_PER_MILLION_INPUT_TOKENS, pricePerMillionInputTokens: PRICE_PER_MILLION_INPUT_TOKENS },
+      budget: { limit: null, tokens: 2_000_000, cost: 2 * PRICE_PER_MILLION_INPUT_TOKENS },
     })
     expect(createJev(options).status(root).index).toEqual({ status: 'idle', indexed: 2, total: 2, failed: 0 })
   })
@@ -160,7 +162,7 @@ describe('key safety', () => {
     const { jev, root, home, progress } = setup(fetch)
 
     const returned: unknown[] = [jev.setKey(KEY), jev.setEnabled(true, root)]
-    await vi.waitFor(() => expect(progress.at(-1)?.run.status).toBe('done'))
+    await vi.waitFor(() => expect(progress.at(-1)?.run.status).toBe('partial'))
     returned.push(jev.state(root), jev.status(root), await jev.same(root, 'a.ts', 'load').catch((err: unknown) => String(err)), await jev.similarBehavior(root, 'a.ts', 'load').catch((err: unknown) => String(err)))
 
     const authorization = (fetch.mock.calls[0]?.[1]?.headers as Record<string, string>).Authorization
@@ -193,10 +195,10 @@ describe('key safety', () => {
       await call('architect:jev-set-key', trusted, `${KEY} spaced`),
       await call('architect:jev-remove-key', trusted),
     ]
-    expect(results[0]).toEqual({ ok: true, value: { enabled: false, key: { set: true }, encryption: true, run: null, usage: null } })
+    expect(results[0]).toEqual({ ok: true, value: { enabled: false, key: { set: true }, encryption: true, paused: null, budget: { limit: null, tokens: 0, cost: 0 }, run: null, usage: null } })
     expect(results[6]).toEqual({ ok: false, error: 'that does not look like a TypeSafe API key' })
     expect(JSON.stringify(results)).not.toContain(KEY)
-    expect([...handlers.keys()].sort()).toEqual(['architect:jev-cancel', 'architect:jev-index', 'architect:jev-remove-key', 'architect:jev-same', 'architect:jev-set', 'architect:jev-set-key', 'architect:jev-state'])
+    expect([...handlers.keys()].sort()).toEqual(['architect:jev-budget', 'architect:jev-cancel', 'architect:jev-index', 'architect:jev-remove-key', 'architect:jev-same', 'architect:jev-set', 'architect:jev-set-key', 'architect:jev-state'])
   })
 
   it('trusts the dev server origin or the packaged page and nothing else', () => {

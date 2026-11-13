@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { askJev, JEV_MODEL, JEV_URL, JevError, questionProblem, replyOf, waitOf, type Question } from './client'
+import { accountError } from './spend/gate'
 
 const KEY = 'ts-SENTINEL-key-0123456789'
 
@@ -61,11 +62,18 @@ describe('askJev', () => {
     expect(fetch).toHaveBeenCalledTimes(7)
   })
 
-  it('reports 401 and 422 without the key, even when the server echoes it', async () => {
+  it('reports account errors and 422 without the key, even when the server echoes it', async () => {
     const refused = askJev(KEY, 's', QUESTIONS, { fetch: async () => json(401, { detail: `bad ${KEY}` }) })
-    await expect(refused).rejects.toThrow('TypeSafe refused the API key')
+    await expect(refused).rejects.toThrow('TypeSafe returned 401: the API key was refused (bad …)')
+    const broke = await askJev(KEY, 's', QUESTIONS, { fetch: async () => json(402, { detail: `no credit for ${KEY}` }) }).catch((err: unknown) => err)
+    expect(accountError(broke)).toBe(true)
+    expect((broke as Error).message).toBe('TypeSafe returned 402: the account is out of credit (no credit for …)')
+    const forbidden = vi.fn(async () => json(403, {}))
+    await expect(askJev(KEY, 's', QUESTIONS, { fetch: forbidden, wait: async () => {} })).rejects.toMatchObject({ status: 403, message: 'TypeSafe returned 403: the API key is not allowed to make this request' })
+    expect(forbidden).toHaveBeenCalledTimes(1)
     const invalid = await askJev(KEY, 's', QUESTIONS, { fetch: async () => json(422, { detail: [{ msg: `field ${KEY} missing` }] }) }).catch((err: unknown) => err)
     expect(invalid).toBeInstanceOf(JevError)
+    expect(accountError(invalid)).toBe(false)
     expect((invalid as JevError).status).toBe(422)
     expect((invalid as Error).message).toMatch(/field … missing/)
     expect((invalid as Error).message).not.toContain(KEY)

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Architecture } from '../../../shared/types'
 import { scan } from '../../scan/scan'
 import { storeOf, type Store } from '../classify/cache'
-import { questionsOf } from '../classify/questions'
+import { QUESTIONS } from '../classify/questions'
 import { runIndex, type Ask } from '../classify/run'
 import { targetsOf, type Target } from '../classify/targets'
 import type { Question, Reply } from '../client'
@@ -47,7 +47,11 @@ const FILES = {
 const ARCHITECTURE: Architecture = {
   title: 't',
   summary: 's',
-  components: ['daemon', 'scan', 'view', 'where', 'review', 'git', 'net'].map((id) => ({ id, purpose: `The ${id} part.`, owns: [] })),
+  components: [
+    { id: 'daemon', purpose: 'The daemon part.', owns: ['electron/daemon.ts'] },
+    ...['scan', 'where', 'review', 'git', 'net'].map((id) => ({ id, purpose: `The ${id} part.`, owns: [`electron/${id}/**`] })),
+    { id: 'view', purpose: 'The view part.', owns: ['src/view/**'] },
+  ],
   edges: [],
   forbidden: [],
   packages: [],
@@ -65,8 +69,6 @@ const FACETS: Record<string, [string, string, string, string]> = {
   sendRequest: ['external', 'record', 'record', 'network'],
   countLines: ['compute', 'text', 'number', 'none'],
 }
-
-const componentOf = (file: string) => (file.startsWith('electron/daemon') ? 'daemon' : (file.split('/').find((part) => ARCHITECTURE.components.some((c) => c.id === part)) ?? 'net'))
 
 const JUDGED: Record<string, number> = {
   'electron/git/churn/numstat.ts electron/git/diff/parse.ts': 0.33,
@@ -91,7 +93,7 @@ function makeAsk(): ReturnType<typeof vi.fn<Ask>> {
     const parsed = JSON.parse(state) as { function?: string; file?: string; first?: Side; second?: Side }
     if (parsed.first && parsed.second) return { model: 'jev-1', inputTokens: 300, answers: { same: { type: 'noul', noul: judge(parsed.first, parsed.second) } } }
     const facets = FACETS[parsed.function ?? ''] ?? ['compute', 'text', 'text', 'none']
-    const chosen: Record<string, string> = { behavior: facets[0], input: facets[1], output: facets[2], effect: facets[3], responsibility: componentOf(parsed.file ?? '') }
+    const chosen: Record<string, string> = { behavior: facets[0], input: facets[1], output: facets[2], effect: facets[3] }
     const answers = Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, { type: 'choice' as const, choice: chosen[id] ?? '', probabilities: lean(chosen[id] ?? '', question) }]))
     return { model: 'jev-1', inputTokens: 100, answers }
   })
@@ -101,7 +103,7 @@ async function indexed() {
   const root = temp(FILES)
   const store = storeOf(temp(), root)
   const map = await scan(root)
-  const set = questionsOf(ARCHITECTURE)
+  const set = QUESTIONS
   const ask = makeAsk()
   await runIndex({ targets: targetsOf(root, map, set.version).filter((target) => !target.test), set, store, ask, signal: new AbortController().signal, onProgress: () => {} })
   ask.mockClear()
@@ -118,7 +120,7 @@ const done = async (found: ReturnType<typeof findSame>) => {
 const pairsAsked = (ask: ReturnType<typeof makeAsk>) => ask.mock.calls.map(([state]) => JSON.parse(state) as { first?: Side; second?: Side }).filter((call) => call.first).map((call) => `${call.second?.file}:${call.second?.function}`)
 
 describe('eval cases', () => {
-  it('finds a copy in another component and shows each side its own component as a label', async () => {
+  it('finds a copy in another component and labels each side with the component that owns its file', async () => {
     const { search } = await indexed()
     const found = await done(search('electron/daemon.ts', 'errorText'))
     expect(found.responsibility).toBe('daemon')
@@ -147,11 +149,12 @@ describe('eval cases', () => {
   })
 
   it('returns a pair confirmed from the other side even when this side would not pick it', async () => {
-    const { search, store, ask } = await indexed()
+    const { root, map, search, store, ask } = await indexed()
     const first = await done(search('electron/where/refs.ts', 'real'))
     expect(first.matches.map((match) => match.file)).toEqual(['electron/review/index.ts'])
 
-    const refs = [...store.entries().values()].find((entry) => entry.vector.input?.path === 0.9 && entry.vector.responsibility?.where === 0.9)
+    const key = targetsOf(root, map, QUESTIONS.version).find((target) => target.file === 'electron/where/refs.ts')?.key
+    const refs = [...store.entries().values()].find((entry) => entry.key === key)
     if (!refs) throw new Error('refs real was not indexed')
     store.addEntry({ ...refs, vector: { ...refs.vector, behavior: { external: 1 }, input: { record: 1 } } })
     ask.mockClear()

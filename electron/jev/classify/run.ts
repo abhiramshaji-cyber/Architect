@@ -1,5 +1,6 @@
 import type { JevRun } from '../../../shared/jev/types'
-import { JevError, type Question, type Reply } from '../client'
+import type { Question, Reply } from '../client'
+import { accountError } from '../spend/gate'
 import type { Entry, Store } from './cache'
 import type { QuestionSet } from './questions'
 import type { Target } from './targets'
@@ -19,6 +20,12 @@ export function newestModel(entries: Iterable<Entry>): string | null {
 
 export function vectorOf(reply: Reply): Entry['vector'] {
   return Object.fromEntries(Object.entries(reply.answers).flatMap(([id, answer]) => (answer.type === 'choice' ? [[id, answer.probabilities]] : [])))
+}
+
+export function endOf(run: JevRun, signal: AbortSignal, fatal: string | null): JevRun {
+  if (fatal) return { ...run, status: 'paused', error: fatal }
+  if (signal.aborted) return typeof signal.reason === 'string' ? { ...run, status: 'paused', error: signal.reason } : { ...run, status: 'stopped' }
+  return { ...run, status: run.failed > 0 ? 'partial' : 'done' }
 }
 
 export async function runIndex({ targets, set, store, ask, signal, onProgress }: IndexInput): Promise<JevRun> {
@@ -48,7 +55,7 @@ export async function runIndex({ targets, set, store, ask, signal, onProgress }:
         run.sent += 1
       } catch (err) {
         if (halt.signal.aborted) return
-        if (err instanceof JevError && err.status === 401) {
+        if (accountError(err)) {
           fatal = err.message
           halt.abort()
           return
@@ -62,8 +69,7 @@ export async function runIndex({ targets, set, store, ask, signal, onProgress }:
 
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, work))
   signal.removeEventListener('abort', stop)
-  const status = fatal ? 'failed' : signal.aborted ? 'stopped' : 'done'
-  const done: JevRun = { ...run, status, ...(fatal ? { error: fatal } : {}) }
+  const done = endOf(run, signal, fatal)
   onProgress(done)
   return done
 }

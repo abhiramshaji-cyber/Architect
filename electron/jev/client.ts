@@ -105,6 +105,8 @@ async function payloadOf(response: Response): Promise<unknown> {
   }
 }
 
+export const ACCOUNT: Record<number, string> = { 401: 'the API key was refused', 402: 'the account is out of credit', 403: 'the API key is not allowed to make this request' }
+
 const transient = (status: number) => status === 429 || status === 529
 
 export async function askJev(key: string, state: string, questions: Record<string, Question>, asking: Asking): Promise<Reply> {
@@ -136,7 +138,7 @@ export async function askJev(key: string, state: string, questions: Record<strin
       await wait(waitOf(response.headers.get('retry-after'), attempt), asking.signal)
       continue
     }
-    if (response.status === 401) throw new JevError(401, 'TypeSafe refused the API key')
+    if (response.status in ACCOUNT) throw new JevError(response.status, `TypeSafe returned ${response.status}: ${ACCOUNT[response.status]}${detail ? ` (${detail})` : ''}`)
     throw new JevError(response.status, `TypeSafe answered ${response.status}${detail ? `: ${detail}` : ''}`)
   }
 }

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SameBehavior } from '../../../shared/jev/types'
 import { scan } from '../../scan/scan'
 import { storeOf } from '../classify/cache'
-import { BEHAVIORS, questionsOf } from '../classify/questions'
+import { BEHAVIORS, QUESTIONS } from '../classify/questions'
 import { runIndex, type Ask } from '../classify/run'
 import { targetsOf } from '../classify/targets'
 import type { Reply } from '../client'
@@ -65,7 +65,7 @@ async function indexed() {
   const store = storeOf(temp(), root)
   const map = await scan(root)
   const signal = new AbortController().signal
-  const set = questionsOf(null)
+  const set = QUESTIONS
   const targets = targetsOf(root, map, set.version).filter((target) => !target.test)
   await runIndex({ targets, set, store, ask: fakeAsk, signal, onProgress: () => {} })
   fakeAsk.mockClear()
