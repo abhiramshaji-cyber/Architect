@@ -767,6 +767,58 @@ describe('cross file calls', () => {
     expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:helper'])
   })
 
+  it('resolves members of a default exported object literal through any import name', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import x from './b'\nexport function caller() {\n  x.hello()\n  x.bye()\n}\n",
+        'b.ts': 'export default {\n  hello() {},\n  bye: () => 2,\n}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:default.bye', 'b.ts:default.hello'])
+  })
+
+  it('resolves default object members through type wrappers', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts':
+          "import s from './s'\nimport c from './c'\nimport p from './p'\nimport v from './v'\nexport function caller() {\n  s.one()\n  c.two()\n  p.three()\n  v.four()\n}\n",
+        's.ts': 'type Api = { one(): void }\nexport default { one() {} } satisfies Api\n',
+        'c.ts': 'export default { two() {} } as const\n',
+        'p.ts': 'export default ({ three() {} })\n',
+        'v.ts': 'const api = { four() {} } as const\nexport default api\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['c.ts:default.two', 'p.ts:default.three', 's.ts:default.one', 'v.ts:api.four'])
+  })
+
+  it('resolves default object members through a re-exported default', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import x from './barrel'\nimport { api } from './named'\nexport function caller() {\n  x.hello()\n  api.hello()\n}\n",
+        'barrel.ts': "export { default } from './b'\n",
+        'named.ts': "export { default as api } from './b'\n",
+        'b.ts': 'export default { hello() {} }\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'caller')).toEqual(['b.ts:default.hello'])
+  })
+
+  it('keeps default object members apart from same named exports', async () => {
+    const map = await scan(
+      fixture({
+        'a.ts': "import x, { hello } from './b'\nexport function viaDefault() {\n  x.hello()\n}\nexport function viaNamed() {\n  hello()\n}\nexport function missing() {\n  x.gone()\n}\n",
+        'b.ts': 'export function hello() {}\nexport default {\n  hello() {},\n}\n',
+      }),
+    )
+
+    expect(targets(map, 'a.ts', 'viaDefault')).toEqual(['b.ts:default.hello'])
+    expect(targets(map, 'a.ts', 'viaNamed')).toEqual(['b.ts:hello'])
+    expect(targets(map, 'a.ts', 'missing')).toEqual([])
+  })
+
   it('resolves through an export star as namespace', async () => {
     const map = await scan(
       fixture({

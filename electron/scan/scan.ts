@@ -82,6 +82,17 @@ function declaredName(node: ts.Node, owner: string): string | undefined {
   return undefined
 }
 
+function isTransparent(node: ts.Node): boolean {
+  return (
+    ts.isObjectLiteralExpression(node) ||
+    ts.isParenthesizedExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isSatisfiesExpression(node) ||
+    ts.isTypeAssertionExpression(node) ||
+    ts.isNonNullExpression(node)
+  )
+}
+
 function ownerFor(node: ts.Node, owner: string): string {
   if (ts.isClassDeclaration(node) && node.name === undefined) return 'default'
   if (ts.isClassLike(node)) return node.name?.text ?? owner
@@ -90,7 +101,8 @@ function ownerFor(node: ts.Node, owner: string): string {
   }
   if (ts.isModuleBlock(node)) return owner
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) return node.name.text
-  if (ts.isObjectLiteralExpression(node)) return owner
+  if (ts.isExportAssignment(node)) return 'default'
+  if (isTransparent(node)) return owner
 
   if (ts.isPropertyAssignment(node)) {
     const name = propertyName(node.name)
