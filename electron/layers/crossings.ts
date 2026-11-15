@@ -1,3 +1,5 @@
+import { packageOf } from '../../shared/packages/group'
+import { packagesIn } from '../../shared/packages/list'
 import type { Architecture, CodeMap, FileEntry, LayerCall } from '../../shared/types'
 import { ownership } from '../contract/graph'
 
@@ -14,13 +16,15 @@ function contractOwners(architecture: Architecture, map: CodeMap): (path: string
   return (path) => owners.get(path) ?? []
 }
 
-export function folderOf(path: string): string {
-  const slash = path.indexOf('/')
-  return slash > 0 ? path.slice(0, slash) : '.'
+function packageOwners(map: CodeMap): (path: string) => string[] {
+  const files = map.folders.flatMap((folder) => folder.files.map((file) => file.path))
+  const packages = packagesIn(files)
+  const owners = new Map(files.map((file) => [file, [packageOf(file, packages)]]))
+  return (path) => owners.get(path) ?? [packageOf(path, packages)]
 }
 
 export function ownersOf(map: CodeMap, architecture: Architecture | null): (path: string) => string[] {
-  return architecture ? contractOwners(architecture, map) : (path) => [folderOf(path)]
+  return architecture ? contractOwners(architecture, map) : packageOwners(map)
 }
 
 export function crossings(map: CodeMap, architecture: Architecture | null): Crossing[] {

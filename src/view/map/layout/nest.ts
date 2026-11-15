@@ -1,3 +1,5 @@
+import { packageOf } from '../../../../shared/packages/group'
+import { packagesIn } from '../../../../shared/packages/list'
 import type { FunctionRow } from '../../../../shared/types'
 
 export type Kind = 'root' | 'component' | 'top' | 'folder' | 'file' | 'function' | 'rest'
@@ -21,8 +23,8 @@ export function folderOf(file: string): string {
   return cut < 0 ? '.' : file.slice(0, cut)
 }
 
-export function grouper(owners: Record<string, string> | null): Grouping {
-  if (!owners) return { kind: 'top', of: (file) => (file.includes('/') ? file.slice(0, file.indexOf('/')) : '.') }
+export function grouper(owners: Record<string, string> | null, packages: string[] = []): Grouping {
+  if (!owners) return { kind: 'top', of: (file) => packageOf(file, packages) }
   return { kind: 'component', of: (file) => owners[file] ?? UNOWNED }
 }
 
@@ -87,7 +89,7 @@ export function nest(
   owners: Record<string, string> | null,
   project: string,
 ): MapNode {
-  const grouping = grouper(owners)
+  const grouping = grouper(owners, packagesIn(files.map((file) => file.path)))
   const root: MapNode = { id: '', label: project, kind: 'root', path: '', weight: 0, children: [] }
   const own = ownLines(rows)
   const index = new Map<string, MapNode>()

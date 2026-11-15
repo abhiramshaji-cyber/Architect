@@ -34,7 +34,7 @@ export default function LayersView({ show }: ViewProps) {
   const source = layers
     ? layers.contract
       ? 'architect.md components'
-      : `top level folders, ${contract?.status === 'invalid' ? 'architect.md does not parse' : 'no architect.md'}`
+      : `packages or top level folders, ${contract?.status === 'invalid' ? 'architect.md does not parse' : 'no architect.md'}`
     : problem
       ? ''
       : 'Reading calls…'

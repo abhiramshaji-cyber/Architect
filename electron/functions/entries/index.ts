@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { packagesIn } from '../../../shared/packages/list'
 import type { CodeMap, EntryReason } from '../../../shared/types'
 import { builtIn, type Built } from './build'
 import { compiledFrom } from './compiled'
@@ -71,9 +72,8 @@ export function entriesIn(root: string, files: Set<string>, manifest: unknown, d
 
 export function entryFiles(root: string, map: CodeMap): EntryFiles {
   const files = new Set(map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
-  const packages = [...files].filter((file) => path.posix.basename(file) === 'package.json').map(path.posix.dirname)
   const into: EntryFiles = new Map()
-  into.packages = [...new Set(['', ...packages.map((dir) => (dir === '.' ? '' : dir))])]
+  into.packages = packagesIn(files)
   for (const at of into.packages) entriesIn(root, files, manifestOf(path.join(root, at)), at, into)
   return into
 }

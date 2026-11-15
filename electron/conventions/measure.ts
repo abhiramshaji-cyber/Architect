@@ -1,5 +1,6 @@
 import picomatch from 'picomatch'
 import { topsOf } from '../../shared/folders'
+import { packageDirOf } from '../../shared/packages/group'
 import type { Architecture, Convention, LimitRule, RuleEntry } from '../../shared/types'
 import { consideredOf, effective, folderOf, jobsOf, limitOf } from '../rules/audit'
 import type { SourceFacts } from '../rules/facts'
@@ -15,12 +16,18 @@ const UNITS: Record<LimitRule, { each: string; unit: string }> = {
   files: { each: 'folder', unit: 'code files' },
 }
 
-function areasOf(architecture: Architecture | null, paths: string[]): Area[] {
+function areasOf(architecture: Architecture | null, paths: string[], packages: string[]): Area[] {
   const drawn = (architecture?.components ?? []).filter((c) => c.owns.length > 0 && c.owns.every((glob) => !glob.startsWith('!')))
   if (drawn.length > 0) return drawn.map((c) => ({ name: c.id, globs: c.owns }))
 
   const base = architecture?.scope ? `${architecture.scope}/` : ''
-  return topsOf(paths, architecture?.scope).map((top) => ({ name: top, globs: [`${base}${top}/**`] }))
+  const inside = packages.filter((dir) => dir.startsWith(base))
+  const held = [...new Set(paths.flatMap((file) => packageDirOf(file, inside) ?? []))].sort()
+  const loose = paths.filter((file) => packageDirOf(file, inside) === undefined)
+  return [
+    ...held.map((dir) => ({ name: dir, globs: [`${dir}/**`] })),
+    ...topsOf(loose, architecture?.scope).map((top) => ({ name: top, globs: [`${base}${top}/**`] })),
+  ]
 }
 
 function convention(area: Area, rule: LimitRule, samples: Sample[]): Convention[] {
@@ -46,7 +53,7 @@ function convention(area: Area, rule: LimitRule, samples: Sample[]): Convention[
   ]
 }
 
-export function measured(architecture: Architecture | null, sources: SourceFacts[]): Convention[] {
+export function measured(architecture: Architecture | null, sources: SourceFacts[], packages: string[] = []): Convention[] {
   const entries = effective(architecture?.rules)
   const considered = consideredOf(entries, sources, architecture?.scope)
   const folders = new Map<string, number>()
@@ -55,6 +62,7 @@ export function measured(architecture: Architecture | null, sources: SourceFacts
   return areasOf(
     architecture,
     considered.map((file) => file.path),
+    packages,
   ).flatMap((area) => {
     const inArea = picomatch(area.globs, { dot: true })
     const held = considered.filter((file) => inArea(file.path))

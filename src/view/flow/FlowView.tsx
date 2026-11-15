@@ -108,7 +108,7 @@ export default function FlowView({ show }: ViewProps) {
 
       {flow && (
         <p className="flow-note">
-          {`${flow.start} · ${REASON[flow.entry.reason]} in ${flow.entry.file} · lifelines are ${flow.contract ? 'architect.md components' : 'top level folders'} · ${flow.steps.length} calls`}
+          {`${flow.start} · ${REASON[flow.entry.reason]} in ${flow.entry.file} · lifelines are ${flow.contract ? 'architect.md components' : 'packages, or top level folders outside one'} · ${flow.steps.length} calls`}
           {flow.cut && ' · stopped early, the diagram is at its size limit'}
         </p>
       )}

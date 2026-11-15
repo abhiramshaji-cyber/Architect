@@ -63,6 +63,18 @@ describe('grouper', () => {
     expect(group.of('electron/git/log.ts')).toBe('electron')
     expect(group.of('main.ts')).toBe('.')
   })
+
+  it('groups by package without a contract, ignoring the root package.json', () => {
+    const group = grouper(null, ['', 'packages/a', 'packages/a/sub'])
+    expect(group.of('packages/a/src/x.ts')).toBe('packages/a')
+    expect(group.of('packages/a/sub/x.ts')).toBe('packages/a/sub')
+    expect(group.of('packages/b/x.ts')).toBe('packages')
+  })
+
+  it('reads the packages from the scanned files', () => {
+    const files = [{ path: 'package.json' }, { path: 'packages/a/package.json' }, { path: 'packages/a/x.ts', lines: 9, code: true as const }]
+    expect(nest([], files, null, 'demo').children.map((c) => [c.label, c.path, c.weight])).toEqual([['packages/a', 'packages/a', 9]])
+  })
 })
 
 describe('nest', () => {

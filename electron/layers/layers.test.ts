@@ -140,6 +140,22 @@ describe('layersOf', () => {
     expect(layers.cells.every((c) => c.status === 'free' && c.verdict === undefined)).toBe(true)
   })
 
+  it('uses packages as components without a contract', () => {
+    const mono = codeMap(
+      file('package.json'),
+      file('packages/a/package.json'),
+      file('packages/b/package.json'),
+      file('packages/a/test/fixtures/x/package.json'),
+      file('packages/a/src/a.ts', [[['packages/b/b.ts', 0], ['packages/a/test/fixtures/x/f.ts', 0]]]),
+      file('packages/a/test/fixtures/x/f.ts', [[]]),
+      file('packages/b/b.ts', [[['scripts/s.ts', 0]]]),
+      file('scripts/s.ts', [[]]),
+    )
+    const layers = layersOf(null, mono)
+    expect(layers.rows.map((r) => r.id)).toEqual(['.', 'scripts', 'packages/b', 'packages/a'])
+    expect(layers.cells.map((c) => `${c.from} -> ${c.to}`)).toEqual(['packages/a -> packages/b', 'packages/b -> scripts'])
+  })
+
   it('returns an empty matrix for an empty project', () => {
     expect(layersOf(null, codeMap())).toEqual({ contract: false, rows: [], cells: [] })
   })
