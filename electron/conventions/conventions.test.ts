@@ -64,6 +64,12 @@ describe('measured', () => {
     expect(found.map((c) => c.rule)).toContain('- files: 2 `a/**`')
   })
 
+  it('measures each package apart without a contract', () => {
+    const found = measured(null, [facts('packages/a/x.ts', 10), facts('packages/a/y.ts', 20), facts('packages/b/z.ts', 1), facts('tools/p.ts', 3), facts('tools/q.ts', 4)], ['', 'packages/a', 'packages/b'])
+    const lines = found.filter((c) => c.rule?.startsWith('- lines')).map((c) => c.rule)
+    expect(lines).toEqual(['- lines: 20 `packages/a/**`', '- lines: 4 `tools/**`'])
+  })
+
   it('never measures skipped test files', () => {
     const found = measured(drawn([['a/**']]), [facts('a/x.ts', 10), facts('a/y.ts', 20), facts('a/y.test.ts', 900)])
     expect(found.map((c) => c.rule)).toContain('- lines: 20 `a/**`')

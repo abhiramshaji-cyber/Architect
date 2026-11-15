@@ -73,7 +73,7 @@ describe('factsFor', () => {
     expect(file.lines).toBe('20, 2 functions')
     expect(file.churn).toBe('4 commits, +10 -2 in 90 days')
     const group = factsFor(find('a'), facts)
-    expect(group.kind).toBe('top level folder')
+    expect(group.kind).toBe('package or top level folder')
     expect(Object.fromEntries(group.lines).unreached).toBe('1 function, 33%')
     expect(Object.fromEntries(group.lines).files).toBe('2')
   })

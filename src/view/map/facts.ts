@@ -8,7 +8,7 @@ export type Line = [string, string]
 const KINDS: Record<MapNode['kind'], string> = {
   root: 'project',
   component: 'component',
-  top: 'top level folder',
+  top: 'package or top level folder',
   folder: 'folder',
   file: 'file',
   function: 'function',

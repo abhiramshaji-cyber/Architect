@@ -1,14 +1,10 @@
+import { packageOf } from '../../shared/packages/group'
 import type { Architecture, CodeMap } from '../../shared/types'
 import { check, ownership } from '../contract/graph'
 
 export type Lanes = { of: (file: string) => string; forbidden: (from: string, to: string) => string | undefined }
 
 export const UNOWNED = '(unowned)'
-
-function folderOf(path: string): string {
-  const slash = path.indexOf('/')
-  return slash > 0 ? path.slice(0, slash) : '.'
-}
 
 function ownersOf(map: CodeMap, architecture: Architecture): Map<string, string[]> {
   const files = map.folders.flatMap((folder) => folder.files.map((file) => file.path))
@@ -19,8 +15,8 @@ function ownersOf(map: CodeMap, architecture: Architecture): Map<string, string[
   return owners
 }
 
-export function lanesOf(map: CodeMap, architecture: Architecture | null): Lanes {
-  if (!architecture) return { of: folderOf, forbidden: () => undefined }
+export function lanesOf(map: CodeMap, architecture: Architecture | null, packages?: string[]): Lanes {
+  if (!architecture) return { of: (file) => packageOf(file, packages), forbidden: () => undefined }
   const owners = ownersOf(map, architecture)
 
   const forbidden = (from: string, to: string): string | undefined => {

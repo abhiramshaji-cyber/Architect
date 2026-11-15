@@ -1,10 +1,12 @@
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Flow, FlowStep } from '../../../shared/types'
 import { BAR, HEAD, LANE, layoutOf, type Arrow } from './layout'
 
 type DiagramProps = { flow: Flow; onOpen: (file: string, line: number) => void; onExpand: (key: string) => void }
 
 const LOOP = 26
+
+const PAD = 16
 
 function labelOf(step: FlowStep): string {
   const times = step.lines.length > 1 ? ` ×${step.lines.length}` : ''
@@ -35,17 +37,29 @@ function headOf({ x1, x2, y, self }: Arrow): string {
 
 export default function Diagram({ flow, onOpen, onExpand }: DiagramProps) {
   const drawn = useMemo(() => layoutOf(flow), [flow])
+  const svg = useRef<SVGSVGElement>(null)
+  const [width, setWidth] = useState(drawn.width)
+
+  useLayoutEffect(() => {
+    const fit = () => {
+      const box = svg.current?.getBBox()
+      setWidth(Math.max(drawn.width, box ? Math.ceil(box.x + box.width) + PAD : 0))
+    }
+    fit()
+    void document.fonts.ready.then(fit)
+  }, [drawn])
 
   return (
-    <svg className="flow-svg" width={drawn.width} height={drawn.height} role="img" aria-label={`Call flow from ${flow.start}`}>
+    <svg ref={svg} className="flow-svg" width={width} height={drawn.height} role="img" aria-label={`Call flow from ${flow.start}`}>
       {drawn.lanes.map((lane) => (
         <g key={lane.name} className="flow-lane">
           <line x1={lane.x} x2={lane.x} y1={HEAD} y2={drawn.height} />
           <rect x={lane.x - LANE / 2 + 8} y={4} width={LANE - 16} height={HEAD - 12} rx={4} />
-          <text x={lane.x} y={HEAD / 2 + 2} textAnchor="middle">
-            <title>{lane.name}</title>
-            {lane.name}
-          </text>
+          <foreignObject x={lane.x - LANE / 2 + 8} y={4} width={LANE - 16} height={HEAD - 12}>
+            <div className="flow-lane-name" title={lane.name}>
+              {lane.name}
+            </div>
+          </foreignObject>
         </g>
       ))}
 

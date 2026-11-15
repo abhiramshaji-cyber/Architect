@@ -109,10 +109,17 @@
   stroke: var(--color-border-default);
 }
 
-.flow-lane text {
-  fill: var(--color-text-primary);
+.flow-lane-name {
+  height: 100%;
+  padding: 0 var(--sp-2);
+  overflow: hidden;
+  color: var(--color-text-primary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
+  line-height: 32px;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .flow-active {

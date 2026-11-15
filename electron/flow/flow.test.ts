@@ -103,6 +103,19 @@ describe('flowOf', () => {
     expect(() => flowOf(chain, new Map(), null, null)).toThrow('not a flow request')
   })
 
+  it('uses packages as lifelines without a contract, ignoring the root and fixture package.json', () => {
+    const mono = map(
+      file('packages/client/src/scribe.ts', [['connect', 1, [at('packages/client/src/scribe.ts', 1, 2), at('packages/types/index.ts', 0, 3)]], ['open', 5]], [tool('packages/client/src/scribe.ts', 0)]),
+      file('packages/types/index.ts', [['shape', 1, [at('scripts/gen.ts', 0, 2)]]]),
+      file('scripts/gen.ts', [['gen', 1]]),
+    )
+    const entries = Object.assign(new Map(), { packages: ['', 'packages/client', 'packages/types', 'packages/client/test/fixtures/app'] })
+    const flow = flowOf(mono, entries, null, ask('packages/client/src/scribe.ts', 'connect', 1))
+    expect(flow.lane).toBe('packages/client')
+    expect(flow.lanes).toEqual(['packages/client', 'packages/types', 'scripts'])
+    expect(flowOf(mono, new Map(), null, ask('packages/client/src/scribe.ts', 'connect', 1)).lanes).toEqual(['packages', 'scripts'])
+  })
+
   it('uses architect.md components as lifelines and carries the reason of a forbidden call', () => {
     const contract = parse(
       [

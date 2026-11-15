@@ -49,7 +49,7 @@ export function flowOf(map: CodeMap, entries: EntryFiles, architecture: Architec
   const entry = entriesOf(map, entries).get(`${file}\0${fn}`)
   if (!entry) throw new Error(`${name} at ${file}:${line} is not a starting point`)
 
-  const lanes = lanesOf(map, architecture)
+  const lanes = lanesOf(map, architecture, entries.packages)
   const walked = walk(start, graph, depth, new Set(open))
   const steps = walked.steps.map((step) => stepOf(step, lanes))
   const lane = lanes.of(file)

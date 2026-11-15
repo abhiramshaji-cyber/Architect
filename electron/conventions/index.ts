@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { packagesIn } from '../../shared/packages/list'
 import { readSettings, saveSettings } from '../../shared/settings'
 import type { Architecture, CodeMap, Convention, Conventions, DraftResult } from '../../shared/types'
 import { suggestConventions } from '../draft/conventions'
@@ -14,6 +15,8 @@ import { promoted, ruleOf } from './promote'
 export type Project = { root: string; map: CodeMap; architecture: Architecture | null }
 
 const settingsIn = (dir: string) => path.join(dir, 'settings.json')
+
+const packagesOf = (map: CodeMap) => packagesIn(map.folders.flatMap((folder) => folder.files.map((file) => file.path)))
 
 const asking = new Map<string, AbortController>()
 
@@ -43,7 +46,7 @@ export async function conventionsOf(dir: string, load: () => Promise<Project>): 
   const { root, map, architecture } = await load()
   if (!on(dir)) return { enabled: false }
   const sources = sourcesIn(root, map)
-  const found = weighed(architecture, sources, measured(architecture, sources))
+  const found = weighed(architecture, sources, measured(architecture, sources, packagesOf(map)))
   return { enabled: true, measured: found.filter((convention) => convention.impact?.loosens.length === 0) }
 }
 
@@ -57,7 +60,7 @@ export async function suggestedConventions(dir: string, load: () => Promise<Proj
   ensureOn(dir)
   const { root, map, architecture } = await load()
   const sources = sourcesIn(root, map)
-  const known = { architecture, rules: effective(architecture?.rules).map(ruleLine), measured: measured(architecture, sources) }
+  const known = { architecture, rules: effective(architecture?.rules).map(ruleLine), measured: measured(architecture, sources, packagesOf(map)) }
 
   ensureOn(dir)
   asking.get(root)?.abort()

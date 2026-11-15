@@ -1,6 +1,6 @@
 import type { Architecture, CodeMap, LayerCell, Layers, LayerStatus, Verdict } from '../../shared/types'
 import { check } from '../contract/graph'
-import { crossings, folderOf, ownersOf } from './crossings'
+import { crossings, ownersOf } from './crossings'
 import { levelize } from './level'
 
 function importPairs(architecture: Architecture, map: CodeMap): Set<string> {
@@ -47,9 +47,8 @@ export function layersOf(architecture: Architecture | null, map: CodeMap): Layer
   }
 
   const cells = architecture ? contractCells(architecture, map, grouped) : [...grouped.values()]
-  const ids = architecture
-    ? architecture.components.map((c) => c.id)
-    : [...new Set(map.folders.flatMap((folder) => folder.files.map((file) => folderOf(file.path))))]
+  const files = map.folders.flatMap((folder) => folder.files.map((file) => file.path))
+  const ids = architecture ? architecture.components.map((c) => c.id) : [...new Set(files.flatMap(ownersOf(map, null)))]
   const live = cells.filter((cell) => cell.calls.length > 0).map(({ from, to }) => ({ from, to }))
 
   return { contract: architecture !== null, rows: levelize(ids, live), cells }
