@@ -10,11 +10,15 @@ import Breakdown from './style/Breakdown'
 import { MODES } from './modes/palette'
 import { churnTop, type ModeId, shade } from './modes/shade'
 import { useMap } from './useMap'
+import { keep, recall } from '../remember/slot'
+import { zoomKey, zoomOf } from '../remember/zoom'
+
+const lensOf = (root: string | null): ModeId => MODES.find(({ id }) => id === recall('map', 'lens', root))?.id ?? 'importance'
 
 export default function MapView({ theme, show }: ViewProps) {
   const { currentRoot, codeMap, codeError } = useProject()
   const { tree, facts, error, churnError, styleError, grouped } = useMap()
-  const [modeId, setModeId] = useState<ModeId>('importance')
+  const [modeId, setModeId] = useState<ModeId>(() => lensOf(currentRoot))
   const [focusId, setFocusId] = useState('')
   const mode = MODES.find(({ id }) => id === modeId) ?? (MODES[0] as (typeof MODES)[number])
 
@@ -24,7 +28,27 @@ export default function MapView({ theme, show }: ViewProps) {
 
   useEffect(() => {
     setFocusId('')
+    setModeId(lensOf(currentRoot))
   }, [currentRoot])
+
+  useEffect(() => {
+    if (tree) setFocusId(zoomOf(tree, recall('map', 'zoom', currentRoot)))
+  }, [currentRoot, tree !== null])
+
+  const zoom = useCallback(
+    (node: MapNode) => {
+      setFocusId(node.id)
+      keep('map', 'zoom', currentRoot, zoomKey(node))
+    },
+    [currentRoot],
+  )
+  const lens = useCallback(
+    (id: ModeId) => {
+      setModeId(id)
+      keep('map', 'lens', currentRoot, id)
+    },
+    [currentRoot],
+  )
 
   const path = useMemo(() => {
     if (!tree) return []
@@ -58,11 +82,11 @@ export default function MapView({ theme, show }: ViewProps) {
         openFile(node.path)
         return show('code')
       }
-      if (!row) return setFocusId(node.id)
+      if (!row) return zoom(node)
       openFile(row.file, row.line)
       show('code')
     },
-    [facts, show],
+    [facts, show, zoom],
   )
 
   const notice =
@@ -79,13 +103,13 @@ export default function MapView({ theme, show }: ViewProps) {
             : null)
 
   return (
-    <section className="map" aria-label="Map">
+    <section className="map" aria-label="Map" data-lens={modeId} data-zoom={tree ? focus?.path : undefined}>
       <div className="fn-bar">
         <nav className="map-trail" aria-label="Zoom">
           {path.map((node, at) => (
             <span key={node.id || 'root'}>
               {at > 0 && <span className="map-sep">/</span>}
-              <button className="map-crumb" disabled={at === path.length - 1} onClick={() => setFocusId(node.id)}>
+              <button className="map-crumb" disabled={at === path.length - 1} onClick={() => zoom(node)}>
                 {node.label || 'project'}
               </button>
             </span>
@@ -94,7 +118,7 @@ export default function MapView({ theme, show }: ViewProps) {
         <Legend
           mode={mode}
           high={modeId === 'churn' && busiest !== null ? `${busiest} commits` : undefined}
-          onMode={setModeId}
+          onMode={lens}
         />
       </div>
       {notice && <p className="fn-notice">{notice}</p>}

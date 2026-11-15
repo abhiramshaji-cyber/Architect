@@ -5,6 +5,9 @@ import { loadCodeMap, openFile, useProject } from '../../model/store'
 import type { ViewProps } from '../../shell/views'
 import { useFunctions } from '../functions/useFunctions'
 import { REASON } from '../functions/tree/outline'
+import { keyOf } from '../focus/history'
+import { keep, recall } from '../remember/slot'
+import { startFrom } from '../remember/start'
 import Diagram from './Diagram'
 import Picker, { refound, type Start } from './Picker'
 import { useFlow } from './useFlow'
@@ -12,11 +15,16 @@ import { useFlow } from './useFlow'
 const DEPTH = 3
 const DEEPEST = 64
 
+function depthOf(root: string | null): number {
+  const stored = Number(recall('flow', 'depth', root) ?? DEPTH)
+  return Number.isInteger(stored) ? Math.min(DEEPEST, Math.max(1, stored)) : DEPTH
+}
+
 export default function FlowView({ show }: ViewProps) {
   const { currentRoot, codeMap, codeError, architecture } = useProject()
-  const { list, error: listError } = useFunctions(currentRoot, codeMap, '')
+  const { list, error: listError, asked } = useFunctions(currentRoot, codeMap, '')
   const [picked, setPicked] = useState<Start | null>(null)
-  const [depth, setDepth] = useState(DEPTH)
+  const [depth, setDepth] = useState(() => depthOf(currentRoot))
   const [open, setOpen] = useState<string[]>([])
   const start = picked && list ? refound(list.rows, picked) : null
   const ask: FlowAsk | null = start ? { file: start.file, name: start.name, line: start.line, depth, open } : null
@@ -29,7 +37,13 @@ export default function FlowView({ show }: ViewProps) {
   useEffect(() => {
     setPicked(null)
     setOpen([])
+    setDepth(depthOf(currentRoot))
   }, [currentRoot])
+
+  const loaded = list !== null && asked?.root === currentRoot
+  useEffect(() => {
+    if (loaded && list) setPicked(startFrom(list.rows, recall('flow', 'start', currentRoot)))
+  }, [currentRoot, loaded])
 
   const showLatest = useRef(show)
   showLatest.current = show
@@ -39,8 +53,14 @@ export default function FlowView({ show }: ViewProps) {
   }, [])
   const onExpand = useCallback((key: string) => setOpen((keys) => (keys.includes(key) ? keys : [...keys, key])), [])
   const onPick = (next: Start | null) => {
+    const row = next && list ? refound(list.rows, next) : null
     setPicked(next)
     setOpen([])
+    keep('flow', 'start', currentRoot, row ? keyOf(row) : null)
+  }
+  const deepen = (next: number) => {
+    setDepth(next)
+    keep('flow', 'depth', currentRoot, String(next))
   }
 
   if (!currentRoot) return null
@@ -57,14 +77,14 @@ export default function FlowView({ show }: ViewProps) {
         {list ? <Picker list={list} picked={picked} onPick={onPick} /> : <span className="flow-note">Reading functions…</span>}
         <div className="flow-depth" role="group" aria-label="Depth">
           <span>Depth {depth}</span>
-          <button type="button" aria-label="Shallower" disabled={depth <= 1} onClick={() => setDepth((d) => Math.max(1, d - 1))}>
+          <button type="button" aria-label="Shallower" disabled={depth <= 1} onClick={() => deepen(depth - 1)}>
             −
           </button>
           <button
             type="button"
             aria-label="Deeper"
             disabled={depth >= DEEPEST}
-            onClick={() => setDepth((d) => Math.min(DEEPEST, d + 1))}
+            onClick={() => deepen(depth + 1)}
           >
             +
           </button>
@@ -93,7 +113,7 @@ export default function FlowView({ show }: ViewProps) {
         </p>
       )}
 
-      <div className="flow-body">
+      <div className="flow-body" data-start={flow ? `${flow.file}:${flow.line}` : undefined} data-depth={flow?.depth}>
         {flow && flow.steps.length === 0 && <p className="fn-empty">The scan found no calls from {flow.start}.</p>}
         {flow && flow.steps.length > 0 && <Diagram flow={flow} onOpen={onOpen} onExpand={onExpand} />}
         {!picked && list && <p className="fn-empty">Pick a starting point to draw its calls.</p>}
