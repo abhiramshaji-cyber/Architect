@@ -154,7 +154,7 @@ export default function FocusView({ list, trail, onTrail, onOpen, onRelated, onS
   }
 
   return (
-    <div className="fn-tree focus">
+    <div className="fn-tree focus" data-focus={rows[at] && `${rows[at].file}:${rows[at].line}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}

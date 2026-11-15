@@ -44,6 +44,8 @@ type CodeCanvasProps = {
   map: CodeMap
   path: string
   theme: string
+  selectedId: string | null
+  onSelect: (id: string | null) => void
   onEnter: (path: string) => void
   onUp: () => void
 }
@@ -174,8 +176,7 @@ const nodeTypes = {
   codefn: FunctionNode
 }
 
-export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanvasProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+export default function CodeCanvas({ map, path, theme, selectedId, onSelect: setSelectedId, onEnter, onUp }: CodeCanvasProps) {
   const [source, setSource] = useState<SourceWindow | null>(null)
   const [gotoRef, setGotoRef] = useState<SymbolRef | null>(null)
   const { measured, sized, onNodesChange } = useMeasured()
@@ -221,7 +222,10 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
     [world, colors]
   )
 
+  const shownPath = useRef(path)
   useEffect(() => {
+    if (shownPath.current === path) return
+    shownPath.current = path
     setSelectedId(pendingSelect.current)
     pendingSelect.current = null
   }, [path])
@@ -277,7 +281,7 @@ export default function CodeCanvas({ map, path, theme, onEnter, onUp }: CodeCanv
   }, [selectedId, close, onUp])
 
   return (
-    <div className="canvas-stage" ref={stage} tabIndex={-1}>
+    <div className="canvas-stage" ref={stage} tabIndex={-1} data-selected={selected && selectedId}>
       {file && (
         <Outline
           entries={outline}
