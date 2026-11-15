@@ -76,3 +76,16 @@
   align-items: flex-start;
   gap: var(--sp-3);
 }
+
+.focus-center .fn-card-head {
+  flex-wrap: wrap;
+}
+
+.focus-center .fn-card-name {
+  flex: 1 0 70%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
