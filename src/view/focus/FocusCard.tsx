@@ -42,7 +42,7 @@ function Head({ row, mutual, full }: { row: FunctionRow; mutual: boolean; full: 
       <span className="fn-card-head">
         <Mark importance={row.importance} />
         <span className="fn-card-name" title={row.name + signature}>
-          {row.name}
+          {full ? row.name.split('.').map((part, at) => (at === 0 ? part : [<wbr key={at} />, `.${part}`])) : row.name}
         </span>
         {row.exported && full && <span className="cyber-badge cyber-badge--sm cyber-badge--chrome">exported</span>}
         <Loops row={row} mutual={mutual} full={full} />

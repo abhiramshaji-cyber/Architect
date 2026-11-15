@@ -110,7 +110,7 @@ function binary() {
   const found = (fs.existsSync(dist) ? fs.readdirSync(dist) : [])
     .map((entry) => path.join(dist, entry, 'Architect.app', 'Contents', 'MacOS', 'Architect'))
     .find((candidate) => fs.existsSync(candidate))
-  if (!found) throw new Error('no packaged Architect.app under dist; run `npm run build && npm exec -- node scripts/build-local-target.mjs`, never install:local, which replaces the installed app, ~/.architect/bin and the Claude hooks')
+  if (!found) throw new Error('no packaged Architect.app under dist; run `npm run build && PATH=node_modules/.bin:$PATH node scripts/build-local-target.mjs`, never install:local, which replaces the installed app, ~/.architect/bin and the Claude hooks')
   return found
 }
 
